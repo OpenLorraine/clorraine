@@ -1,0 +1,1622 @@
+{
+  "calibration": {
+    "host": {
+      "gc": null,
+      "new": null,
+      "old": null
+    },
+    "hosted-amiga": {
+      "gc": 2928,
+      "new": 2928,
+      "old": 3372
+    },
+    "hosted-amiga-13": {
+      "gc": 2947,
+      "new": 2947,
+      "old": 3348
+    }
+  },
+  "checks": [
+    {
+      "failures": [
+        "host/lookup: host binary 30912 > 34880 * 85%"
+      ],
+      "name": "floors",
+      "passed": false
+    },
+    {
+      "failures": [],
+      "name": "constructors",
+      "passed": true
+    },
+    {
+      "failures": [],
+      "name": "repeat",
+      "passed": true
+    }
+  ],
+  "clc": {
+    "dirty": true,
+    "git": "a706903007c1b2d7e4abb969d2aab7d7fbf4d7bf",
+    "path": "/work/build/tmp/assessment/baseline/clc",
+    "sha256": "0c2fd66e7346acd0f3c01bff7f09f51b54605c0a974f6c1d2b00cd68aa29bba6",
+    "version": "clc 1.2.0"
+  },
+  "constructors": {
+    "hosted-amiga": {
+      "base": 9740,
+      "constructors": {
+        "___initcpp": 7,
+        "___initlibraries": 40,
+        "___initmalloc": 14,
+        "___initstdio": 82
+      },
+      "init_list_walk": 823,
+      "profile": "hosted-amiga"
+    },
+    "hosted-amiga-13": {
+      "base": 9740,
+      "constructors": {
+        "___initcpp": 7,
+        "___initlibraries": 25,
+        "___initmalloc": 14,
+        "___initstdio": 80
+      },
+      "init_list_walk": 823,
+      "profile": "hosted-amiga-13"
+    }
+  },
+  "programs": {
+    "freestanding/freestanding": {
+      "c_bytes": 14457,
+      "gc": {
+        "bin": 1576,
+        "bss": 0,
+        "data": 0,
+        "instructions_net": null,
+        "instructions_raw": null,
+        "output": null,
+        "text": 232
+      },
+      "gc_flags": [
+        "-std=c99",
+        "-ffreestanding",
+        "-fno-builtin",
+        "-nostdlib",
+        "-m68000",
+        "-fwrapv",
+        "-O2",
+        "-ffunction-sections",
+        "-fdata-sections",
+        "-Wl,--gc-sections"
+      ],
+      "host_symtab": false,
+      "kind": "freestanding",
+      "libs": [
+        "-lg"
+      ],
+      "new": {
+        "bin": 1552,
+        "bss": 0,
+        "data": 0,
+        "instructions_net": null,
+        "instructions_raw": null,
+        "output": null,
+        "text": 208
+      },
+      "new_flags": [
+        "-std=c99",
+        "-ffreestanding",
+        "-fno-builtin",
+        "-nostdlib",
+        "-m68000",
+        "-fwrapv",
+        "-O2"
+      ],
+      "old": {
+        "bin": 1552,
+        "bss": 0,
+        "data": 0,
+        "instructions_net": null,
+        "instructions_raw": null,
+        "output": null,
+        "text": 208
+      },
+      "old_flags": [
+        "-std=c99",
+        "-ffreestanding",
+        "-fno-builtin",
+        "-nostdlib",
+        "-m68000",
+        "-fwrapv",
+        "-O2"
+      ],
+      "profile": "freestanding",
+      "program": "freestanding"
+    },
+    "host/calibration": {
+      "c_bytes": 25693,
+      "gc": {
+        "bin": 15992,
+        "bss": 16,
+        "data": 584,
+        "instructions_net": null,
+        "instructions_raw": null,
+        "output": "calibration: ok\n",
+        "text": 1543
+      },
+      "gc_flags": [
+        "-std=c99",
+        "-O2",
+        "-ffunction-sections",
+        "-fdata-sections",
+        "-Wl,--gc-sections"
+      ],
+      "host_symtab": false,
+      "kind": "calibration",
+      "libs": [],
+      "new": {
+        "bin": 14480,
+        "bss": 16,
+        "data": 584,
+        "instructions_net": null,
+        "instructions_raw": null,
+        "output": "calibration: ok\n",
+        "text": 1543
+      },
+      "new_flags": [
+        "-std=c99",
+        "-O2",
+        "-ffunction-sections",
+        "-fdata-sections",
+        "-Wl,--gc-sections",
+        "-s"
+      ],
+      "old": {
+        "bin": 18416,
+        "bss": 48,
+        "data": 704,
+        "instructions_net": null,
+        "instructions_raw": null,
+        "output": "calibration: ok\n",
+        "text": 7616
+      },
+      "old_flags": [
+        "-std=c99",
+        "-O2"
+      ],
+      "profile": "host",
+      "program": "calibration"
+    },
+    "host/container": {
+      "c_bytes": 34481,
+      "gc": {
+        "bin": 16664,
+        "bss": 48,
+        "data": 648,
+        "instructions_net": null,
+        "instructions_raw": null,
+        "output": "container: 10475520 1024\n",
+        "text": 3840
+      },
+      "gc_flags": [
+        "-std=c99",
+        "-O2",
+        "-ffunction-sections",
+        "-fdata-sections",
+        "-Wl,--gc-sections"
+      ],
+      "host_symtab": false,
+      "kind": "scored",
+      "libs": [],
+      "new": {
+        "bin": 14544,
+        "bss": 48,
+        "data": 648,
+        "instructions_net": null,
+        "instructions_raw": null,
+        "output": "container: 10475520 1024\n",
+        "text": 3840
+      },
+      "new_flags": [
+        "-std=c99",
+        "-O2",
+        "-ffunction-sections",
+        "-fdata-sections",
+        "-Wl,--gc-sections",
+        "-s"
+      ],
+      "old": {
+        "bin": 22784,
+        "bss": 48,
+        "data": 704,
+        "instructions_net": null,
+        "instructions_raw": null,
+        "output": "container: 10475520 1024\n",
+        "text": 8570
+      },
+      "old_flags": [
+        "-std=c99",
+        "-O2"
+      ],
+      "profile": "host",
+      "program": "container"
+    },
+    "host/local-table": {
+      "c_bytes": 29270,
+      "gc": {
+        "bin": 16584,
+        "bss": 48,
+        "data": 632,
+        "instructions_net": null,
+        "instructions_raw": null,
+        "output": "local-table: 2661699584\n",
+        "text": 4135
+      },
+      "gc_flags": [
+        "-std=c99",
+        "-O2",
+        "-ffunction-sections",
+        "-fdata-sections",
+        "-Wl,--gc-sections"
+      ],
+      "host_symtab": false,
+      "kind": "scored",
+      "libs": [],
+      "new": {
+        "bin": 14528,
+        "bss": 48,
+        "data": 632,
+        "instructions_net": null,
+        "instructions_raw": null,
+        "output": "local-table: 2661699584\n",
+        "text": 4135
+      },
+      "new_flags": [
+        "-std=c99",
+        "-O2",
+        "-ffunction-sections",
+        "-fdata-sections",
+        "-Wl,--gc-sections",
+        "-s"
+      ],
+      "old": {
+        "bin": 18512,
+        "bss": 48,
+        "data": 704,
+        "instructions_net": null,
+        "instructions_raw": null,
+        "output": "local-table: 2661699584\n",
+        "text": 8848
+      },
+      "old_flags": [
+        "-std=c99",
+        "-O2"
+      ],
+      "profile": "host",
+      "program": "local-table"
+    },
+    "host/lookup": {
+      "c_bytes": 58221,
+      "gc": {
+        "bin": 32952,
+        "bss": 16448,
+        "data": 632,
+        "instructions_net": null,
+        "instructions_raw": null,
+        "output": "lookup: 134217728\n",
+        "text": 19459
+      },
+      "gc_flags": [
+        "-std=c99",
+        "-O2",
+        "-ffunction-sections",
+        "-fdata-sections",
+        "-Wl,--gc-sections"
+      ],
+      "host_symtab": false,
+      "kind": "scored",
+      "libs": [],
+      "new": {
+        "bin": 30912,
+        "bss": 16448,
+        "data": 632,
+        "instructions_net": null,
+        "instructions_raw": null,
+        "output": "lookup: 134217728\n",
+        "text": 19459
+      },
+      "new_flags": [
+        "-std=c99",
+        "-O2",
+        "-ffunction-sections",
+        "-fdata-sections",
+        "-Wl,--gc-sections",
+        "-s"
+      ],
+      "old": {
+        "bin": 34880,
+        "bss": 16448,
+        "data": 704,
+        "instructions_net": null,
+        "instructions_raw": null,
+        "output": "lookup: 134217728\n",
+        "text": 24172
+      },
+      "old_flags": [
+        "-std=c99",
+        "-O2"
+      ],
+      "profile": "host",
+      "program": "lookup"
+    },
+    "host/matrix": {
+      "c_bytes": 28886,
+      "gc": {
+        "bin": 16520,
+        "bss": 48,
+        "data": 632,
+        "instructions_net": null,
+        "instructions_raw": null,
+        "output": "matrix: 523776\n",
+        "text": 3297
+      },
+      "gc_flags": [
+        "-std=c99",
+        "-O2",
+        "-ffunction-sections",
+        "-fdata-sections",
+        "-Wl,--gc-sections"
+      ],
+      "host_symtab": false,
+      "kind": "scored",
+      "libs": [],
+      "new": {
+        "bin": 14528,
+        "bss": 48,
+        "data": 632,
+        "instructions_net": null,
+        "instructions_raw": null,
+        "output": "matrix: 523776\n",
+        "text": 3297
+      },
+      "new_flags": [
+        "-std=c99",
+        "-O2",
+        "-ffunction-sections",
+        "-fdata-sections",
+        "-Wl,--gc-sections",
+        "-s"
+      ],
+      "old": {
+        "bin": 18456,
+        "bss": 48,
+        "data": 704,
+        "instructions_net": null,
+        "instructions_raw": null,
+        "output": "matrix: 523776\n",
+        "text": 8008
+      },
+      "old_flags": [
+        "-std=c99",
+        "-O2"
+      ],
+      "profile": "host",
+      "program": "matrix"
+    },
+    "host/moves": {
+      "c_bytes": 30933,
+      "gc": {
+        "bin": 16528,
+        "bss": 48,
+        "data": 632,
+        "instructions_net": null,
+        "instructions_raw": null,
+        "output": "moves: 4523505\n",
+        "text": 3423
+      },
+      "gc_flags": [
+        "-std=c99",
+        "-O2",
+        "-ffunction-sections",
+        "-fdata-sections",
+        "-Wl,--gc-sections"
+      ],
+      "host_symtab": false,
+      "kind": "scored",
+      "libs": [],
+      "new": {
+        "bin": 14528,
+        "bss": 48,
+        "data": 632,
+        "instructions_net": null,
+        "instructions_raw": null,
+        "output": "moves: 4523505\n",
+        "text": 3423
+      },
+      "new_flags": [
+        "-std=c99",
+        "-O2",
+        "-ffunction-sections",
+        "-fdata-sections",
+        "-Wl,--gc-sections",
+        "-s"
+      ],
+      "old": {
+        "bin": 22680,
+        "bss": 48,
+        "data": 704,
+        "instructions_net": null,
+        "instructions_raw": null,
+        "output": "moves: 4523505\n",
+        "text": 8427
+      },
+      "old_flags": [
+        "-std=c99",
+        "-O2"
+      ],
+      "profile": "host",
+      "program": "moves"
+    },
+    "host/sieve": {
+      "c_bytes": 29002,
+      "gc": {
+        "bin": 16528,
+        "bss": 48,
+        "data": 632,
+        "instructions_net": null,
+        "instructions_raw": null,
+        "output": "sieve: 10280\n",
+        "text": 3443
+      },
+      "gc_flags": [
+        "-std=c99",
+        "-O2",
+        "-ffunction-sections",
+        "-fdata-sections",
+        "-Wl,--gc-sections"
+      ],
+      "host_symtab": false,
+      "kind": "scored",
+      "libs": [],
+      "new": {
+        "bin": 14528,
+        "bss": 48,
+        "data": 632,
+        "instructions_net": null,
+        "instructions_raw": null,
+        "output": "sieve: 10280\n",
+        "text": 3443
+      },
+      "new_flags": [
+        "-std=c99",
+        "-O2",
+        "-ffunction-sections",
+        "-fdata-sections",
+        "-Wl,--gc-sections",
+        "-s"
+      ],
+      "old": {
+        "bin": 22560,
+        "bss": 48,
+        "data": 704,
+        "instructions_net": null,
+        "instructions_raw": null,
+        "output": "sieve: 10280\n",
+        "text": 8122
+      },
+      "old_flags": [
+        "-std=c99",
+        "-O2"
+      ],
+      "profile": "host",
+      "program": "sieve"
+    },
+    "host/strings": {
+      "c_bytes": 30606,
+      "gc": {
+        "bin": 16632,
+        "bss": 48,
+        "data": 632,
+        "instructions_net": null,
+        "instructions_raw": null,
+        "output": "strings: 0x3F9A6\n",
+        "text": 4007
+      },
+      "gc_flags": [
+        "-std=c99",
+        "-O2",
+        "-ffunction-sections",
+        "-fdata-sections",
+        "-Wl,--gc-sections"
+      ],
+      "host_symtab": false,
+      "kind": "scored",
+      "libs": [],
+      "new": {
+        "bin": 14528,
+        "bss": 48,
+        "data": 632,
+        "instructions_net": null,
+        "instructions_raw": null,
+        "output": "strings: 0x3F9A6\n",
+        "text": 4007
+      },
+      "new_flags": [
+        "-std=c99",
+        "-O2",
+        "-ffunction-sections",
+        "-fdata-sections",
+        "-Wl,--gc-sections",
+        "-s"
+      ],
+      "old": {
+        "bin": 22856,
+        "bss": 48,
+        "data": 704,
+        "instructions_net": null,
+        "instructions_raw": null,
+        "output": "strings: 0x3F9A6\n",
+        "text": 9015
+      },
+      "old_flags": [
+        "-std=c99",
+        "-O2"
+      ],
+      "profile": "host",
+      "program": "strings"
+    },
+    "host/text-scan": {
+      "c_bytes": 33008,
+      "gc": {
+        "bin": 16536,
+        "bss": 64,
+        "data": 632,
+        "instructions_net": null,
+        "instructions_raw": null,
+        "output": "text-scan: tokens=3648 numbers=2432 words=1216 sum=146944\n",
+        "text": 3794
+      },
+      "gc_flags": [
+        "-std=c99",
+        "-O2",
+        "-ffunction-sections",
+        "-fdata-sections",
+        "-Wl,--gc-sections"
+      ],
+      "host_symtab": false,
+      "kind": "scored",
+      "libs": [],
+      "new": {
+        "bin": 14528,
+        "bss": 64,
+        "data": 632,
+        "instructions_net": null,
+        "instructions_raw": null,
+        "output": "text-scan: tokens=3648 numbers=2432 words=1216 sum=146944\n",
+        "text": 3794
+      },
+      "new_flags": [
+        "-std=c99",
+        "-O2",
+        "-ffunction-sections",
+        "-fdata-sections",
+        "-Wl,--gc-sections",
+        "-s"
+      ],
+      "old": {
+        "bin": 22560,
+        "bss": 64,
+        "data": 704,
+        "instructions_net": null,
+        "instructions_raw": null,
+        "output": "text-scan: tokens=3648 numbers=2432 words=1216 sum=146944\n",
+        "text": 8504
+      },
+      "old_flags": [
+        "-std=c99",
+        "-O2"
+      ],
+      "profile": "host",
+      "program": "text-scan"
+    },
+    "hosted-amiga-13/buffer-container": {
+      "c_bytes": 200687,
+      "gc": {
+        "bin": 29884,
+        "bss": 120,
+        "data": 280,
+        "instructions_net": null,
+        "instructions_raw": null,
+        "output": "buffer-container: len=8\nbuffer-container: sum=36\nbuffer-container: evens=4\nbuffer-container: bytes=16\nbuffer-container: ok\n",
+        "text": 24580
+      },
+      "gc_flags": [
+        "-std=c99",
+        "-mcrt=nix13",
+        "-m68000",
+        "-fwrapv",
+        "-O2",
+        "-ffunction-sections",
+        "-fdata-sections",
+        "-Wl,--gc-sections"
+      ],
+      "host_symtab": false,
+      "kind": "corpus",
+      "libs": [
+        "-lamiga",
+        "-lm"
+      ],
+      "new": {
+        "bin": 26532,
+        "bss": 120,
+        "data": 280,
+        "instructions_net": null,
+        "instructions_raw": null,
+        "output": "buffer-container: len=8\nbuffer-container: sum=36\nbuffer-container: evens=4\nbuffer-container: bytes=16\nbuffer-container: ok\n",
+        "text": 24580
+      },
+      "new_flags": [
+        "-std=c99",
+        "-mcrt=nix13",
+        "-m68000",
+        "-fwrapv",
+        "-O2",
+        "-ffunction-sections",
+        "-fdata-sections",
+        "-Wl,--gc-sections",
+        "-s"
+      ],
+      "old": {
+        "bin": 69464,
+        "bss": 244,
+        "data": 296,
+        "instructions_net": null,
+        "instructions_raw": null,
+        "output": "buffer-container: len=8\nbuffer-container: sum=36\nbuffer-container: evens=4\nbuffer-container: bytes=16\nbuffer-container: ok\n",
+        "text": 55000
+      },
+      "old_flags": [
+        "-std=c99",
+        "-mcrt=nix13",
+        "-m68000",
+        "-fwrapv",
+        "-O2"
+      ],
+      "profile": "hosted-amiga-13",
+      "program": "buffer-container"
+    },
+    "hosted-amiga-13/calibration": {
+      "c_bytes": 187343,
+      "gc": {
+        "bin": 10020,
+        "bss": 120,
+        "data": 272,
+        "instructions_net": null,
+        "instructions_raw": 2947,
+        "output": "calibration: ok\n",
+        "text": 5900
+      },
+      "gc_flags": [
+        "-std=c99",
+        "-mcrt=nix13",
+        "-m68000",
+        "-fwrapv",
+        "-O2",
+        "-ffunction-sections",
+        "-fdata-sections",
+        "-Wl,--gc-sections"
+      ],
+      "host_symtab": false,
+      "kind": "calibration",
+      "libs": [
+        "-lamiga",
+        "-lm"
+      ],
+      "new": {
+        "bin": 7264,
+        "bss": 120,
+        "data": 272,
+        "instructions_net": null,
+        "instructions_raw": 2947,
+        "output": "calibration: ok\n",
+        "text": 5900
+      },
+      "new_flags": [
+        "-std=c99",
+        "-mcrt=nix13",
+        "-m68000",
+        "-fwrapv",
+        "-O2",
+        "-ffunction-sections",
+        "-fdata-sections",
+        "-Wl,--gc-sections",
+        "-s"
+      ],
+      "old": {
+        "bin": 68104,
+        "bss": 244,
+        "data": 296,
+        "instructions_net": null,
+        "instructions_raw": 3348,
+        "output": "calibration: ok\n",
+        "text": 53940
+      },
+      "old_flags": [
+        "-std=c99",
+        "-mcrt=nix13",
+        "-m68000",
+        "-fwrapv",
+        "-O2"
+      ],
+      "profile": "hosted-amiga-13",
+      "program": "calibration"
+    },
+    "hosted-amiga-13/file-copier": {
+      "c_bytes": 205573,
+      "gc": {
+        "bin": 34068,
+        "bss": 152,
+        "data": 292,
+        "instructions_net": null,
+        "instructions_raw": null,
+        "output": "file-copier: wrote 30 bytes\nfile-copier: copied 30 bytes\nfile-copier: content matches\nfile-copier: ok\n",
+        "text": 27924
+      },
+      "gc_flags": [
+        "-std=c99",
+        "-mcrt=nix13",
+        "-m68000",
+        "-fwrapv",
+        "-O2",
+        "-ffunction-sections",
+        "-fdata-sections",
+        "-Wl,--gc-sections"
+      ],
+      "host_symtab": false,
+      "kind": "corpus",
+      "libs": [
+        "-lamiga",
+        "-lm"
+      ],
+      "new": {
+        "bin": 30252,
+        "bss": 152,
+        "data": 292,
+        "instructions_net": null,
+        "instructions_raw": null,
+        "output": "file-copier: wrote 30 bytes\nfile-copier: copied 30 bytes\nfile-copier: content matches\nfile-copier: ok\n",
+        "text": 27924
+      },
+      "new_flags": [
+        "-std=c99",
+        "-mcrt=nix13",
+        "-m68000",
+        "-fwrapv",
+        "-O2",
+        "-ffunction-sections",
+        "-fdata-sections",
+        "-Wl,--gc-sections",
+        "-s"
+      ],
+      "old": {
+        "bin": 70256,
+        "bss": 268,
+        "data": 296,
+        "instructions_net": null,
+        "instructions_raw": null,
+        "output": "file-copier: wrote 30 bytes\nfile-copier: copied 30 bytes\nfile-copier: content matches\nfile-copier: ok\n",
+        "text": 55640
+      },
+      "old_flags": [
+        "-std=c99",
+        "-mcrt=nix13",
+        "-m68000",
+        "-fwrapv",
+        "-O2"
+      ],
+      "profile": "hosted-amiga-13",
+      "program": "file-copier"
+    },
+    "hosted-amiga-13/sieve": {
+      "c_bytes": 190643,
+      "gc": {
+        "bin": 28876,
+        "bss": 120,
+        "data": 280,
+        "instructions_net": 1040227,
+        "instructions_raw": 1043174,
+        "output": "sieve: 10280\n",
+        "text": 23772
+      },
+      "gc_flags": [
+        "-std=c99",
+        "-mcrt=nix13",
+        "-m68000",
+        "-fwrapv",
+        "-O2",
+        "-ffunction-sections",
+        "-fdata-sections",
+        "-Wl,--gc-sections"
+      ],
+      "host_symtab": false,
+      "kind": "scored",
+      "libs": [
+        "-lamiga",
+        "-lm"
+      ],
+      "new": {
+        "bin": 25592,
+        "bss": 120,
+        "data": 280,
+        "instructions_net": 1040227,
+        "instructions_raw": 1043174,
+        "output": "sieve: 10280\n",
+        "text": 23772
+      },
+      "new_flags": [
+        "-std=c99",
+        "-mcrt=nix13",
+        "-m68000",
+        "-fwrapv",
+        "-O2",
+        "-ffunction-sections",
+        "-fdata-sections",
+        "-Wl,--gc-sections",
+        "-s"
+      ],
+      "old": {
+        "bin": 68384,
+        "bss": 244,
+        "data": 296,
+        "instructions_net": 1040227,
+        "instructions_raw": 1043575,
+        "output": "sieve: 10280\n",
+        "text": 54208
+      },
+      "old_flags": [
+        "-std=c99",
+        "-mcrt=nix13",
+        "-m68000",
+        "-fwrapv",
+        "-O2"
+      ],
+      "profile": "hosted-amiga-13",
+      "program": "sieve"
+    },
+    "hosted-amiga-13/string-parser": {
+      "c_bytes": 198963,
+      "gc": {
+        "bin": 29960,
+        "bss": 128,
+        "data": 280,
+        "instructions_net": null,
+        "instructions_raw": null,
+        "output": "string-parser: input=MOV 12 34 ADD 5 7\nstring-parser: tokens=6 numbers=4 words=2\nstring-parser: sum=58\nstring-parser: hex=0x3A\nstring-parser: ok\n",
+        "text": 24664
+      },
+      "gc_flags": [
+        "-std=c99",
+        "-mcrt=nix13",
+        "-m68000",
+        "-fwrapv",
+        "-O2",
+        "-ffunction-sections",
+        "-fdata-sections",
+        "-Wl,--gc-sections"
+      ],
+      "host_symtab": false,
+      "kind": "corpus",
+      "libs": [
+        "-lamiga",
+        "-lm"
+      ],
+      "new": {
+        "bin": 26640,
+        "bss": 128,
+        "data": 280,
+        "instructions_net": null,
+        "instructions_raw": null,
+        "output": "string-parser: input=MOV 12 34 ADD 5 7\nstring-parser: tokens=6 numbers=4 words=2\nstring-parser: sum=58\nstring-parser: hex=0x3A\nstring-parser: ok\n",
+        "text": 24664
+      },
+      "new_flags": [
+        "-std=c99",
+        "-mcrt=nix13",
+        "-m68000",
+        "-fwrapv",
+        "-O2",
+        "-ffunction-sections",
+        "-fdata-sections",
+        "-Wl,--gc-sections",
+        "-s"
+      ],
+      "old": {
+        "bin": 69980,
+        "bss": 252,
+        "data": 296,
+        "instructions_net": null,
+        "instructions_raw": null,
+        "output": "string-parser: input=MOV 12 34 ADD 5 7\nstring-parser: tokens=6 numbers=4 words=2\nstring-parser: sum=58\nstring-parser: hex=0x3A\nstring-parser: ok\n",
+        "text": 55460
+      },
+      "old_flags": [
+        "-std=c99",
+        "-mcrt=nix13",
+        "-m68000",
+        "-fwrapv",
+        "-O2"
+      ],
+      "profile": "hosted-amiga-13",
+      "program": "string-parser"
+    },
+    "hosted-amiga-13/volatile-mmio": {
+      "c_bytes": 189440,
+      "gc": {
+        "bin": 10060,
+        "bss": 124,
+        "data": 272,
+        "instructions_net": null,
+        "instructions_raw": null,
+        "output": "volatile-mmio: ok\n",
+        "text": 5936
+      },
+      "gc_flags": [
+        "-std=c99",
+        "-mcrt=nix13",
+        "-m68000",
+        "-fwrapv",
+        "-O2",
+        "-ffunction-sections",
+        "-fdata-sections",
+        "-Wl,--gc-sections"
+      ],
+      "host_symtab": false,
+      "kind": "corpus",
+      "libs": [
+        "-lamiga",
+        "-lm"
+      ],
+      "new": {
+        "bin": 7304,
+        "bss": 124,
+        "data": 272,
+        "instructions_net": null,
+        "instructions_raw": null,
+        "output": "volatile-mmio: ok\n",
+        "text": 5936
+      },
+      "new_flags": [
+        "-std=c99",
+        "-mcrt=nix13",
+        "-m68000",
+        "-fwrapv",
+        "-O2",
+        "-ffunction-sections",
+        "-fdata-sections",
+        "-Wl,--gc-sections",
+        "-s"
+      ],
+      "old": {
+        "bin": 68268,
+        "bss": 248,
+        "data": 296,
+        "instructions_net": null,
+        "instructions_raw": null,
+        "output": "volatile-mmio: ok\n",
+        "text": 54020
+      },
+      "old_flags": [
+        "-std=c99",
+        "-mcrt=nix13",
+        "-m68000",
+        "-fwrapv",
+        "-O2"
+      ],
+      "profile": "hosted-amiga-13",
+      "program": "volatile-mmio"
+    },
+    "hosted-amiga/calibration": {
+      "c_bytes": 318723,
+      "gc": {
+        "bin": 10044,
+        "bss": 116,
+        "data": 284,
+        "instructions_net": null,
+        "instructions_raw": 2928,
+        "output": "calibration: ok\n",
+        "text": 5952
+      },
+      "gc_flags": [
+        "-std=c99",
+        "-mcrt=nix20",
+        "-m68000",
+        "-fwrapv",
+        "-O2",
+        "-ffunction-sections",
+        "-fdata-sections",
+        "-Wl,--gc-sections"
+      ],
+      "host_symtab": false,
+      "kind": "calibration",
+      "libs": [
+        "-lamiga",
+        "-lm"
+      ],
+      "new": {
+        "bin": 7320,
+        "bss": 116,
+        "data": 284,
+        "instructions_net": null,
+        "instructions_raw": 2928,
+        "output": "calibration: ok\n",
+        "text": 5952
+      },
+      "new_flags": [
+        "-std=c99",
+        "-mcrt=nix20",
+        "-m68000",
+        "-fwrapv",
+        "-O2",
+        "-ffunction-sections",
+        "-fdata-sections",
+        "-Wl,--gc-sections",
+        "-s"
+      ],
+      "old": {
+        "bin": 100460,
+        "bss": 592,
+        "data": 304,
+        "instructions_net": null,
+        "instructions_raw": 3372,
+        "output": "calibration: ok\n",
+        "text": 76732
+      },
+      "old_flags": [
+        "-std=c99",
+        "-mcrt=nix20",
+        "-m68000",
+        "-fwrapv",
+        "-O2"
+      ],
+      "profile": "hosted-amiga",
+      "program": "calibration"
+    },
+    "hosted-amiga/container": {
+      "c_bytes": 327478,
+      "gc": {
+        "bin": 29300,
+        "bss": 116,
+        "data": 292,
+        "instructions_net": 56814,
+        "instructions_raw": 59742,
+        "output": "container: 10475520 1024\n",
+        "text": 24108
+      },
+      "gc_flags": [
+        "-std=c99",
+        "-mcrt=nix20",
+        "-m68000",
+        "-fwrapv",
+        "-O2",
+        "-ffunction-sections",
+        "-fdata-sections",
+        "-Wl,--gc-sections"
+      ],
+      "host_symtab": false,
+      "kind": "scored",
+      "libs": [
+        "-lamiga",
+        "-lm"
+      ],
+      "new": {
+        "bin": 25980,
+        "bss": 116,
+        "data": 292,
+        "instructions_net": 56814,
+        "instructions_raw": 59742,
+        "output": "container: 10475520 1024\n",
+        "text": 24108
+      },
+      "new_flags": [
+        "-std=c99",
+        "-mcrt=nix20",
+        "-m68000",
+        "-fwrapv",
+        "-O2",
+        "-ffunction-sections",
+        "-fdata-sections",
+        "-Wl,--gc-sections",
+        "-s"
+      ],
+      "old": {
+        "bin": 101272,
+        "bss": 592,
+        "data": 304,
+        "instructions_net": 56814,
+        "instructions_raw": 60186,
+        "output": "container: 10475520 1024\n",
+        "text": 77300
+      },
+      "old_flags": [
+        "-std=c99",
+        "-mcrt=nix20",
+        "-m68000",
+        "-fwrapv",
+        "-O2"
+      ],
+      "profile": "hosted-amiga",
+      "program": "container"
+    },
+    "hosted-amiga/local-table": {
+      "c_bytes": 322291,
+      "gc": {
+        "bin": 29616,
+        "bss": 116,
+        "data": 292,
+        "instructions_net": 2927,
+        "instructions_raw": 5855,
+        "output": "local-table: 2661699584\n",
+        "text": 24568
+      },
+      "gc_flags": [
+        "-std=c99",
+        "-mcrt=nix20",
+        "-m68000",
+        "-fwrapv",
+        "-O2",
+        "-ffunction-sections",
+        "-fdata-sections",
+        "-Wl,--gc-sections"
+      ],
+      "host_symtab": false,
+      "kind": "scored",
+      "libs": [
+        "-lamiga",
+        "-lm"
+      ],
+      "new": {
+        "bin": 26380,
+        "bss": 116,
+        "data": 292,
+        "instructions_net": 2927,
+        "instructions_raw": 5855,
+        "output": "local-table: 2661699584\n",
+        "text": 24568
+      },
+      "new_flags": [
+        "-std=c99",
+        "-mcrt=nix20",
+        "-m68000",
+        "-fwrapv",
+        "-O2",
+        "-ffunction-sections",
+        "-fdata-sections",
+        "-Wl,--gc-sections",
+        "-s"
+      ],
+      "old": {
+        "bin": 101668,
+        "bss": 592,
+        "data": 304,
+        "instructions_net": 2927,
+        "instructions_raw": 6299,
+        "output": "local-table: 2661699584\n",
+        "text": 77924
+      },
+      "old_flags": [
+        "-std=c99",
+        "-mcrt=nix20",
+        "-m68000",
+        "-fwrapv",
+        "-O2"
+      ],
+      "profile": "hosted-amiga",
+      "program": "local-table"
+    },
+    "hosted-amiga/lookup": {
+      "c_bytes": 351242,
+      "gc": {
+        "bin": 44936,
+        "bss": 16500,
+        "data": 292,
+        "instructions_net": 8779,
+        "instructions_raw": 11707,
+        "output": "lookup: 134217728\n",
+        "text": 39884
+      },
+      "gc_flags": [
+        "-std=c99",
+        "-mcrt=nix20",
+        "-m68000",
+        "-fwrapv",
+        "-O2",
+        "-ffunction-sections",
+        "-fdata-sections",
+        "-Wl,--gc-sections"
+      ],
+      "host_symtab": false,
+      "kind": "scored",
+      "libs": [
+        "-lamiga",
+        "-lm"
+      ],
+      "new": {
+        "bin": 41700,
+        "bss": 16500,
+        "data": 292,
+        "instructions_net": 8779,
+        "instructions_raw": 11707,
+        "output": "lookup: 134217728\n",
+        "text": 39884
+      },
+      "new_flags": [
+        "-std=c99",
+        "-mcrt=nix20",
+        "-m68000",
+        "-fwrapv",
+        "-O2",
+        "-ffunction-sections",
+        "-fdata-sections",
+        "-Wl,--gc-sections",
+        "-s"
+      ],
+      "old": {
+        "bin": 116988,
+        "bss": 16976,
+        "data": 304,
+        "instructions_net": 8779,
+        "instructions_raw": 12151,
+        "output": "lookup: 134217728\n",
+        "text": 93240
+      },
+      "old_flags": [
+        "-std=c99",
+        "-mcrt=nix20",
+        "-m68000",
+        "-fwrapv",
+        "-O2"
+      ],
+      "profile": "hosted-amiga",
+      "program": "lookup"
+    },
+    "hosted-amiga/matrix": {
+      "c_bytes": 321907,
+      "gc": {
+        "bin": 28636,
+        "bss": 116,
+        "data": 292,
+        "instructions_net": 9361,
+        "instructions_raw": 12289,
+        "output": "matrix: 523776\n",
+        "text": 23592
+      },
+      "gc_flags": [
+        "-std=c99",
+        "-mcrt=nix20",
+        "-m68000",
+        "-fwrapv",
+        "-O2",
+        "-ffunction-sections",
+        "-fdata-sections",
+        "-Wl,--gc-sections"
+      ],
+      "host_symtab": false,
+      "kind": "scored",
+      "libs": [
+        "-lamiga",
+        "-lm"
+      ],
+      "new": {
+        "bin": 25400,
+        "bss": 116,
+        "data": 292,
+        "instructions_net": 9361,
+        "instructions_raw": 12289,
+        "output": "matrix: 523776\n",
+        "text": 23592
+      },
+      "new_flags": [
+        "-std=c99",
+        "-mcrt=nix20",
+        "-m68000",
+        "-fwrapv",
+        "-O2",
+        "-ffunction-sections",
+        "-fdata-sections",
+        "-Wl,--gc-sections",
+        "-s"
+      ],
+      "old": {
+        "bin": 100688,
+        "bss": 592,
+        "data": 304,
+        "instructions_net": 9361,
+        "instructions_raw": 12733,
+        "output": "matrix: 523776\n",
+        "text": 76948
+      },
+      "old_flags": [
+        "-std=c99",
+        "-mcrt=nix20",
+        "-m68000",
+        "-fwrapv",
+        "-O2"
+      ],
+      "profile": "hosted-amiga",
+      "program": "matrix"
+    },
+    "hosted-amiga/moves": {
+      "c_bytes": 323912,
+      "gc": {
+        "bin": 28776,
+        "bss": 116,
+        "data": 292,
+        "instructions_net": 44630,
+        "instructions_raw": 47558,
+        "output": "moves: 4523505\n",
+        "text": 23684
+      },
+      "gc_flags": [
+        "-std=c99",
+        "-mcrt=nix20",
+        "-m68000",
+        "-fwrapv",
+        "-O2",
+        "-ffunction-sections",
+        "-fdata-sections",
+        "-Wl,--gc-sections"
+      ],
+      "host_symtab": false,
+      "kind": "scored",
+      "libs": [
+        "-lamiga",
+        "-lm"
+      ],
+      "new": {
+        "bin": 25512,
+        "bss": 116,
+        "data": 292,
+        "instructions_net": 44630,
+        "instructions_raw": 47558,
+        "output": "moves: 4523505\n",
+        "text": 23684
+      },
+      "new_flags": [
+        "-std=c99",
+        "-mcrt=nix20",
+        "-m68000",
+        "-fwrapv",
+        "-O2",
+        "-ffunction-sections",
+        "-fdata-sections",
+        "-Wl,--gc-sections",
+        "-s"
+      ],
+      "old": {
+        "bin": 101080,
+        "bss": 592,
+        "data": 304,
+        "instructions_net": 44630,
+        "instructions_raw": 48002,
+        "output": "moves: 4523505\n",
+        "text": 77208
+      },
+      "old_flags": [
+        "-std=c99",
+        "-mcrt=nix20",
+        "-m68000",
+        "-fwrapv",
+        "-O2"
+      ],
+      "profile": "hosted-amiga",
+      "program": "moves"
+    },
+    "hosted-amiga/sieve": {
+      "c_bytes": 322023,
+      "gc": {
+        "bin": 28892,
+        "bss": 116,
+        "data": 292,
+        "instructions_net": 1040081,
+        "instructions_raw": 1043009,
+        "output": "sieve: 10280\n",
+        "text": 23816
+      },
+      "gc_flags": [
+        "-std=c99",
+        "-mcrt=nix20",
+        "-m68000",
+        "-fwrapv",
+        "-O2",
+        "-ffunction-sections",
+        "-fdata-sections",
+        "-Wl,--gc-sections"
+      ],
+      "host_symtab": false,
+      "kind": "scored",
+      "libs": [
+        "-lamiga",
+        "-lm"
+      ],
+      "new": {
+        "bin": 25640,
+        "bss": 116,
+        "data": 292,
+        "instructions_net": 1040081,
+        "instructions_raw": 1043009,
+        "output": "sieve: 10280\n",
+        "text": 23816
+      },
+      "new_flags": [
+        "-std=c99",
+        "-mcrt=nix20",
+        "-m68000",
+        "-fwrapv",
+        "-O2",
+        "-ffunction-sections",
+        "-fdata-sections",
+        "-Wl,--gc-sections",
+        "-s"
+      ],
+      "old": {
+        "bin": 100744,
+        "bss": 592,
+        "data": 304,
+        "instructions_net": 1040081,
+        "instructions_raw": 1043453,
+        "output": "sieve: 10280\n",
+        "text": 76996
+      },
+      "old_flags": [
+        "-std=c99",
+        "-mcrt=nix20",
+        "-m68000",
+        "-fwrapv",
+        "-O2"
+      ],
+      "profile": "hosted-amiga",
+      "program": "sieve"
+    },
+    "hosted-amiga/strings": {
+      "c_bytes": 323561,
+      "gc": {
+        "bin": 29132,
+        "bss": 116,
+        "data": 292,
+        "instructions_net": 1221232,
+        "instructions_raw": 1224160,
+        "output": "strings: 0x3F9A6\n",
+        "text": 23972
+      },
+      "gc_flags": [
+        "-std=c99",
+        "-mcrt=nix20",
+        "-m68000",
+        "-fwrapv",
+        "-O2",
+        "-ffunction-sections",
+        "-fdata-sections",
+        "-Wl,--gc-sections"
+      ],
+      "host_symtab": false,
+      "kind": "scored",
+      "libs": [
+        "-lamiga",
+        "-lm"
+      ],
+      "new": {
+        "bin": 25844,
+        "bss": 116,
+        "data": 292,
+        "instructions_net": 1221232,
+        "instructions_raw": 1224160,
+        "output": "strings: 0x3F9A6\n",
+        "text": 23972
+      },
+      "new_flags": [
+        "-std=c99",
+        "-mcrt=nix20",
+        "-m68000",
+        "-fwrapv",
+        "-O2",
+        "-ffunction-sections",
+        "-fdata-sections",
+        "-Wl,--gc-sections",
+        "-s"
+      ],
+      "old": {
+        "bin": 101516,
+        "bss": 592,
+        "data": 304,
+        "instructions_net": 1221232,
+        "instructions_raw": 1224604,
+        "output": "strings: 0x3F9A6\n",
+        "text": 77520
+      },
+      "old_flags": [
+        "-std=c99",
+        "-mcrt=nix20",
+        "-m68000",
+        "-fwrapv",
+        "-O2"
+      ],
+      "profile": "hosted-amiga",
+      "program": "strings"
+    },
+    "hosted-amiga/text-scan": {
+      "c_bytes": 326029,
+      "gc": {
+        "bin": 29228,
+        "bss": 124,
+        "data": 292,
+        "instructions_net": 375678,
+        "instructions_raw": 378606,
+        "output": "text-scan: tokens=3648 numbers=2432 words=1216 sum=146944\n",
+        "text": 24152
+      },
+      "gc_flags": [
+        "-std=c99",
+        "-mcrt=nix20",
+        "-m68000",
+        "-fwrapv",
+        "-O2",
+        "-ffunction-sections",
+        "-fdata-sections",
+        "-Wl,--gc-sections"
+      ],
+      "host_symtab": false,
+      "kind": "scored",
+      "libs": [
+        "-lamiga",
+        "-lm"
+      ],
+      "new": {
+        "bin": 25992,
+        "bss": 124,
+        "data": 292,
+        "instructions_net": 375678,
+        "instructions_raw": 378606,
+        "output": "text-scan: tokens=3648 numbers=2432 words=1216 sum=146944\n",
+        "text": 24152
+      },
+      "new_flags": [
+        "-std=c99",
+        "-mcrt=nix20",
+        "-m68000",
+        "-fwrapv",
+        "-O2",
+        "-ffunction-sections",
+        "-fdata-sections",
+        "-Wl,--gc-sections",
+        "-s"
+      ],
+      "old": {
+        "bin": 101284,
+        "bss": 600,
+        "data": 304,
+        "instructions_net": 375678,
+        "instructions_raw": 379050,
+        "output": "text-scan: tokens=3648 numbers=2432 words=1216 sum=146944\n",
+        "text": 77508
+      },
+      "old_flags": [
+        "-std=c99",
+        "-mcrt=nix20",
+        "-m68000",
+        "-fwrapv",
+        "-O2"
+      ],
+      "profile": "hosted-amiga",
+      "program": "text-scan"
+    }
+  },
+  "runs": 2,
+  "schema": 1,
+  "toolchain": {
+    "host_cc": "cc (Debian 12.2.0-14+deb12u1) 12.2.0",
+    "m68k_gcc": "m68k-amigaos-gcc (GCC) 16.2.0b 20260825082934",
+    "python": "3.11.2",
+    "vamos": "amitools 0.8.1.dev274+gd0b9727da"
+  }
+}

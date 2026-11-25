@@ -1,0 +1,260 @@
+{
+  "benchmarks": {
+    "container": {
+      "c_bytes": 327478,
+      "c_lines": 11011,
+      "duration_ms": 204,
+      "host_c_bytes": 34481,
+      "host_c_lines": 1113,
+      "host_debug_bytes": 36976,
+      "host_debug_ns": 1369607,
+      "host_release_bytes": 14544,
+      "host_release_median_ns": 786981,
+      "host_release_net_ns": 823,
+      "host_release_ns": 585827,
+      "instructions_net": 56814,
+      "instructions_raw": 59742,
+      "m68k_debug": {
+        "bss": 600,
+        "data": 338152,
+        "text": 105008
+      },
+      "m68k_release": {
+        "bss": 116,
+        "data": 292,
+        "text": 24108
+      },
+      "m68k_release_bytes": 25980,
+      "output_sha256": "4a2dfb3a716f834894f29dcf70eed7572041e3628a648c7883921720222104d7",
+      "trace_duration_ms": 2169
+    },
+    "local-table": {
+      "c_bytes": 322291,
+      "c_lines": 10805,
+      "duration_ms": 222,
+      "host_c_bytes": 29270,
+      "host_c_lines": 907,
+      "host_debug_bytes": 38592,
+      "host_debug_ns": 1037765,
+      "host_release_bytes": 14528,
+      "host_release_median_ns": 706185,
+      "host_release_net_ns": 0,
+      "host_release_ns": 538204,
+      "instructions_net": 2927,
+      "instructions_raw": 5855,
+      "m68k_debug": {
+        "bss": 600,
+        "data": 334408,
+        "text": 104932
+      },
+      "m68k_release": {
+        "bss": 116,
+        "data": 292,
+        "text": 24568
+      },
+      "m68k_release_bytes": 26380,
+      "output_sha256": "b873e6e35e48a869aca8019fdecc53f905587b29edcd7366e66e6575fc053495",
+      "trace_duration_ms": 414
+    },
+    "lookup": {
+      "c_bytes": 351242,
+      "c_lines": 11273,
+      "duration_ms": 243,
+      "host_c_bytes": 58221,
+      "host_c_lines": 1375,
+      "host_debug_bytes": 50848,
+      "host_debug_ns": 2114454,
+      "host_release_bytes": 30912,
+      "host_release_median_ns": 659218,
+      "host_release_net_ns": 0,
+      "host_release_ns": 581443,
+      "instructions_net": 8779,
+      "instructions_raw": 11707,
+      "m68k_debug": {
+        "bss": 16984,
+        "data": 334300,
+        "text": 120200
+      },
+      "m68k_release": {
+        "bss": 16500,
+        "data": 292,
+        "text": 39884
+      },
+      "m68k_release_bytes": 41700,
+      "output_sha256": "7675c31262c1d7a200445d4a25fc989f450e5c23b1e7f6b9adc2f45c0e78a445",
+      "trace_duration_ms": 615
+    },
+    "matrix": {
+      "c_bytes": 321907,
+      "c_lines": 10819,
+      "duration_ms": 199,
+      "host_c_bytes": 28886,
+      "host_c_lines": 921,
+      "host_debug_bytes": 34712,
+      "host_debug_ns": 1065034,
+      "host_release_bytes": 14528,
+      "host_release_median_ns": 825892,
+      "host_release_net_ns": 101047,
+      "host_release_ns": 686051,
+      "instructions_net": 9361,
+      "instructions_raw": 12289,
+      "m68k_debug": {
+        "bss": 604,
+        "data": 335096,
+        "text": 104180
+      },
+      "m68k_release": {
+        "bss": 116,
+        "data": 292,
+        "text": 23592
+      },
+      "m68k_release_bytes": 25400,
+      "output_sha256": "f6d1c36c51604a5968cb0fdd864938902bf90f40fddb667ee47ac932226ce58c",
+      "trace_duration_ms": 615
+    },
+    "moves": {
+      "c_bytes": 323912,
+      "c_lines": 10918,
+      "duration_ms": 196,
+      "host_c_bytes": 30933,
+      "host_c_lines": 1020,
+      "host_debug_bytes": 35904,
+      "host_debug_ns": 1142483,
+      "host_release_bytes": 14528,
+      "host_release_median_ns": 774260,
+      "host_release_net_ns": 87688,
+      "host_release_ns": 672692,
+      "instructions_net": 44630,
+      "instructions_raw": 47558,
+      "m68k_debug": {
+        "bss": 600,
+        "data": 336608,
+        "text": 104792
+      },
+      "m68k_release": {
+        "bss": 116,
+        "data": 292,
+        "text": 23684
+      },
+      "m68k_release_bytes": 25512,
+      "output_sha256": "993720c9c38195dc26c01802c60ccd61afcbe0eecdcd85f7699c44665bc4e68e",
+      "trace_duration_ms": 1773
+    },
+    "sieve": {
+      "c_bytes": 322023,
+      "c_lines": 10828,
+      "duration_ms": 211,
+      "host_c_bytes": 29002,
+      "host_c_lines": 930,
+      "host_debug_bytes": 34704,
+      "host_debug_ns": 1670234,
+      "host_release_bytes": 14528,
+      "host_release_median_ns": 933797,
+      "host_release_net_ns": 230677,
+      "host_release_ns": 815681,
+      "instructions_net": 1040081,
+      "instructions_raw": 1043009,
+      "m68k_debug": {
+        "bss": 604,
+        "data": 335072,
+        "text": 104160
+      },
+      "m68k_release": {
+        "bss": 116,
+        "data": 292,
+        "text": 23816
+      },
+      "m68k_release_bytes": 25640,
+      "output_sha256": "67092e64d1838284657b3b4cb78bce44c5ffd590dd77f61c156af23be337f234",
+      "trace_duration_ms": 33937
+    },
+    "strings": {
+      "c_bytes": 323561,
+      "c_lines": 10901,
+      "duration_ms": 619,
+      "host_c_bytes": 30606,
+      "host_c_lines": 1003,
+      "host_debug_bytes": 35928,
+      "host_debug_ns": 1946379,
+      "host_release_bytes": 14528,
+      "host_release_median_ns": 1040946,
+      "host_release_net_ns": 293143,
+      "host_release_ns": 878147,
+      "instructions_net": 1221232,
+      "instructions_raw": 1224160,
+      "m68k_debug": {
+        "bss": 600,
+        "data": 336564,
+        "text": 104636
+      },
+      "m68k_release": {
+        "bss": 116,
+        "data": 292,
+        "text": 23972
+      },
+      "m68k_release_bytes": 25844,
+      "output_sha256": "152f2f11f7e9b16cc04ae483dc6d911311be9a359ad36d1cfba97ef17a401d28",
+      "trace_duration_ms": 42582
+    },
+    "text-scan": {
+      "c_bytes": 326029,
+      "c_lines": 10935,
+      "duration_ms": 211,
+      "host_c_bytes": 33008,
+      "host_c_lines": 1037,
+      "host_debug_bytes": 35888,
+      "host_debug_ns": 1226024,
+      "host_release_bytes": 14528,
+      "host_release_median_ns": 846309,
+      "host_release_net_ns": 120251,
+      "host_release_ns": 705255,
+      "instructions_net": 375678,
+      "instructions_raw": 378606,
+      "m68k_debug": {
+        "bss": 608,
+        "data": 336676,
+        "text": 104952
+      },
+      "m68k_release": {
+        "bss": 124,
+        "data": 292,
+        "text": 24152
+      },
+      "m68k_release_bytes": 25992,
+      "output_sha256": "01131ca793888168ef3ba4b71cd09835e5cf89869efa11d0e3875e747072af86",
+      "trace_duration_ms": 12487
+    }
+  },
+  "calibration": {
+    "host_release_ns": 585004,
+    "instructions": 2928
+  },
+  "compiler": {
+    "dirty": true,
+    "git": "e24a8752b08827c3a5d7c77b6e2827dac708b629",
+    "path": "/work/build/tmp/assessment/baseline/clc",
+    "sha256": "0c2fd66e7346acd0f3c01bff7f09f51b54605c0a974f6c1d2b00cd68aa29bba6",
+    "version": "clc 1.2.0"
+  },
+  "created": "2026-11-25T18:22:25Z",
+  "flags": {
+    "host_debug": "-std=c99 -O0 -g -Wall -Wextra -Werror",
+    "host_release": "-std=c99 -O2 -ffunction-sections -fdata-sections -Wl,--gc-sections -s",
+    "m68k_debug": "-std=c99 -mcrt=nix20 -m68000 -fwrapv -O0 -g -Wall -Wextra -Werror",
+    "m68k_release": "-std=c99 -mcrt=nix20 -m68000 -fwrapv -O2 -ffunction-sections -fdata-sections -Wl,--gc-sections -s"
+  },
+  "harness_git": "a706903007c1b2d7e4abb969d2aab7d7fbf4d7bf",
+  "label": "assessment-baseline",
+  "profiles": {
+    "host": "host",
+    "m68k": "hosted-amiga"
+  },
+  "runs": 30,
+  "schema": 1,
+  "toolchain": {
+    "host_cc": "cc (Debian 12.2.0-14+deb12u1) 12.2.0",
+    "m68k_gcc": "m68k-amigaos-gcc (GCC) 16.2.0b 20260825082934",
+    "python": "3.11.2",
+    "vamos": "amitools 0.8.1.dev274+gd0b9727da"
+  }
+}

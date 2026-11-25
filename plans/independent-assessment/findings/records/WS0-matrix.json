@@ -1,0 +1,1188 @@
+{
+  "baseline": "e24a8752b08827c3a5d7c77b6e2827dac708b629",
+  "clc": {
+    "path": "/work/build/tmp/assessment/baseline/clc",
+    "sha256": "0c2fd66e7346acd0f3c01bff7f09f51b54605c0a974f6c1d2b00cd68aa29bba6"
+  },
+  "created": "2026-11-25T18:48:57Z",
+  "expectations": "/work/plans/independent-assessment/probes/WS0/ref",
+  "failures": [],
+  "lenses": {
+    "a1200": {
+      "compiler": "m68k-amigaos-gcc",
+      "flags": [
+        "-std=c99",
+        "-mcrt=nix20",
+        "-m68000",
+        "-fwrapv",
+        "-O2",
+        "-ffunction-sections",
+        "-fdata-sections",
+        "-Wl,--gc-sections",
+        "-s"
+      ],
+      "label": "A1200 shipped (hosted-amiga, nix20, 68000)",
+      "libs": [
+        "-lamiga",
+        "-lm"
+      ],
+      "profile": "hosted-amiga",
+      "vamos_cpu": "68000"
+    },
+    "a1200-020": {
+      "compiler": "m68k-amigaos-gcc",
+      "flags": [
+        "-std=c99",
+        "-mcrt=nix20",
+        "-m68020",
+        "-fwrapv",
+        "-O2",
+        "-ffunction-sections",
+        "-fdata-sections",
+        "-Wl,--gc-sections",
+        "-s"
+      ],
+      "label": "A1200 68020 probe build (hosted-amiga emission, -m68020, vamos -C 68020)",
+      "libs": [
+        "-lamiga",
+        "-lm"
+      ],
+      "profile": "hosted-amiga",
+      "vamos_cpu": "68020"
+    },
+    "a500-O2": {
+      "compiler": "m68k-amigaos-gcc",
+      "flags": [
+        "-std=c99",
+        "-mcrt=nix13",
+        "-m68000",
+        "-fwrapv",
+        "-O2",
+        "-ffunction-sections",
+        "-fdata-sections",
+        "-Wl,--gc-sections",
+        "-s"
+      ],
+      "label": "A500 shipped -O2 (hosted-amiga-13, nix13, 68000)",
+      "libs": [
+        "-lamiga",
+        "-lm"
+      ],
+      "profile": "hosted-amiga-13",
+      "vamos_cpu": "68000"
+    },
+    "a500-Os": {
+      "compiler": "m68k-amigaos-gcc",
+      "flags": [
+        "-std=c99",
+        "-mcrt=nix13",
+        "-m68000",
+        "-fwrapv",
+        "-Os",
+        "-ffunction-sections",
+        "-fdata-sections",
+        "-Wl,--gc-sections",
+        "-s"
+      ],
+      "label": "A500 shipped -Os (hosted-amiga-13, nix13, 68000)",
+      "libs": [
+        "-lamiga",
+        "-lm"
+      ],
+      "profile": "hosted-amiga-13",
+      "vamos_cpu": "68000"
+    },
+    "host": {
+      "compiler": "cc",
+      "flags": [
+        "-std=c99",
+        "-O2",
+        "-ffunction-sections",
+        "-fdata-sections",
+        "-Wl,--gc-sections",
+        "-s"
+      ],
+      "label": "Host (output check only)",
+      "libs": [],
+      "profile": "host",
+      "vamos_cpu": null
+    }
+  },
+  "plan": "plans/independent-assessment",
+  "results": {
+    "a1200": {
+      "c": {
+        "calibration": {
+          "bss": 116,
+          "command": "m68k-amigaos-gcc -std=c99 -mcrt=nix20 -m68000 -fwrapv -O2 -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o /work/build/tmp/assessment/WS0/matrix/a1200/c/calibration/prog /work/plans/independent-assessment/probes/WS0/ref/calibration.c -lamiga -lm",
+          "cpu": "68000",
+          "data": 284,
+          "instructions_net": 0,
+          "instructions_raw": 2927,
+          "output": "calibration: ok\n",
+          "output_ok": true,
+          "text": 4740,
+          "text_net": 0,
+          "trace_output_ok": true
+        },
+        "container": {
+          "bss": 116,
+          "command": "m68k-amigaos-gcc -std=c99 -mcrt=nix20 -m68000 -fwrapv -O2 -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o /work/build/tmp/assessment/WS0/matrix/a1200/c/container/prog /work/plans/independent-assessment/probes/WS0/ref/container.c -lamiga -lm",
+          "cpu": "68000",
+          "data": 292,
+          "instructions_net": 40928,
+          "instructions_raw": 43855,
+          "output": "container: 10475520 1024\n",
+          "output_ok": true,
+          "text": 22168,
+          "text_net": 17428,
+          "trace_output_ok": true
+        },
+        "local-table": {
+          "bss": 116,
+          "command": "m68k-amigaos-gcc -std=c99 -mcrt=nix20 -m68000 -fwrapv -O2 -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o /work/build/tmp/assessment/WS0/matrix/a1200/c/local-table/prog /work/plans/independent-assessment/probes/WS0/ref/local-table.c -lamiga -lm",
+          "cpu": "68000",
+          "data": 1316,
+          "instructions_net": 2801,
+          "instructions_raw": 5728,
+          "output": "local-table: 2661699584\n",
+          "output_ok": true,
+          "text": 21936,
+          "text_net": 17196,
+          "trace_output_ok": true
+        },
+        "lookup": {
+          "bss": 116,
+          "command": "m68k-amigaos-gcc -std=c99 -mcrt=nix20 -m68000 -fwrapv -O2 -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o /work/build/tmp/assessment/WS0/matrix/a1200/c/lookup/prog /work/plans/independent-assessment/probes/WS0/ref/lookup.c -lamiga -lm",
+          "cpu": "68000",
+          "data": 292,
+          "instructions_net": 8646,
+          "instructions_raw": 11573,
+          "output": "lookup: 134217728\n",
+          "output_ok": true,
+          "text": 38272,
+          "text_net": 33532,
+          "trace_output_ok": true
+        },
+        "matrix": {
+          "bss": 116,
+          "command": "m68k-amigaos-gcc -std=c99 -mcrt=nix20 -m68000 -fwrapv -O2 -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o /work/build/tmp/assessment/WS0/matrix/a1200/c/matrix/prog /work/plans/independent-assessment/probes/WS0/ref/matrix.c -lamiga -lm",
+          "cpu": "68000",
+          "data": 292,
+          "instructions_net": 10297,
+          "instructions_raw": 13224,
+          "output": "matrix: 523776\n",
+          "output_ok": true,
+          "text": 21984,
+          "text_net": 17244,
+          "trace_output_ok": true
+        },
+        "moves": {
+          "bss": 116,
+          "command": "m68k-amigaos-gcc -std=c99 -mcrt=nix20 -m68000 -fwrapv -O2 -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o /work/build/tmp/assessment/WS0/matrix/a1200/c/moves/prog /work/plans/independent-assessment/probes/WS0/ref/moves.c -lamiga -lm",
+          "cpu": "68000",
+          "data": 292,
+          "instructions_net": 53474,
+          "instructions_raw": 56401,
+          "output": "moves: 4523505\n",
+          "output_ok": true,
+          "text": 21996,
+          "text_net": 17256,
+          "trace_output_ok": true
+        },
+        "sieve": {
+          "bss": 116,
+          "command": "m68k-amigaos-gcc -std=c99 -mcrt=nix20 -m68000 -fwrapv -O2 -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o /work/build/tmp/assessment/WS0/matrix/a1200/c/sieve/prog /work/plans/independent-assessment/probes/WS0/ref/sieve.c -lamiga -lm",
+          "cpu": "68000",
+          "data": 292,
+          "instructions_net": 1039965,
+          "instructions_raw": 1042892,
+          "output": "sieve: 10280\n",
+          "output_ok": true,
+          "text": 22264,
+          "text_net": 17524,
+          "trace_output_ok": true
+        },
+        "strings": {
+          "bss": 116,
+          "command": "m68k-amigaos-gcc -std=c99 -mcrt=nix20 -m68000 -fwrapv -O2 -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o /work/build/tmp/assessment/WS0/matrix/a1200/c/strings/prog /work/plans/independent-assessment/probes/WS0/ref/strings.c -lamiga -lm",
+          "cpu": "68000",
+          "data": 292,
+          "instructions_net": 806933,
+          "instructions_raw": 809860,
+          "output": "strings: 0x3F9A6\n",
+          "output_ok": true,
+          "text": 22204,
+          "text_net": 17464,
+          "trace_output_ok": true
+        },
+        "text-scan": {
+          "bss": 116,
+          "command": "m68k-amigaos-gcc -std=c99 -mcrt=nix20 -m68000 -fwrapv -O2 -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o /work/build/tmp/assessment/WS0/matrix/a1200/c/text-scan/prog /work/plans/independent-assessment/probes/WS0/ref/text-scan.c -lamiga -lm",
+          "cpu": "68000",
+          "data": 292,
+          "instructions_net": 346176,
+          "instructions_raw": 349103,
+          "output": "text-scan: tokens=3648 numbers=2432 words=1216 sum=146944\n",
+          "output_ok": true,
+          "text": 22540,
+          "text_net": 17800,
+          "trace_output_ok": true
+        }
+      },
+      "clo": {
+        "calibration": {
+          "bss": 116,
+          "command": "m68k-amigaos-gcc -std=c99 -mcrt=nix20 -m68000 -fwrapv -O2 -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o /work/build/tmp/assessment/WS0/matrix/a1200/clo/calibration/prog /work/build/tmp/assessment/WS0/matrix/a1200/clo/calibration/prog.c -lamiga -lm",
+          "cpu": "68000",
+          "data": 284,
+          "instructions_net": 0,
+          "instructions_raw": 2928,
+          "output": "calibration: ok\n",
+          "output_ok": true,
+          "text": 5952,
+          "text_net": 0,
+          "trace_output_ok": true
+        },
+        "container": {
+          "bss": 116,
+          "command": "m68k-amigaos-gcc -std=c99 -mcrt=nix20 -m68000 -fwrapv -O2 -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o /work/build/tmp/assessment/WS0/matrix/a1200/clo/container/prog /work/build/tmp/assessment/WS0/matrix/a1200/clo/container/prog.c -lamiga -lm",
+          "cpu": "68000",
+          "data": 292,
+          "instructions_net": 56814,
+          "instructions_raw": 59742,
+          "output": "container: 10475520 1024\n",
+          "output_ok": true,
+          "text": 24108,
+          "text_net": 18156,
+          "trace_output_ok": true
+        },
+        "local-table": {
+          "bss": 116,
+          "command": "m68k-amigaos-gcc -std=c99 -mcrt=nix20 -m68000 -fwrapv -O2 -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o /work/build/tmp/assessment/WS0/matrix/a1200/clo/local-table/prog /work/build/tmp/assessment/WS0/matrix/a1200/clo/local-table/prog.c -lamiga -lm",
+          "cpu": "68000",
+          "data": 292,
+          "instructions_net": 2927,
+          "instructions_raw": 5855,
+          "output": "local-table: 2661699584\n",
+          "output_ok": true,
+          "text": 24568,
+          "text_net": 18616,
+          "trace_output_ok": true
+        },
+        "lookup": {
+          "bss": 16500,
+          "command": "m68k-amigaos-gcc -std=c99 -mcrt=nix20 -m68000 -fwrapv -O2 -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o /work/build/tmp/assessment/WS0/matrix/a1200/clo/lookup/prog /work/build/tmp/assessment/WS0/matrix/a1200/clo/lookup/prog.c -lamiga -lm",
+          "cpu": "68000",
+          "data": 292,
+          "instructions_net": 8779,
+          "instructions_raw": 11707,
+          "output": "lookup: 134217728\n",
+          "output_ok": true,
+          "text": 39884,
+          "text_net": 33932,
+          "trace_output_ok": true
+        },
+        "matrix": {
+          "bss": 116,
+          "command": "m68k-amigaos-gcc -std=c99 -mcrt=nix20 -m68000 -fwrapv -O2 -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o /work/build/tmp/assessment/WS0/matrix/a1200/clo/matrix/prog /work/build/tmp/assessment/WS0/matrix/a1200/clo/matrix/prog.c -lamiga -lm",
+          "cpu": "68000",
+          "data": 292,
+          "instructions_net": 9361,
+          "instructions_raw": 12289,
+          "output": "matrix: 523776\n",
+          "output_ok": true,
+          "text": 23592,
+          "text_net": 17640,
+          "trace_output_ok": true
+        },
+        "moves": {
+          "bss": 116,
+          "command": "m68k-amigaos-gcc -std=c99 -mcrt=nix20 -m68000 -fwrapv -O2 -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o /work/build/tmp/assessment/WS0/matrix/a1200/clo/moves/prog /work/build/tmp/assessment/WS0/matrix/a1200/clo/moves/prog.c -lamiga -lm",
+          "cpu": "68000",
+          "data": 292,
+          "instructions_net": 44630,
+          "instructions_raw": 47558,
+          "output": "moves: 4523505\n",
+          "output_ok": true,
+          "text": 23684,
+          "text_net": 17732,
+          "trace_output_ok": true
+        },
+        "sieve": {
+          "bss": 116,
+          "command": "m68k-amigaos-gcc -std=c99 -mcrt=nix20 -m68000 -fwrapv -O2 -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o /work/build/tmp/assessment/WS0/matrix/a1200/clo/sieve/prog /work/build/tmp/assessment/WS0/matrix/a1200/clo/sieve/prog.c -lamiga -lm",
+          "cpu": "68000",
+          "data": 292,
+          "instructions_net": 1040081,
+          "instructions_raw": 1043009,
+          "output": "sieve: 10280\n",
+          "output_ok": true,
+          "text": 23816,
+          "text_net": 17864,
+          "trace_output_ok": true
+        },
+        "strings": {
+          "bss": 116,
+          "command": "m68k-amigaos-gcc -std=c99 -mcrt=nix20 -m68000 -fwrapv -O2 -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o /work/build/tmp/assessment/WS0/matrix/a1200/clo/strings/prog /work/build/tmp/assessment/WS0/matrix/a1200/clo/strings/prog.c -lamiga -lm",
+          "cpu": "68000",
+          "data": 292,
+          "instructions_net": 1221232,
+          "instructions_raw": 1224160,
+          "output": "strings: 0x3F9A6\n",
+          "output_ok": true,
+          "text": 23972,
+          "text_net": 18020,
+          "trace_output_ok": true
+        },
+        "text-scan": {
+          "bss": 124,
+          "command": "m68k-amigaos-gcc -std=c99 -mcrt=nix20 -m68000 -fwrapv -O2 -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o /work/build/tmp/assessment/WS0/matrix/a1200/clo/text-scan/prog /work/build/tmp/assessment/WS0/matrix/a1200/clo/text-scan/prog.c -lamiga -lm",
+          "cpu": "68000",
+          "data": 292,
+          "instructions_net": 375678,
+          "instructions_raw": 378606,
+          "output": "text-scan: tokens=3648 numbers=2432 words=1216 sum=146944\n",
+          "output_ok": true,
+          "text": 24152,
+          "text_net": 18200,
+          "trace_output_ok": true
+        }
+      }
+    },
+    "a1200-020": {
+      "c": {
+        "calibration": {
+          "bss": 116,
+          "command": "m68k-amigaos-gcc -std=c99 -mcrt=nix20 -m68020 -fwrapv -O2 -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o /work/build/tmp/assessment/WS0/matrix/a1200-020/c/calibration/prog /work/plans/independent-assessment/probes/WS0/ref/calibration.c -lamiga -lm",
+          "cpu": "68020",
+          "data": 276,
+          "instructions_net": 0,
+          "instructions_raw": 2882,
+          "output": "calibration: ok\n",
+          "output_ok": true,
+          "text": 4656,
+          "text_net": 0,
+          "trace_output_ok": true
+        },
+        "container": {
+          "bss": 116,
+          "command": "m68k-amigaos-gcc -std=c99 -mcrt=nix20 -m68020 -fwrapv -O2 -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o /work/build/tmp/assessment/WS0/matrix/a1200-020/c/container/prog /work/plans/independent-assessment/probes/WS0/ref/container.c -lamiga -lm",
+          "cpu": "68020",
+          "data": 284,
+          "instructions_net": 41793,
+          "instructions_raw": 44675,
+          "output": "container: 10475520 1024\n",
+          "output_ok": true,
+          "text": 21648,
+          "text_net": 16992,
+          "trace_output_ok": true
+        },
+        "local-table": {
+          "bss": 116,
+          "command": "m68k-amigaos-gcc -std=c99 -mcrt=nix20 -m68020 -fwrapv -O2 -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o /work/build/tmp/assessment/WS0/matrix/a1200-020/c/local-table/prog /work/plans/independent-assessment/probes/WS0/ref/local-table.c -lamiga -lm",
+          "cpu": "68020",
+          "data": 1308,
+          "instructions_net": 2646,
+          "instructions_raw": 5528,
+          "output": "local-table: 2661699584\n",
+          "output_ok": true,
+          "text": 21408,
+          "text_net": 16752,
+          "trace_output_ok": true
+        },
+        "lookup": {
+          "bss": 116,
+          "command": "m68k-amigaos-gcc -std=c99 -mcrt=nix20 -m68020 -fwrapv -O2 -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o /work/build/tmp/assessment/WS0/matrix/a1200-020/c/lookup/prog /work/plans/independent-assessment/probes/WS0/ref/lookup.c -lamiga -lm",
+          "cpu": "68020",
+          "data": 284,
+          "instructions_net": 8490,
+          "instructions_raw": 11372,
+          "output": "lookup: 134217728\n",
+          "output_ok": true,
+          "text": 37740,
+          "text_net": 33084,
+          "trace_output_ok": true
+        },
+        "matrix": {
+          "bss": 116,
+          "command": "m68k-amigaos-gcc -std=c99 -mcrt=nix20 -m68020 -fwrapv -O2 -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o /work/build/tmp/assessment/WS0/matrix/a1200-020/c/matrix/prog /work/plans/independent-assessment/probes/WS0/ref/matrix.c -lamiga -lm",
+          "cpu": "68020",
+          "data": 284,
+          "instructions_net": 10233,
+          "instructions_raw": 13115,
+          "output": "matrix: 523776\n",
+          "output_ok": true,
+          "text": 21456,
+          "text_net": 16800,
+          "trace_output_ok": true
+        },
+        "moves": {
+          "bss": 116,
+          "command": "m68k-amigaos-gcc -std=c99 -mcrt=nix20 -m68020 -fwrapv -O2 -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o /work/build/tmp/assessment/WS0/matrix/a1200-020/c/moves/prog /work/plans/independent-assessment/probes/WS0/ref/moves.c -lamiga -lm",
+          "cpu": "68020",
+          "data": 284,
+          "instructions_net": 44364,
+          "instructions_raw": 47246,
+          "output": "moves: 4523505\n",
+          "output_ok": true,
+          "text": 21468,
+          "text_net": 16812,
+          "trace_output_ok": true
+        },
+        "sieve": {
+          "bss": 116,
+          "command": "m68k-amigaos-gcc -std=c99 -mcrt=nix20 -m68020 -fwrapv -O2 -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o /work/build/tmp/assessment/WS0/matrix/a1200-020/c/sieve/prog /work/plans/independent-assessment/probes/WS0/ref/sieve.c -lamiga -lm",
+          "cpu": "68020",
+          "data": 284,
+          "instructions_net": 1040172,
+          "instructions_raw": 1043054,
+          "output": "sieve: 10280\n",
+          "output_ok": true,
+          "text": 21748,
+          "text_net": 17092,
+          "trace_output_ok": true
+        },
+        "strings": {
+          "bss": 116,
+          "command": "m68k-amigaos-gcc -std=c99 -mcrt=nix20 -m68020 -fwrapv -O2 -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o /work/build/tmp/assessment/WS0/matrix/a1200-020/c/strings/prog /work/plans/independent-assessment/probes/WS0/ref/strings.c -lamiga -lm",
+          "cpu": "68020",
+          "data": 284,
+          "instructions_net": 596200,
+          "instructions_raw": 599082,
+          "output": "strings: 0x3F9A6\n",
+          "output_ok": true,
+          "text": 21664,
+          "text_net": 17008,
+          "trace_output_ok": true
+        },
+        "text-scan": {
+          "bss": 116,
+          "command": "m68k-amigaos-gcc -std=c99 -mcrt=nix20 -m68020 -fwrapv -O2 -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o /work/build/tmp/assessment/WS0/matrix/a1200-020/c/text-scan/prog /work/plans/independent-assessment/probes/WS0/ref/text-scan.c -lamiga -lm",
+          "cpu": "68020",
+          "data": 284,
+          "instructions_net": 334344,
+          "instructions_raw": 337226,
+          "output": "text-scan: tokens=3648 numbers=2432 words=1216 sum=146944\n",
+          "output_ok": true,
+          "text": 22000,
+          "text_net": 17344,
+          "trace_output_ok": true
+        }
+      },
+      "clo": {
+        "calibration": {
+          "bss": 116,
+          "command": "m68k-amigaos-gcc -std=c99 -mcrt=nix20 -m68020 -fwrapv -O2 -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o /work/build/tmp/assessment/WS0/matrix/a1200-020/clo/calibration/prog /work/build/tmp/assessment/WS0/matrix/a1200-020/clo/calibration/prog.c -lamiga -lm",
+          "cpu": "68020",
+          "data": 284,
+          "instructions_net": 0,
+          "instructions_raw": 3042,
+          "output": "calibration: ok\n",
+          "output_ok": true,
+          "text": 5884,
+          "text_net": 0,
+          "trace_output_ok": true
+        },
+        "container": {
+          "bss": 116,
+          "command": "m68k-amigaos-gcc -std=c99 -mcrt=nix20 -m68020 -fwrapv -O2 -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o /work/build/tmp/assessment/WS0/matrix/a1200-020/clo/container/prog /work/build/tmp/assessment/WS0/matrix/a1200-020/clo/container/prog.c -lamiga -lm",
+          "cpu": "68020",
+          "data": 292,
+          "instructions_net": 68928,
+          "instructions_raw": 71970,
+          "output": "container: 10475520 1024\n",
+          "output_ok": true,
+          "text": 23612,
+          "text_net": 17728,
+          "trace_output_ok": true
+        },
+        "local-table": {
+          "bss": 116,
+          "command": "m68k-amigaos-gcc -std=c99 -mcrt=nix20 -m68020 -fwrapv -O2 -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o /work/build/tmp/assessment/WS0/matrix/a1200-020/clo/local-table/prog /work/build/tmp/assessment/WS0/matrix/a1200-020/clo/local-table/prog.c -lamiga -lm",
+          "cpu": "68020",
+          "data": 292,
+          "instructions_net": 2799,
+          "instructions_raw": 5841,
+          "output": "local-table: 2661699584\n",
+          "output_ok": true,
+          "text": 24080,
+          "text_net": 18196,
+          "trace_output_ok": true
+        },
+        "lookup": {
+          "bss": 16500,
+          "command": "m68k-amigaos-gcc -std=c99 -mcrt=nix20 -m68020 -fwrapv -O2 -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o /work/build/tmp/assessment/WS0/matrix/a1200-020/clo/lookup/prog /work/build/tmp/assessment/WS0/matrix/a1200-020/clo/lookup/prog.c -lamiga -lm",
+          "cpu": "68020",
+          "data": 292,
+          "instructions_net": 8661,
+          "instructions_raw": 11703,
+          "output": "lookup: 134217728\n",
+          "output_ok": true,
+          "text": 39392,
+          "text_net": 33508,
+          "trace_output_ok": true
+        },
+        "matrix": {
+          "bss": 116,
+          "command": "m68k-amigaos-gcc -std=c99 -mcrt=nix20 -m68020 -fwrapv -O2 -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o /work/build/tmp/assessment/WS0/matrix/a1200-020/clo/matrix/prog /work/build/tmp/assessment/WS0/matrix/a1200-020/clo/matrix/prog.c -lamiga -lm",
+          "cpu": "68020",
+          "data": 292,
+          "instructions_net": 9314,
+          "instructions_raw": 12356,
+          "output": "matrix: 523776\n",
+          "output_ok": true,
+          "text": 23092,
+          "text_net": 17208,
+          "trace_output_ok": true
+        },
+        "moves": {
+          "bss": 116,
+          "command": "m68k-amigaos-gcc -std=c99 -mcrt=nix20 -m68020 -fwrapv -O2 -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o /work/build/tmp/assessment/WS0/matrix/a1200-020/clo/moves/prog /work/build/tmp/assessment/WS0/matrix/a1200-020/clo/moves/prog.c -lamiga -lm",
+          "cpu": "68020",
+          "data": 292,
+          "instructions_net": 44542,
+          "instructions_raw": 47584,
+          "output": "moves: 4523505\n",
+          "output_ok": true,
+          "text": 23192,
+          "text_net": 17308,
+          "trace_output_ok": true
+        },
+        "sieve": {
+          "bss": 116,
+          "command": "m68k-amigaos-gcc -std=c99 -mcrt=nix20 -m68020 -fwrapv -O2 -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o /work/build/tmp/assessment/WS0/matrix/a1200-020/clo/sieve/prog /work/build/tmp/assessment/WS0/matrix/a1200-020/clo/sieve/prog.c -lamiga -lm",
+          "cpu": "68020",
+          "data": 292,
+          "instructions_net": 1040307,
+          "instructions_raw": 1043349,
+          "output": "sieve: 10280\n",
+          "output_ok": true,
+          "text": 23332,
+          "text_net": 17448,
+          "trace_output_ok": true
+        },
+        "strings": {
+          "bss": 116,
+          "command": "m68k-amigaos-gcc -std=c99 -mcrt=nix20 -m68020 -fwrapv -O2 -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o /work/build/tmp/assessment/WS0/matrix/a1200-020/clo/strings/prog /work/build/tmp/assessment/WS0/matrix/a1200-020/clo/strings/prog.c -lamiga -lm",
+          "cpu": "68020",
+          "data": 292,
+          "instructions_net": 1022503,
+          "instructions_raw": 1025545,
+          "output": "strings: 0x3F9A6\n",
+          "output_ok": true,
+          "text": 23476,
+          "text_net": 17592,
+          "trace_output_ok": true
+        },
+        "text-scan": {
+          "bss": 124,
+          "command": "m68k-amigaos-gcc -std=c99 -mcrt=nix20 -m68020 -fwrapv -O2 -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o /work/build/tmp/assessment/WS0/matrix/a1200-020/clo/text-scan/prog /work/build/tmp/assessment/WS0/matrix/a1200-020/clo/text-scan/prog.c -lamiga -lm",
+          "cpu": "68020",
+          "data": 292,
+          "instructions_net": 361604,
+          "instructions_raw": 364646,
+          "output": "text-scan: tokens=3648 numbers=2432 words=1216 sum=146944\n",
+          "output_ok": true,
+          "text": 23644,
+          "text_net": 17760,
+          "trace_output_ok": true
+        }
+      }
+    },
+    "a500-O2": {
+      "c": {
+        "calibration": {
+          "bss": 120,
+          "command": "m68k-amigaos-gcc -std=c99 -mcrt=nix13 -m68000 -fwrapv -O2 -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o /work/build/tmp/assessment/WS0/matrix/a500-O2/c/calibration/prog /work/plans/independent-assessment/probes/WS0/ref/calibration.c -lamiga -lm",
+          "cpu": "68000",
+          "data": 272,
+          "instructions_net": 0,
+          "instructions_raw": 2918,
+          "output": "calibration: ok\n",
+          "output_ok": true,
+          "text": 5124,
+          "text_net": 0,
+          "trace_output_ok": true
+        },
+        "container": {
+          "bss": 120,
+          "command": "m68k-amigaos-gcc -std=c99 -mcrt=nix13 -m68000 -fwrapv -O2 -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o /work/build/tmp/assessment/WS0/matrix/a500-O2/c/container/prog /work/plans/independent-assessment/probes/WS0/ref/container.c -lamiga -lm",
+          "cpu": "68000",
+          "data": 280,
+          "instructions_net": 41312,
+          "instructions_raw": 44230,
+          "output": "container: 10475520 1024\n",
+          "output_ok": true,
+          "text": 22552,
+          "text_net": 17428,
+          "trace_output_ok": true
+        },
+        "local-table": {
+          "bss": 120,
+          "command": "m68k-amigaos-gcc -std=c99 -mcrt=nix13 -m68000 -fwrapv -O2 -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o /work/build/tmp/assessment/WS0/matrix/a500-O2/c/local-table/prog /work/plans/independent-assessment/probes/WS0/ref/local-table.c -lamiga -lm",
+          "cpu": "68000",
+          "data": 1304,
+          "instructions_net": 3121,
+          "instructions_raw": 6039,
+          "output": "local-table: 2661699584\n",
+          "output_ok": true,
+          "text": 22320,
+          "text_net": 17196,
+          "trace_output_ok": true
+        },
+        "lookup": {
+          "bss": 120,
+          "command": "m68k-amigaos-gcc -std=c99 -mcrt=nix13 -m68000 -fwrapv -O2 -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o /work/build/tmp/assessment/WS0/matrix/a500-O2/c/lookup/prog /work/plans/independent-assessment/probes/WS0/ref/lookup.c -lamiga -lm",
+          "cpu": "68000",
+          "data": 280,
+          "instructions_net": 8934,
+          "instructions_raw": 11852,
+          "output": "lookup: 134217728\n",
+          "output_ok": true,
+          "text": 38656,
+          "text_net": 33532,
+          "trace_output_ok": true
+        },
+        "matrix": {
+          "bss": 120,
+          "command": "m68k-amigaos-gcc -std=c99 -mcrt=nix13 -m68000 -fwrapv -O2 -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o /work/build/tmp/assessment/WS0/matrix/a500-O2/c/matrix/prog /work/plans/independent-assessment/probes/WS0/ref/matrix.c -lamiga -lm",
+          "cpu": "68000",
+          "data": 280,
+          "instructions_net": 10489,
+          "instructions_raw": 13407,
+          "output": "matrix: 523776\n",
+          "output_ok": true,
+          "text": 22368,
+          "text_net": 17244,
+          "trace_output_ok": true
+        },
+        "moves": {
+          "bss": 120,
+          "command": "m68k-amigaos-gcc -std=c99 -mcrt=nix13 -m68000 -fwrapv -O2 -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o /work/build/tmp/assessment/WS0/matrix/a500-O2/c/moves/prog /work/plans/independent-assessment/probes/WS0/ref/moves.c -lamiga -lm",
+          "cpu": "68000",
+          "data": 280,
+          "instructions_net": 53698,
+          "instructions_raw": 56616,
+          "output": "moves: 4523505\n",
+          "output_ok": true,
+          "text": 22380,
+          "text_net": 17256,
+          "trace_output_ok": true
+        },
+        "sieve": {
+          "bss": 120,
+          "command": "m68k-amigaos-gcc -std=c99 -mcrt=nix13 -m68000 -fwrapv -O2 -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o /work/build/tmp/assessment/WS0/matrix/a500-O2/c/sieve/prog /work/plans/independent-assessment/probes/WS0/ref/sieve.c -lamiga -lm",
+          "cpu": "68000",
+          "data": 280,
+          "instructions_net": 1040125,
+          "instructions_raw": 1043043,
+          "output": "sieve: 10280\n",
+          "output_ok": true,
+          "text": 22648,
+          "text_net": 17524,
+          "trace_output_ok": true
+        },
+        "strings": {
+          "bss": 120,
+          "command": "m68k-amigaos-gcc -std=c99 -mcrt=nix13 -m68000 -fwrapv -O2 -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o /work/build/tmp/assessment/WS0/matrix/a500-O2/c/strings/prog /work/plans/independent-assessment/probes/WS0/ref/strings.c -lamiga -lm",
+          "cpu": "68000",
+          "data": 280,
+          "instructions_net": 1271509,
+          "instructions_raw": 1274427,
+          "output": "strings: 0x3F9A6\n",
+          "output_ok": true,
+          "text": 22588,
+          "text_net": 17464,
+          "trace_output_ok": true
+        },
+        "text-scan": {
+          "bss": 120,
+          "command": "m68k-amigaos-gcc -std=c99 -mcrt=nix13 -m68000 -fwrapv -O2 -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o /work/build/tmp/assessment/WS0/matrix/a500-O2/c/text-scan/prog /work/plans/independent-assessment/probes/WS0/ref/text-scan.c -lamiga -lm",
+          "cpu": "68000",
+          "data": 280,
+          "instructions_net": 346752,
+          "instructions_raw": 349670,
+          "output": "text-scan: tokens=3648 numbers=2432 words=1216 sum=146944\n",
+          "output_ok": true,
+          "text": 22924,
+          "text_net": 17800,
+          "trace_output_ok": true
+        }
+      },
+      "clo": {
+        "calibration": {
+          "bss": 120,
+          "command": "m68k-amigaos-gcc -std=c99 -mcrt=nix13 -m68000 -fwrapv -O2 -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o /work/build/tmp/assessment/WS0/matrix/a500-O2/clo/calibration/prog /work/build/tmp/assessment/WS0/matrix/a500-O2/clo/calibration/prog.c -lamiga -lm",
+          "cpu": "68000",
+          "data": 272,
+          "instructions_net": 0,
+          "instructions_raw": 2919,
+          "output": "calibration: ok\n",
+          "output_ok": true,
+          "text": 5900,
+          "text_net": 0,
+          "trace_output_ok": true
+        },
+        "container": {
+          "bss": 120,
+          "command": "m68k-amigaos-gcc -std=c99 -mcrt=nix13 -m68000 -fwrapv -O2 -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o /work/build/tmp/assessment/WS0/matrix/a500-O2/clo/container/prog /work/build/tmp/assessment/WS0/matrix/a500-O2/clo/container/prog.c -lamiga -lm",
+          "cpu": "68000",
+          "data": 280,
+          "instructions_net": 57198,
+          "instructions_raw": 60117,
+          "output": "container: 10475520 1024\n",
+          "output_ok": true,
+          "text": 24056,
+          "text_net": 18156,
+          "trace_output_ok": true
+        },
+        "local-table": {
+          "bss": 120,
+          "command": "m68k-amigaos-gcc -std=c99 -mcrt=nix13 -m68000 -fwrapv -O2 -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o /work/build/tmp/assessment/WS0/matrix/a500-O2/clo/local-table/prog /work/build/tmp/assessment/WS0/matrix/a500-O2/clo/local-table/prog.c -lamiga -lm",
+          "cpu": "68000",
+          "data": 280,
+          "instructions_net": 3247,
+          "instructions_raw": 6166,
+          "output": "local-table: 2661699584\n",
+          "output_ok": true,
+          "text": 24520,
+          "text_net": 18620,
+          "trace_output_ok": true
+        },
+        "lookup": {
+          "bss": 16504,
+          "command": "m68k-amigaos-gcc -std=c99 -mcrt=nix13 -m68000 -fwrapv -O2 -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o /work/build/tmp/assessment/WS0/matrix/a500-O2/clo/lookup/prog /work/build/tmp/assessment/WS0/matrix/a500-O2/clo/lookup/prog.c -lamiga -lm",
+          "cpu": "68000",
+          "data": 280,
+          "instructions_net": 9066,
+          "instructions_raw": 11985,
+          "output": "lookup: 134217728\n",
+          "output_ok": true,
+          "text": 39832,
+          "text_net": 33932,
+          "trace_output_ok": true
+        },
+        "matrix": {
+          "bss": 120,
+          "command": "m68k-amigaos-gcc -std=c99 -mcrt=nix13 -m68000 -fwrapv -O2 -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o /work/build/tmp/assessment/WS0/matrix/a500-O2/clo/matrix/prog /work/build/tmp/assessment/WS0/matrix/a500-O2/clo/matrix/prog.c -lamiga -lm",
+          "cpu": "68000",
+          "data": 280,
+          "instructions_net": 9553,
+          "instructions_raw": 12472,
+          "output": "matrix: 523776\n",
+          "output_ok": true,
+          "text": 23544,
+          "text_net": 17644,
+          "trace_output_ok": true
+        },
+        "moves": {
+          "bss": 120,
+          "command": "m68k-amigaos-gcc -std=c99 -mcrt=nix13 -m68000 -fwrapv -O2 -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o /work/build/tmp/assessment/WS0/matrix/a500-O2/clo/moves/prog /work/build/tmp/assessment/WS0/matrix/a500-O2/clo/moves/prog.c -lamiga -lm",
+          "cpu": "68000",
+          "data": 280,
+          "instructions_net": 44854,
+          "instructions_raw": 47773,
+          "output": "moves: 4523505\n",
+          "output_ok": true,
+          "text": 23632,
+          "text_net": 17732,
+          "trace_output_ok": true
+        },
+        "sieve": {
+          "bss": 120,
+          "command": "m68k-amigaos-gcc -std=c99 -mcrt=nix13 -m68000 -fwrapv -O2 -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o /work/build/tmp/assessment/WS0/matrix/a500-O2/clo/sieve/prog /work/build/tmp/assessment/WS0/matrix/a500-O2/clo/sieve/prog.c -lamiga -lm",
+          "cpu": "68000",
+          "data": 280,
+          "instructions_net": 1040251,
+          "instructions_raw": 1043170,
+          "output": "sieve: 10280\n",
+          "output_ok": true,
+          "text": 23772,
+          "text_net": 17872,
+          "trace_output_ok": true
+        },
+        "strings": {
+          "bss": 120,
+          "command": "m68k-amigaos-gcc -std=c99 -mcrt=nix13 -m68000 -fwrapv -O2 -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o /work/build/tmp/assessment/WS0/matrix/a500-O2/clo/strings/prog /work/build/tmp/assessment/WS0/matrix/a500-O2/clo/strings/prog.c -lamiga -lm",
+          "cpu": "68000",
+          "data": 280,
+          "instructions_net": 1685808,
+          "instructions_raw": 1688727,
+          "output": "strings: 0x3F9A6\n",
+          "output_ok": true,
+          "text": 23920,
+          "text_net": 18020,
+          "trace_output_ok": true
+        },
+        "text-scan": {
+          "bss": 128,
+          "command": "m68k-amigaos-gcc -std=c99 -mcrt=nix13 -m68000 -fwrapv -O2 -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o /work/build/tmp/assessment/WS0/matrix/a500-O2/clo/text-scan/prog /work/build/tmp/assessment/WS0/matrix/a500-O2/clo/text-scan/prog.c -lamiga -lm",
+          "cpu": "68000",
+          "data": 280,
+          "instructions_net": 371325,
+          "instructions_raw": 374244,
+          "output": "text-scan: tokens=3648 numbers=2432 words=1216 sum=146944\n",
+          "output_ok": true,
+          "text": 24084,
+          "text_net": 18184,
+          "trace_output_ok": true
+        }
+      }
+    },
+    "a500-Os": {
+      "c": {
+        "calibration": {
+          "bss": 120,
+          "command": "m68k-amigaos-gcc -std=c99 -mcrt=nix13 -m68000 -fwrapv -Os -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o /work/build/tmp/assessment/WS0/matrix/a500-Os/c/calibration/prog /work/plans/independent-assessment/probes/WS0/ref/calibration.c -lamiga -lm",
+          "cpu": "68000",
+          "data": 272,
+          "instructions_net": 0,
+          "instructions_raw": 2918,
+          "output": "calibration: ok\n",
+          "output_ok": true,
+          "text": 5124,
+          "text_net": 0,
+          "trace_output_ok": true
+        },
+        "container": {
+          "bss": 120,
+          "command": "m68k-amigaos-gcc -std=c99 -mcrt=nix13 -m68000 -fwrapv -Os -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o /work/build/tmp/assessment/WS0/matrix/a500-Os/c/container/prog /work/plans/independent-assessment/probes/WS0/ref/container.c -lamiga -lm",
+          "cpu": "68000",
+          "data": 280,
+          "instructions_net": 45366,
+          "instructions_raw": 48284,
+          "output": "container: 10475520 1024\n",
+          "output_ok": true,
+          "text": 22540,
+          "text_net": 17416,
+          "trace_output_ok": true
+        },
+        "local-table": {
+          "bss": 120,
+          "command": "m68k-amigaos-gcc -std=c99 -mcrt=nix13 -m68000 -fwrapv -Os -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o /work/build/tmp/assessment/WS0/matrix/a500-Os/c/local-table/prog /work/plans/independent-assessment/probes/WS0/ref/local-table.c -lamiga -lm",
+          "cpu": "68000",
+          "data": 1304,
+          "instructions_net": 2875,
+          "instructions_raw": 5793,
+          "output": "local-table: 2661699584\n",
+          "output_ok": true,
+          "text": 22288,
+          "text_net": 17164,
+          "trace_output_ok": true
+        },
+        "lookup": {
+          "bss": 120,
+          "command": "m68k-amigaos-gcc -std=c99 -mcrt=nix13 -m68000 -fwrapv -Os -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o /work/build/tmp/assessment/WS0/matrix/a500-Os/c/lookup/prog /work/plans/independent-assessment/probes/WS0/ref/lookup.c -lamiga -lm",
+          "cpu": "68000",
+          "data": 280,
+          "instructions_net": 12996,
+          "instructions_raw": 15914,
+          "output": "lookup: 134217728\n",
+          "output_ok": true,
+          "text": 38640,
+          "text_net": 33516,
+          "trace_output_ok": true
+        },
+        "matrix": {
+          "bss": 120,
+          "command": "m68k-amigaos-gcc -std=c99 -mcrt=nix13 -m68000 -fwrapv -Os -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o /work/build/tmp/assessment/WS0/matrix/a500-Os/c/matrix/prog /work/plans/independent-assessment/probes/WS0/ref/matrix.c -lamiga -lm",
+          "cpu": "68000",
+          "data": 280,
+          "instructions_net": 9780,
+          "instructions_raw": 12698,
+          "output": "matrix: 523776\n",
+          "output_ok": true,
+          "text": 22500,
+          "text_net": 17376,
+          "trace_output_ok": true
+        },
+        "moves": {
+          "bss": 120,
+          "command": "m68k-amigaos-gcc -std=c99 -mcrt=nix13 -m68000 -fwrapv -Os -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o /work/build/tmp/assessment/WS0/matrix/a500-Os/c/moves/prog /work/plans/independent-assessment/probes/WS0/ref/moves.c -lamiga -lm",
+          "cpu": "68000",
+          "data": 280,
+          "instructions_net": 67672,
+          "instructions_raw": 70590,
+          "output": "moves: 4523505\n",
+          "output_ok": true,
+          "text": 22376,
+          "text_net": 17252,
+          "trace_output_ok": true
+        },
+        "sieve": {
+          "bss": 120,
+          "command": "m68k-amigaos-gcc -std=c99 -mcrt=nix13 -m68000 -fwrapv -Os -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o /work/build/tmp/assessment/WS0/matrix/a500-Os/c/sieve/prog /work/plans/independent-assessment/probes/WS0/ref/sieve.c -lamiga -lm",
+          "cpu": "68000",
+          "data": 280,
+          "instructions_net": 1040101,
+          "instructions_raw": 1043019,
+          "output": "sieve: 10280\n",
+          "output_ok": true,
+          "text": 22616,
+          "text_net": 17492,
+          "trace_output_ok": true
+        },
+        "strings": {
+          "bss": 120,
+          "command": "m68k-amigaos-gcc -std=c99 -mcrt=nix13 -m68000 -fwrapv -Os -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o /work/build/tmp/assessment/WS0/matrix/a500-Os/c/strings/prog /work/plans/independent-assessment/probes/WS0/ref/strings.c -lamiga -lm",
+          "cpu": "68000",
+          "data": 280,
+          "instructions_net": 1415503,
+          "instructions_raw": 1418421,
+          "output": "strings: 0x3F9A6\n",
+          "output_ok": true,
+          "text": 22616,
+          "text_net": 17492,
+          "trace_output_ok": true
+        },
+        "text-scan": {
+          "bss": 120,
+          "command": "m68k-amigaos-gcc -std=c99 -mcrt=nix13 -m68000 -fwrapv -Os -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o /work/build/tmp/assessment/WS0/matrix/a500-Os/c/text-scan/prog /work/plans/independent-assessment/probes/WS0/ref/text-scan.c -lamiga -lm",
+          "cpu": "68000",
+          "data": 280,
+          "instructions_net": 388809,
+          "instructions_raw": 391727,
+          "output": "text-scan: tokens=3648 numbers=2432 words=1216 sum=146944\n",
+          "output_ok": true,
+          "text": 22900,
+          "text_net": 17776,
+          "trace_output_ok": true
+        }
+      },
+      "clo": {
+        "calibration": {
+          "bss": 120,
+          "command": "m68k-amigaos-gcc -std=c99 -mcrt=nix13 -m68000 -fwrapv -Os -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o /work/build/tmp/assessment/WS0/matrix/a500-Os/clo/calibration/prog /work/build/tmp/assessment/WS0/matrix/a500-Os/clo/calibration/prog.c -lamiga -lm",
+          "cpu": "68000",
+          "data": 272,
+          "instructions_net": 0,
+          "instructions_raw": 2927,
+          "output": "calibration: ok\n",
+          "output_ok": true,
+          "text": 5924,
+          "text_net": 0,
+          "trace_output_ok": true
+        },
+        "container": {
+          "bss": 120,
+          "command": "m68k-amigaos-gcc -std=c99 -mcrt=nix13 -m68000 -fwrapv -Os -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o /work/build/tmp/assessment/WS0/matrix/a500-Os/clo/container/prog /work/build/tmp/assessment/WS0/matrix/a500-Os/clo/container/prog.c -lamiga -lm",
+          "cpu": "68000",
+          "data": 280,
+          "instructions_net": 71581,
+          "instructions_raw": 74508,
+          "output": "container: 10475520 1024\n",
+          "output_ok": true,
+          "text": 24132,
+          "text_net": 18208,
+          "trace_output_ok": true
+        },
+        "local-table": {
+          "bss": 120,
+          "command": "m68k-amigaos-gcc -std=c99 -mcrt=nix13 -m68000 -fwrapv -Os -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o /work/build/tmp/assessment/WS0/matrix/a500-Os/clo/local-table/prog /work/build/tmp/assessment/WS0/matrix/a500-Os/clo/local-table/prog.c -lamiga -lm",
+          "cpu": "68000",
+          "data": 280,
+          "instructions_net": 3024,
+          "instructions_raw": 5951,
+          "output": "local-table: 2661699584\n",
+          "output_ok": true,
+          "text": 24528,
+          "text_net": 18604,
+          "trace_output_ok": true
+        },
+        "lookup": {
+          "bss": 16504,
+          "command": "m68k-amigaos-gcc -std=c99 -mcrt=nix13 -m68000 -fwrapv -Os -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o /work/build/tmp/assessment/WS0/matrix/a500-Os/clo/lookup/prog /work/build/tmp/assessment/WS0/matrix/a500-Os/clo/lookup/prog.c -lamiga -lm",
+          "cpu": "68000",
+          "data": 280,
+          "instructions_net": 9053,
+          "instructions_raw": 11980,
+          "output": "lookup: 134217728\n",
+          "output_ok": true,
+          "text": 39860,
+          "text_net": 33936,
+          "trace_output_ok": true
+        },
+        "matrix": {
+          "bss": 120,
+          "command": "m68k-amigaos-gcc -std=c99 -mcrt=nix13 -m68000 -fwrapv -Os -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o /work/build/tmp/assessment/WS0/matrix/a500-Os/clo/matrix/prog /work/build/tmp/assessment/WS0/matrix/a500-Os/clo/matrix/prog.c -lamiga -lm",
+          "cpu": "68000",
+          "data": 280,
+          "instructions_net": 8865,
+          "instructions_raw": 11792,
+          "output": "matrix: 523776\n",
+          "output_ok": true,
+          "text": 23708,
+          "text_net": 17784,
+          "trace_output_ok": true
+        },
+        "moves": {
+          "bss": 120,
+          "command": "m68k-amigaos-gcc -std=c99 -mcrt=nix13 -m68000 -fwrapv -Os -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o /work/build/tmp/assessment/WS0/matrix/a500-Os/clo/moves/prog /work/build/tmp/assessment/WS0/matrix/a500-Os/clo/moves/prog.c -lamiga -lm",
+          "cpu": "68000",
+          "data": 280,
+          "instructions_net": 58871,
+          "instructions_raw": 61798,
+          "output": "moves: 4523505\n",
+          "output_ok": true,
+          "text": 23676,
+          "text_net": 17752,
+          "trace_output_ok": true
+        },
+        "sieve": {
+          "bss": 120,
+          "command": "m68k-amigaos-gcc -std=c99 -mcrt=nix13 -m68000 -fwrapv -Os -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o /work/build/tmp/assessment/WS0/matrix/a500-Os/clo/sieve/prog /work/build/tmp/assessment/WS0/matrix/a500-Os/clo/sieve/prog.c -lamiga -lm",
+          "cpu": "68000",
+          "data": 280,
+          "instructions_net": 1040241,
+          "instructions_raw": 1043168,
+          "output": "sieve: 10280\n",
+          "output_ok": true,
+          "text": 23772,
+          "text_net": 17848,
+          "trace_output_ok": true
+        },
+        "strings": {
+          "bss": 120,
+          "command": "m68k-amigaos-gcc -std=c99 -mcrt=nix13 -m68000 -fwrapv -Os -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o /work/build/tmp/assessment/WS0/matrix/a500-Os/clo/strings/prog /work/build/tmp/assessment/WS0/matrix/a500-Os/clo/strings/prog.c -lamiga -lm",
+          "cpu": "68000",
+          "data": 280,
+          "instructions_net": 1689806,
+          "instructions_raw": 1692733,
+          "output": "strings: 0x3F9A6\n",
+          "output_ok": true,
+          "text": 23904,
+          "text_net": 17980,
+          "trace_output_ok": true
+        },
+        "text-scan": {
+          "bss": 128,
+          "command": "m68k-amigaos-gcc -std=c99 -mcrt=nix13 -m68000 -fwrapv -Os -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o /work/build/tmp/assessment/WS0/matrix/a500-Os/clo/text-scan/prog /work/build/tmp/assessment/WS0/matrix/a500-Os/clo/text-scan/prog.c -lamiga -lm",
+          "cpu": "68000",
+          "data": 280,
+          "instructions_net": 381272,
+          "instructions_raw": 384199,
+          "output": "text-scan: tokens=3648 numbers=2432 words=1216 sum=146944\n",
+          "output_ok": true,
+          "text": 24080,
+          "text_net": 18156,
+          "trace_output_ok": true
+        }
+      }
+    },
+    "host": {
+      "c": {
+        "calibration": {
+          "command": "cc -std=c99 -O2 -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o /work/build/tmp/assessment/WS0/matrix/host/c/calibration/prog /work/plans/independent-assessment/probes/WS0/ref/calibration.c",
+          "cpu": "host",
+          "output": "calibration: ok\n",
+          "output_ok": true
+        },
+        "container": {
+          "command": "cc -std=c99 -O2 -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o /work/build/tmp/assessment/WS0/matrix/host/c/container/prog /work/plans/independent-assessment/probes/WS0/ref/container.c",
+          "cpu": "host",
+          "output": "container: 10475520 1024\n",
+          "output_ok": true
+        },
+        "local-table": {
+          "command": "cc -std=c99 -O2 -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o /work/build/tmp/assessment/WS0/matrix/host/c/local-table/prog /work/plans/independent-assessment/probes/WS0/ref/local-table.c",
+          "cpu": "host",
+          "output": "local-table: 2661699584\n",
+          "output_ok": true
+        },
+        "lookup": {
+          "command": "cc -std=c99 -O2 -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o /work/build/tmp/assessment/WS0/matrix/host/c/lookup/prog /work/plans/independent-assessment/probes/WS0/ref/lookup.c",
+          "cpu": "host",
+          "output": "lookup: 134217728\n",
+          "output_ok": true
+        },
+        "matrix": {
+          "command": "cc -std=c99 -O2 -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o /work/build/tmp/assessment/WS0/matrix/host/c/matrix/prog /work/plans/independent-assessment/probes/WS0/ref/matrix.c",
+          "cpu": "host",
+          "output": "matrix: 523776\n",
+          "output_ok": true
+        },
+        "moves": {
+          "command": "cc -std=c99 -O2 -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o /work/build/tmp/assessment/WS0/matrix/host/c/moves/prog /work/plans/independent-assessment/probes/WS0/ref/moves.c",
+          "cpu": "host",
+          "output": "moves: 4523505\n",
+          "output_ok": true
+        },
+        "sieve": {
+          "command": "cc -std=c99 -O2 -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o /work/build/tmp/assessment/WS0/matrix/host/c/sieve/prog /work/plans/independent-assessment/probes/WS0/ref/sieve.c",
+          "cpu": "host",
+          "output": "sieve: 10280\n",
+          "output_ok": true
+        },
+        "strings": {
+          "command": "cc -std=c99 -O2 -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o /work/build/tmp/assessment/WS0/matrix/host/c/strings/prog /work/plans/independent-assessment/probes/WS0/ref/strings.c",
+          "cpu": "host",
+          "output": "strings: 0x3F9A6\n",
+          "output_ok": true
+        },
+        "text-scan": {
+          "command": "cc -std=c99 -O2 -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o /work/build/tmp/assessment/WS0/matrix/host/c/text-scan/prog /work/plans/independent-assessment/probes/WS0/ref/text-scan.c",
+          "cpu": "host",
+          "output": "text-scan: tokens=3648 numbers=2432 words=1216 sum=146944\n",
+          "output_ok": true
+        }
+      },
+      "clo": {
+        "calibration": {
+          "command": "cc -std=c99 -O2 -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o /work/build/tmp/assessment/WS0/matrix/host/clo/calibration/prog /work/build/tmp/assessment/WS0/matrix/host/clo/calibration/prog.c",
+          "cpu": "host",
+          "output": "calibration: ok\n",
+          "output_ok": true
+        },
+        "container": {
+          "command": "cc -std=c99 -O2 -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o /work/build/tmp/assessment/WS0/matrix/host/clo/container/prog /work/build/tmp/assessment/WS0/matrix/host/clo/container/prog.c",
+          "cpu": "host",
+          "output": "container: 10475520 1024\n",
+          "output_ok": true
+        },
+        "local-table": {
+          "command": "cc -std=c99 -O2 -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o /work/build/tmp/assessment/WS0/matrix/host/clo/local-table/prog /work/build/tmp/assessment/WS0/matrix/host/clo/local-table/prog.c",
+          "cpu": "host",
+          "output": "local-table: 2661699584\n",
+          "output_ok": true
+        },
+        "lookup": {
+          "command": "cc -std=c99 -O2 -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o /work/build/tmp/assessment/WS0/matrix/host/clo/lookup/prog /work/build/tmp/assessment/WS0/matrix/host/clo/lookup/prog.c",
+          "cpu": "host",
+          "output": "lookup: 134217728\n",
+          "output_ok": true
+        },
+        "matrix": {
+          "command": "cc -std=c99 -O2 -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o /work/build/tmp/assessment/WS0/matrix/host/clo/matrix/prog /work/build/tmp/assessment/WS0/matrix/host/clo/matrix/prog.c",
+          "cpu": "host",
+          "output": "matrix: 523776\n",
+          "output_ok": true
+        },
+        "moves": {
+          "command": "cc -std=c99 -O2 -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o /work/build/tmp/assessment/WS0/matrix/host/clo/moves/prog /work/build/tmp/assessment/WS0/matrix/host/clo/moves/prog.c",
+          "cpu": "host",
+          "output": "moves: 4523505\n",
+          "output_ok": true
+        },
+        "sieve": {
+          "command": "cc -std=c99 -O2 -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o /work/build/tmp/assessment/WS0/matrix/host/clo/sieve/prog /work/build/tmp/assessment/WS0/matrix/host/clo/sieve/prog.c",
+          "cpu": "host",
+          "output": "sieve: 10280\n",
+          "output_ok": true
+        },
+        "strings": {
+          "command": "cc -std=c99 -O2 -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o /work/build/tmp/assessment/WS0/matrix/host/clo/strings/prog /work/build/tmp/assessment/WS0/matrix/host/clo/strings/prog.c",
+          "cpu": "host",
+          "output": "strings: 0x3F9A6\n",
+          "output_ok": true
+        },
+        "text-scan": {
+          "command": "cc -std=c99 -O2 -ffunction-sections -fdata-sections -Wl,--gc-sections -s -o /work/build/tmp/assessment/WS0/matrix/host/clo/text-scan/prog /work/build/tmp/assessment/WS0/matrix/host/clo/text-scan/prog.c",
+          "cpu": "host",
+          "output": "text-scan: tokens=3648 numbers=2432 words=1216 sum=146944\n",
+          "output_ok": true
+        }
+      }
+    }
+  }
+}

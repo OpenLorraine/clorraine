@@ -1,0 +1,2187 @@
+{
+  "compiler": {
+    "dirty": true,
+    "git": "e24a8752b08827c3a5d7c77b6e2827dac708b629",
+    "path": "/work/build/tmp/assessment/baseline/clc",
+    "sha256": "0c2fd66e7346acd0f3c01bff7f09f51b54605c0a974f6c1d2b00cd68aa29bba6",
+    "version": "clc 1.2.0"
+  },
+  "created": "2026-11-25T18:22:36Z",
+  "harness_git": "a706903007c1b2d7e4abb969d2aab7d7fbf4d7bf",
+  "label": "assessment-baseline-compile",
+  "profiles": {
+    "benchmark": "host",
+    "corpus": "host",
+    "generated": "host",
+    "real": "hosted-amiga"
+  },
+  "rss_floor_kb": 18112,
+  "runs": 5,
+  "schema": 1,
+  "toolchain": {
+    "host_cc": "cc (Debian 12.2.0-14+deb12u1) 12.2.0",
+    "m68k_gcc": "m68k-amigaos-gcc (GCC) 16.2.0b 20260825082934",
+    "python": "3.11.2",
+    "vamos": "amitools 0.8.1.dev274+gd0b9727da"
+  },
+  "workloads": {
+    "benchmark/calibration": {
+      "exit_codes": [
+        0
+      ],
+      "max_cpu_ns": 4776000,
+      "max_ns": 5252625,
+      "max_rss_kb": 17264,
+      "median_cpu_ns": 4372000,
+      "median_ns": 4940385,
+      "min_cpu_ns": 4216000,
+      "min_ns": 4702913,
+      "path": "benchmarks/calibration/program.clo",
+      "profile": "host"
+    },
+    "benchmark/container": {
+      "exit_codes": [
+        0
+      ],
+      "max_cpu_ns": 9444000,
+      "max_ns": 10117661,
+      "max_rss_kb": 17316,
+      "median_cpu_ns": 8232999,
+      "median_ns": 8781690,
+      "min_cpu_ns": 7796000,
+      "min_ns": 8581595,
+      "path": "benchmarks/container/program.clo",
+      "profile": "host"
+    },
+    "benchmark/local-table": {
+      "exit_codes": [
+        0
+      ],
+      "max_cpu_ns": 5388000,
+      "max_ns": 6104000,
+      "max_rss_kb": 17264,
+      "median_cpu_ns": 5125999,
+      "median_ns": 5825538,
+      "min_cpu_ns": 5037000,
+      "min_ns": 5733945,
+      "path": "benchmarks/local-table/program.clo",
+      "profile": "host"
+    },
+    "benchmark/lookup": {
+      "exit_codes": [
+        0
+      ],
+      "max_cpu_ns": 12507000,
+      "max_ns": 13206227,
+      "max_rss_kb": 17264,
+      "median_cpu_ns": 11529000,
+      "median_ns": 12233116,
+      "min_cpu_ns": 10076000,
+      "min_ns": 10720999,
+      "path": "benchmarks/lookup/program.clo",
+      "profile": "host"
+    },
+    "benchmark/matrix": {
+      "exit_codes": [
+        0
+      ],
+      "max_cpu_ns": 6310000,
+      "max_ns": 6837035,
+      "max_rss_kb": 17264,
+      "median_cpu_ns": 5810000,
+      "median_ns": 6282069,
+      "min_cpu_ns": 5631000,
+      "min_ns": 6115490,
+      "path": "benchmarks/matrix/program.clo",
+      "profile": "host"
+    },
+    "benchmark/moves": {
+      "exit_codes": [
+        0
+      ],
+      "max_cpu_ns": 5998000,
+      "max_ns": 6949429,
+      "max_rss_kb": 17264,
+      "median_cpu_ns": 5249999,
+      "median_ns": 5903022,
+      "min_cpu_ns": 4872000,
+      "min_ns": 5372506,
+      "path": "benchmarks/moves/program.clo",
+      "profile": "host"
+    },
+    "benchmark/sieve": {
+      "exit_codes": [
+        0
+      ],
+      "max_cpu_ns": 10518000,
+      "max_ns": 11198048,
+      "max_rss_kb": 17264,
+      "median_cpu_ns": 10034000,
+      "median_ns": 10689881,
+      "min_cpu_ns": 9805999,
+      "min_ns": 10453925,
+      "path": "benchmarks/sieve/program.clo",
+      "profile": "host"
+    },
+    "benchmark/strings": {
+      "exit_codes": [
+        0
+      ],
+      "max_cpu_ns": 5442000,
+      "max_ns": 6108921,
+      "max_rss_kb": 17316,
+      "median_cpu_ns": 4918000,
+      "median_ns": 5708428,
+      "min_cpu_ns": 4830999,
+      "min_ns": 5324740,
+      "path": "benchmarks/strings/program.clo",
+      "profile": "host"
+    },
+    "benchmark/text-scan": {
+      "exit_codes": [
+        0
+      ],
+      "max_cpu_ns": 5416000,
+      "max_ns": 5914490,
+      "max_rss_kb": 17264,
+      "median_cpu_ns": 5325000,
+      "median_ns": 5817055,
+      "min_cpu_ns": 5183000,
+      "min_ns": 5644873,
+      "path": "benchmarks/text-scan/program.clo",
+      "profile": "host"
+    },
+    "corpus": {
+      "category": "corpus",
+      "failed": 111,
+      "files": 130,
+      "items": {
+        "spec/tests/compile-fail/E10010_possibly_null_use.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 3253000,
+          "max_ns": 4560361,
+          "max_rss_kb": 17168,
+          "median_cpu_ns": 2941999,
+          "median_ns": 3569928,
+          "min_cpu_ns": 2869000,
+          "min_ns": 3497244,
+          "path": "spec/tests/compile-fail/E10010_possibly_null_use.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E10011_nullable_on_scalar.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 2829000,
+          "max_ns": 3522723,
+          "max_rss_kb": 17168,
+          "median_cpu_ns": 2751000,
+          "median_ns": 3383859,
+          "min_cpu_ns": 2633000,
+          "min_ns": 3154741,
+          "path": "spec/tests/compile-fail/E10011_nullable_on_scalar.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E10012_null_where_nonnull.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 3060000,
+          "max_ns": 3674791,
+          "max_rss_kb": 17168,
+          "median_cpu_ns": 2862999,
+          "median_ns": 3536235,
+          "min_cpu_ns": 2767000,
+          "min_ns": 3327260,
+          "path": "spec/tests/compile-fail/E10012_null_where_nonnull.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E10020_use_after_move.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 2914000,
+          "max_ns": 3509936,
+          "max_rss_kb": 17168,
+          "median_cpu_ns": 2905000,
+          "median_ns": 3476480,
+          "min_cpu_ns": 2721000,
+          "min_ns": 3203660,
+          "path": "spec/tests/compile-fail/E10020_use_after_move.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E10021_use_before_init.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 2953000,
+          "max_ns": 3549693,
+          "max_rss_kb": 17168,
+          "median_cpu_ns": 2871999,
+          "median_ns": 3426209,
+          "min_cpu_ns": 2676999,
+          "min_ns": 3148626,
+          "path": "spec/tests/compile-fail/E10021_use_before_init.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E10022_move_while_borrowed.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 3015999,
+          "max_ns": 3659034,
+          "max_rss_kb": 17168,
+          "median_cpu_ns": 2976000,
+          "median_ns": 3508578,
+          "min_cpu_ns": 2954999,
+          "min_ns": 3504520,
+          "path": "spec/tests/compile-fail/E10022_move_while_borrowed.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E10023_assign_to_const.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 2679000,
+          "max_ns": 3140893,
+          "max_rss_kb": 17168,
+          "median_cpu_ns": 2614000,
+          "median_ns": 3110805,
+          "min_cpu_ns": 2572000,
+          "min_ns": 3018737,
+          "path": "spec/tests/compile-fail/E10023_assign_to_const.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E10024_write_readonly_param.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 3132999,
+          "max_ns": 3860070,
+          "max_rss_kb": 17220,
+          "median_cpu_ns": 3039999,
+          "median_ns": 3654155,
+          "min_cpu_ns": 2683000,
+          "min_ns": 3143743,
+          "path": "spec/tests/compile-fail/E10024_write_readonly_param.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E10025_use_partially_moved.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 3225999,
+          "max_ns": 4615289,
+          "max_rss_kb": 17168,
+          "median_cpu_ns": 3097000,
+          "median_ns": 3816806,
+          "min_cpu_ns": 3039999,
+          "min_ns": 3719849,
+          "path": "spec/tests/compile-fail/E10025_use_partially_moved.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E10026_nested_partial_move.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 3245000,
+          "max_ns": 4020815,
+          "max_rss_kb": 17220,
+          "median_cpu_ns": 3042999,
+          "median_ns": 3667784,
+          "min_cpu_ns": 2966000,
+          "min_ns": 3586821,
+          "path": "spec/tests/compile-fail/E10026_nested_partial_move.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E10030_loan_outlives_owner.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 3318000,
+          "max_ns": 4388068,
+          "max_rss_kb": 17168,
+          "median_cpu_ns": 3097000,
+          "median_ns": 3776047,
+          "min_cpu_ns": 2885999,
+          "min_ns": 3451142,
+          "path": "spec/tests/compile-fail/E10030_loan_outlives_owner.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E10031_mutate_while_shared.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 3138000,
+          "max_ns": 3840990,
+          "max_rss_kb": 17168,
+          "median_cpu_ns": 3070000,
+          "median_ns": 3694369,
+          "min_cpu_ns": 3042000,
+          "min_ns": 3675586,
+          "path": "spec/tests/compile-fail/E10031_mutate_while_shared.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E10031_tocstring_mutation.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 3702999,
+          "max_ns": 4431687,
+          "max_rss_kb": 17168,
+          "median_cpu_ns": 3508000,
+          "median_ns": 4129272,
+          "min_cpu_ns": 3453000,
+          "min_ns": 4075869,
+          "path": "spec/tests/compile-fail/E10031_tocstring_mutation.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E10031_view_widening_mutation.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 3678000,
+          "max_ns": 4353756,
+          "max_rss_kb": 17172,
+          "median_cpu_ns": 3358000,
+          "median_ns": 4042260,
+          "min_cpu_ns": 3306000,
+          "min_ns": 3982444,
+          "path": "spec/tests/compile-fail/E10031_view_widening_mutation.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E10032_conflicting_loans.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 3143999,
+          "max_ns": 3777635,
+          "max_rss_kb": 17172,
+          "median_cpu_ns": 3005000,
+          "median_ns": 3640737,
+          "min_cpu_ns": 2992000,
+          "min_ns": 3613821,
+          "path": "spec/tests/compile-fail/E10032_conflicting_loans.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E10033_loan_escapes_global.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 3171999,
+          "max_ns": 3846285,
+          "max_rss_kb": 17172,
+          "median_cpu_ns": 3096000,
+          "median_ns": 3736316,
+          "min_cpu_ns": 2849999,
+          "min_ns": 3475194,
+          "path": "spec/tests/compile-fail/E10033_loan_escapes_global.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E10034_borrow_released.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 2974000,
+          "max_ns": 3594658,
+          "max_rss_kb": 17172,
+          "median_cpu_ns": 2926000,
+          "median_ns": 3565971,
+          "min_cpu_ns": 2882999,
+          "min_ns": 3545247,
+          "path": "spec/tests/compile-fail/E10034_borrow_released.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E10035_view_of_local.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 2989000,
+          "max_ns": 3598695,
+          "max_rss_kb": 17176,
+          "median_cpu_ns": 2946000,
+          "median_ns": 3577050,
+          "min_cpu_ns": 2882999,
+          "min_ns": 3457554,
+          "path": "spec/tests/compile-fail/E10035_view_of_local.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E10036_view_two_params.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 2874000,
+          "max_ns": 3503706,
+          "max_rss_kb": 17176,
+          "median_cpu_ns": 2593000,
+          "median_ns": 3322936,
+          "min_cpu_ns": 2252000,
+          "min_ns": 2937236,
+          "path": "spec/tests/compile-fail/E10036_view_two_params.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E10038_borrow_global.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 3545999,
+          "max_ns": 4277815,
+          "max_rss_kb": 17180,
+          "median_cpu_ns": 3156000,
+          "median_ns": 3814267,
+          "min_cpu_ns": 3024000,
+          "min_ns": 3749583,
+          "path": "spec/tests/compile-fail/E10038_borrow_global.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E10039_marker_mismatch.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 3731999,
+          "max_ns": 4591470,
+          "max_rss_kb": 17180,
+          "median_cpu_ns": 3264000,
+          "median_ns": 4025581,
+          "min_cpu_ns": 3069000,
+          "min_ns": 3803708,
+          "path": "spec/tests/compile-fail/E10039_marker_mismatch.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E10040_element_loop_nonduplicable.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 3905999,
+          "max_ns": 4656960,
+          "max_rss_kb": 17180,
+          "median_cpu_ns": 3646000,
+          "median_ns": 4396907,
+          "min_cpu_ns": 3160999,
+          "min_ns": 3992095,
+          "path": "spec/tests/compile-fail/E10040_element_loop_nonduplicable.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E10041_writable_from_readonly.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 3960999,
+          "max_ns": 4756851,
+          "max_rss_kb": 17180,
+          "median_cpu_ns": 3627000,
+          "median_ns": 4386130,
+          "min_cpu_ns": 3560000,
+          "min_ns": 4264116,
+          "path": "spec/tests/compile-fail/E10041_writable_from_readonly.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E10042_write_immutable_view.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 4179999,
+          "max_ns": 4913412,
+          "max_rss_kb": 17180,
+          "median_cpu_ns": 3744000,
+          "median_ns": 4540793,
+          "min_cpu_ns": 3465000,
+          "min_ns": 4211496,
+          "path": "spec/tests/compile-fail/E10042_write_immutable_view.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E10043_str_loop.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 3469000,
+          "max_ns": 4262694,
+          "max_rss_kb": 17176,
+          "median_cpu_ns": 3088999,
+          "median_ns": 3802911,
+          "min_cpu_ns": 3031000,
+          "min_ns": 3731733,
+          "path": "spec/tests/compile-fail/E10043_str_loop.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E10100_uncontracted_call.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 3087000,
+          "max_ns": 3784565,
+          "max_rss_kb": 17176,
+          "median_cpu_ns": 2976000,
+          "median_ns": 3708603,
+          "min_cpu_ns": 2913000,
+          "min_ns": 3620246,
+          "path": "spec/tests/compile-fail/E10100_uncontracted_call.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E10101_owned_to_uncontracted.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 3856999,
+          "max_ns": 4579757,
+          "max_rss_kb": 17176,
+          "median_cpu_ns": 3057000,
+          "median_ns": 3776642,
+          "min_cpu_ns": 2924000,
+          "min_ns": 3622191,
+          "path": "spec/tests/compile-fail/E10101_owned_to_uncontracted.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E10102_bad_deleter_signature.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 3625000,
+          "max_ns": 4300952,
+          "max_rss_kb": 17176,
+          "median_cpu_ns": 3145000,
+          "median_ns": 3867066,
+          "min_cpu_ns": 3045000,
+          "min_ns": 3764919,
+          "path": "spec/tests/compile-fail/E10102_bad_deleter_signature.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E10103_exported_ffi.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 3323999,
+          "max_ns": 3852171,
+          "max_rss_kb": 17176,
+          "median_cpu_ns": 2794999,
+          "median_ns": 3249527,
+          "min_cpu_ns": 2490000,
+          "min_ns": 2962272,
+          "path": "spec/tests/compile-fail/E10103_exported_ffi.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E10104_freedby_on_struct.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 3650999,
+          "max_ns": 4159954,
+          "max_rss_kb": 17176,
+          "median_cpu_ns": 2792000,
+          "median_ns": 3312310,
+          "min_cpu_ns": 2302000,
+          "min_ns": 2779567,
+          "path": "spec/tests/compile-fail/E10104_freedby_on_struct.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E10105_box_ffi.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 3099999,
+          "max_ns": 3573062,
+          "max_rss_kb": 17176,
+          "median_cpu_ns": 2806000,
+          "median_ns": 3264475,
+          "min_cpu_ns": 2281999,
+          "min_ns": 2790103,
+          "path": "spec/tests/compile-fail/E10105_box_ffi.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E10105_generic_ffi.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 3594000,
+          "max_ns": 4021111,
+          "max_rss_kb": 17180,
+          "median_cpu_ns": 2780000,
+          "median_ns": 3188099,
+          "min_cpu_ns": 2705999,
+          "min_ns": 3137595,
+          "path": "spec/tests/compile-fail/E10105_generic_ffi.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E10200_implicit_mixed_sign.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 2812000,
+          "max_ns": 3329481,
+          "max_rss_kb": 17180,
+          "median_cpu_ns": 2669000,
+          "median_ns": 3166456,
+          "min_cpu_ns": 2290000,
+          "min_ns": 2708777,
+          "path": "spec/tests/compile-fail/E10200_implicit_mixed_sign.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E10201_disallowed_cast.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 2562000,
+          "max_ns": 2937110,
+          "max_rss_kb": 17180,
+          "median_cpu_ns": 2317999,
+          "median_ns": 2750071,
+          "min_cpu_ns": 2119000,
+          "min_ns": 2471737,
+          "path": "spec/tests/compile-fail/E10201_disallowed_cast.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E10202_literal_overflow.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 2740000,
+          "max_ns": 3362219,
+          "max_rss_kb": 17232,
+          "median_cpu_ns": 2616000,
+          "median_ns": 3282151,
+          "min_cpu_ns": 2271000,
+          "min_ns": 2769177,
+          "path": "spec/tests/compile-fail/E10202_literal_overflow.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E10203_duplicate_field.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 2737000,
+          "max_ns": 3351964,
+          "max_rss_kb": 17180,
+          "median_cpu_ns": 2620000,
+          "median_ns": 3169824,
+          "min_cpu_ns": 2436000,
+          "min_ns": 2893343,
+          "path": "spec/tests/compile-fail/E10203_duplicate_field.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E10204_union_decl.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 2448000,
+          "max_ns": 3016371,
+          "max_rss_kb": 17232,
+          "median_cpu_ns": 2428000,
+          "median_ns": 2834362,
+          "min_cpu_ns": 2350000,
+          "min_ns": 2808474,
+          "path": "spec/tests/compile-fail/E10204_union_decl.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E10205_str_field.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 2779000,
+          "max_ns": 3658720,
+          "max_rss_kb": 17180,
+          "median_cpu_ns": 2611999,
+          "median_ns": 3297405,
+          "min_cpu_ns": 2558999,
+          "min_ns": 2968893,
+          "path": "spec/tests/compile-fail/E10205_str_field.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E10206_empty_struct.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 2541000,
+          "max_ns": 3072802,
+          "max_rss_kb": 17184,
+          "median_cpu_ns": 2346000,
+          "median_ns": 2770189,
+          "min_cpu_ns": 2126000,
+          "min_ns": 2520129,
+          "path": "spec/tests/compile-fail/E10206_empty_struct.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E10207_overlay_by_value.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 2951000,
+          "max_ns": 4141435,
+          "max_rss_kb": 17236,
+          "median_cpu_ns": 2819000,
+          "median_ns": 3448605,
+          "min_cpu_ns": 2634000,
+          "min_ns": 3231324,
+          "path": "spec/tests/compile-fail/E10207_overlay_by_value.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E10208_volatile_local.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 2673000,
+          "max_ns": 3252748,
+          "max_rss_kb": 17184,
+          "median_cpu_ns": 2469000,
+          "median_ns": 3043242,
+          "min_cpu_ns": 2343000,
+          "min_ns": 2944083,
+          "path": "spec/tests/compile-fail/E10208_volatile_local.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E10209_index_nonindexable.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 2653999,
+          "max_ns": 3117118,
+          "max_rss_kb": 17184,
+          "median_cpu_ns": 2484000,
+          "median_ns": 2960740,
+          "min_cpu_ns": 2398000,
+          "min_ns": 2880686,
+          "path": "spec/tests/compile-fail/E10209_index_nonindexable.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E10210_fn_type_mismatch.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 2871000,
+          "max_ns": 4235340,
+          "max_rss_kb": 17184,
+          "median_cpu_ns": 2603000,
+          "median_ns": 3205352,
+          "min_cpu_ns": 2420000,
+          "min_ns": 2866245,
+          "path": "spec/tests/compile-fail/E10210_fn_type_mismatch.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E10211_enum_backing.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 2632000,
+          "max_ns": 3090045,
+          "max_rss_kb": 17184,
+          "median_cpu_ns": 2482000,
+          "median_ns": 3052121,
+          "min_cpu_ns": 2454999,
+          "min_ns": 2931853,
+          "path": "spec/tests/compile-fail/E10211_enum_backing.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E10212_unknown_member.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 2604999,
+          "max_ns": 3106204,
+          "max_rss_kb": 17184,
+          "median_cpu_ns": 2568000,
+          "median_ns": 3074255,
+          "min_cpu_ns": 2431000,
+          "min_ns": 2908638,
+          "path": "spec/tests/compile-fail/E10212_unknown_member.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E10213_embed_outside_const.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 2700000,
+          "max_ns": 3262683,
+          "max_rss_kb": 17184,
+          "median_cpu_ns": 2538999,
+          "median_ns": 3075917,
+          "min_cpu_ns": 2418000,
+          "min_ns": 2876920,
+          "path": "spec/tests/compile-fail/E10213_embed_outside_const.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E10214_embed_missing_file.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 2683000,
+          "max_ns": 3121672,
+          "max_rss_kb": 17184,
+          "median_cpu_ns": 2276000,
+          "median_ns": 2770380,
+          "min_cpu_ns": 2121999,
+          "min_ns": 2476433,
+          "path": "spec/tests/compile-fail/E10214_embed_missing_file.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E10215_fill_without_extent.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 3406000,
+          "max_ns": 3859006,
+          "max_rss_kb": 17188,
+          "median_cpu_ns": 2304999,
+          "median_ns": 2686350,
+          "min_cpu_ns": 2082000,
+          "min_ns": 2444475,
+          "path": "spec/tests/compile-fail/E10215_fill_without_extent.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E10216_const_index_out_of_range.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 2817000,
+          "max_ns": 3208704,
+          "max_rss_kb": 17192,
+          "median_cpu_ns": 2294999,
+          "median_ns": 2700801,
+          "min_cpu_ns": 2094000,
+          "min_ns": 2458765,
+          "path": "spec/tests/compile-fail/E10216_const_index_out_of_range.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E10217_assignment_result_as_value.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 2653000,
+          "max_ns": 3067906,
+          "max_rss_kb": 17192,
+          "median_cpu_ns": 2482000,
+          "median_ns": 2876661,
+          "min_cpu_ns": 2215000,
+          "min_ns": 2580100,
+          "path": "spec/tests/compile-fail/E10217_assignment_result_as_value.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E10218_non_bool_condition.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 3152999,
+          "max_ns": 3692930,
+          "max_rss_kb": 17192,
+          "median_cpu_ns": 2653000,
+          "median_ns": 3029196,
+          "min_cpu_ns": 2441000,
+          "min_ns": 2803339,
+          "path": "spec/tests/compile-fail/E10218_non_bool_condition.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E10219_undeclared_name.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 2728000,
+          "max_ns": 3127820,
+          "max_rss_kb": 17196,
+          "median_cpu_ns": 2614000,
+          "median_ns": 3007026,
+          "min_cpu_ns": 2226000,
+          "min_ns": 2593582,
+          "path": "spec/tests/compile-fail/E10219_undeclared_name.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E10220_inner_extent_omitted.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 2892999,
+          "max_ns": 3611008,
+          "max_rss_kb": 17196,
+          "median_cpu_ns": 2728000,
+          "median_ns": 3295285,
+          "min_cpu_ns": 2397000,
+          "min_ns": 3119118,
+          "path": "spec/tests/compile-fail/E10220_inner_extent_omitted.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E10221_assign_to_non_place.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 2923000,
+          "max_ns": 3594140,
+          "max_rss_kb": 17196,
+          "median_cpu_ns": 2275000,
+          "median_ns": 2969114,
+          "min_cpu_ns": 2196999,
+          "min_ns": 2864110,
+          "path": "spec/tests/compile-fail/E10221_assign_to_non_place.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E10222_operator_on_type.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 3277000,
+          "max_ns": 3672968,
+          "max_rss_kb": 17196,
+          "median_cpu_ns": 2438000,
+          "median_ns": 2975646,
+          "min_cpu_ns": 2079000,
+          "min_ns": 2478518,
+          "path": "spec/tests/compile-fail/E10222_operator_on_type.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E10223_const_division_by_zero.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 2845000,
+          "max_ns": 3227784,
+          "max_rss_kb": 17196,
+          "median_cpu_ns": 2539000,
+          "median_ns": 2957371,
+          "min_cpu_ns": 1990000,
+          "min_ns": 2375747,
+          "path": "spec/tests/compile-fail/E10223_const_division_by_zero.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E10224_non_constant_expr.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 3548000,
+          "max_ns": 3909940,
+          "max_rss_kb": 17200,
+          "median_cpu_ns": 2476000,
+          "median_ns": 2863932,
+          "min_cpu_ns": 2039000,
+          "min_ns": 2454637,
+          "path": "spec/tests/compile-fail/E10224_non_constant_expr.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E10226_zero_length_array.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 2754999,
+          "max_ns": 3181557,
+          "max_rss_kb": 17200,
+          "median_cpu_ns": 2695000,
+          "median_ns": 3084496,
+          "min_cpu_ns": 2594000,
+          "min_ns": 3015675,
+          "path": "spec/tests/compile-fail/E10226_zero_length_array.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E10227_box_view.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 2868000,
+          "max_ns": 3281001,
+          "max_rss_kb": 17200,
+          "median_cpu_ns": 2694000,
+          "median_ns": 3071290,
+          "min_cpu_ns": 2542000,
+          "min_ns": 2936488,
+          "path": "spec/tests/compile-fail/E10227_box_view.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E10300_wrong_type_arg_count.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 3364000,
+          "max_ns": 3738017,
+          "max_rss_kb": 17200,
+          "median_cpu_ns": 2734000,
+          "median_ns": 3121752,
+          "min_cpu_ns": 2688000,
+          "min_ns": 3076373,
+          "path": "spec/tests/compile-fail/E10300_wrong_type_arg_count.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E10301_cannot_infer_type_args.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 3283000,
+          "max_ns": 3668641,
+          "max_rss_kb": 17204,
+          "median_cpu_ns": 2629000,
+          "median_ns": 3043872,
+          "min_cpu_ns": 2415999,
+          "min_ns": 2796713,
+          "path": "spec/tests/compile-fail/E10301_cannot_infer_type_args.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E10302_export_generic.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 3211000,
+          "max_ns": 3650822,
+          "max_rss_kb": 17204,
+          "median_cpu_ns": 2784000,
+          "median_ns": 3212319,
+          "min_cpu_ns": 2434000,
+          "min_ns": 2823177,
+          "path": "spec/tests/compile-fail/E10302_export_generic.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E10303_callable_bound_violated.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 3314999,
+          "max_ns": 3727862,
+          "max_rss_kb": 17204,
+          "median_cpu_ns": 2639000,
+          "median_ns": 3062433,
+          "min_cpu_ns": 2451999,
+          "min_ns": 2834189,
+          "path": "spec/tests/compile-fail/E10303_callable_bound_violated.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E10304_callable_value_stored.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 3287999,
+          "max_ns": 3735103,
+          "max_rss_kb": 17204,
+          "median_cpu_ns": 2692000,
+          "median_ns": 3079067,
+          "min_cpu_ns": 2526000,
+          "min_ns": 2943441,
+          "path": "spec/tests/compile-fail/E10304_callable_value_stored.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E10305_generic_recursion_cap.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 2830000,
+          "max_ns": 3616297,
+          "max_rss_kb": 17204,
+          "median_cpu_ns": 2362000,
+          "median_ns": 3074222,
+          "min_cpu_ns": 2288000,
+          "min_ns": 2973603,
+          "path": "spec/tests/compile-fail/E10305_generic_recursion_cap.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E10305_generic_struct_recursion.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 3463000,
+          "max_ns": 4184183,
+          "max_rss_kb": 17204,
+          "median_cpu_ns": 2791000,
+          "median_ns": 3477562,
+          "min_cpu_ns": 2434000,
+          "min_ns": 3123966,
+          "path": "spec/tests/compile-fail/E10305_generic_struct_recursion.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E10306_generic_ephemeral_arg.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 3525999,
+          "max_ns": 4206578,
+          "max_rss_kb": 17204,
+          "median_cpu_ns": 2778000,
+          "median_ns": 3269720,
+          "min_cpu_ns": 2623000,
+          "min_ns": 3162284,
+          "path": "spec/tests/compile-fail/E10306_generic_ephemeral_arg.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E10307_unbounded_call.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 3524000,
+          "max_ns": 3991611,
+          "max_rss_kb": 17204,
+          "median_cpu_ns": 2646000,
+          "median_ns": 3104726,
+          "min_cpu_ns": 2513000,
+          "min_ns": 2931786,
+          "path": "spec/tests/compile-fail/E10307_unbounded_call.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E10308_arity_mismatch.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 2890000,
+          "max_ns": 3289856,
+          "max_rss_kb": 17204,
+          "median_cpu_ns": 2718000,
+          "median_ns": 3113486,
+          "min_cpu_ns": 2379999,
+          "min_ns": 2827436,
+          "path": "spec/tests/compile-fail/E10308_arity_mismatch.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E10309_non_callable_value.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 2634000,
+          "max_ns": 3139980,
+          "max_rss_kb": 17204,
+          "median_cpu_ns": 2401000,
+          "median_ns": 2783738,
+          "min_cpu_ns": 2155000,
+          "min_ns": 2580043,
+          "path": "spec/tests/compile-fail/E10309_non_callable_value.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E10400_capturing_lambda_as_func.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 2649000,
+          "max_ns": 3128558,
+          "max_rss_kb": 17208,
+          "median_cpu_ns": 2301000,
+          "median_ns": 2772805,
+          "min_cpu_ns": 2085999,
+          "min_ns": 2520369,
+          "path": "spec/tests/compile-fail/E10400_capturing_lambda_as_func.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E10401_lambda_moves_capture.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 3271999,
+          "max_ns": 3741827,
+          "max_rss_kb": 17208,
+          "median_cpu_ns": 2619000,
+          "median_ns": 3140685,
+          "min_cpu_ns": 2304999,
+          "min_ns": 2758747,
+          "path": "spec/tests/compile-fail/E10401_lambda_moves_capture.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E10402_lambda_writes_capture.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 3013000,
+          "max_ns": 3468819,
+          "max_rss_kb": 17208,
+          "median_cpu_ns": 2474000,
+          "median_ns": 2936790,
+          "min_cpu_ns": 2142000,
+          "min_ns": 2609234,
+          "path": "spec/tests/compile-fail/E10402_lambda_writes_capture.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E10403_take_capture.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 3895999,
+          "max_ns": 4389928,
+          "max_rss_kb": 17208,
+          "median_cpu_ns": 3244000,
+          "median_ns": 3701649,
+          "min_cpu_ns": 2780000,
+          "min_ns": 3270530,
+          "path": "spec/tests/compile-fail/E10403_take_capture.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E10404_closure_stored.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 2744000,
+          "max_ns": 3347019,
+          "max_rss_kb": 17216,
+          "median_cpu_ns": 2381000,
+          "median_ns": 2906169,
+          "min_cpu_ns": 2242000,
+          "min_ns": 2667421,
+          "path": "spec/tests/compile-fail/E10404_closure_stored.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E10405_unlisted_capture.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 2251000,
+          "max_ns": 2623583,
+          "max_rss_kb": 17216,
+          "median_cpu_ns": 2116000,
+          "median_ns": 2504279,
+          "min_cpu_ns": 1960000,
+          "min_ns": 2299804,
+          "path": "spec/tests/compile-fail/E10405_unlisted_capture.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E10406_module_capture.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 2637999,
+          "max_ns": 3304263,
+          "max_rss_kb": 17268,
+          "median_cpu_ns": 2593000,
+          "median_ns": 3038462,
+          "min_cpu_ns": 2141000,
+          "min_ns": 2618863,
+          "path": "spec/tests/compile-fail/E10406_module_capture.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E10500_nonformattable_placeholder.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 2581000,
+          "max_ns": 3171487,
+          "max_rss_kb": 17216,
+          "median_cpu_ns": 2201000,
+          "median_ns": 2590166,
+          "min_cpu_ns": 2078000,
+          "min_ns": 2419616,
+          "path": "spec/tests/compile-fail/E10500_nonformattable_placeholder.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E10501_format_specifier.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 2056000,
+          "max_ns": 2389265,
+          "max_rss_kb": 17216,
+          "median_cpu_ns": 1932000,
+          "median_ns": 2300310,
+          "min_cpu_ns": 1906999,
+          "min_ns": 2248834,
+          "path": "spec/tests/compile-fail/E10501_format_specifier.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E10503_unbalanced_braces.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 2059999,
+          "max_ns": 2482021,
+          "max_rss_kb": 17216,
+          "median_cpu_ns": 1872000,
+          "median_ns": 2265342,
+          "min_cpu_ns": 1856000,
+          "min_ns": 2218200,
+          "path": "spec/tests/compile-fail/E10503_unbalanced_braces.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E10600_deref_outside_unsafe.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 2700000,
+          "max_ns": 3096900,
+          "max_rss_kb": 17216,
+          "median_cpu_ns": 2297999,
+          "median_ns": 2663572,
+          "min_cpu_ns": 2270000,
+          "min_ns": 2623268,
+          "path": "spec/tests/compile-fail/E10600_deref_outside_unsafe.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E10601_addressof_outside_unsafe.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 3550000,
+          "max_ns": 3897801,
+          "max_rss_kb": 17216,
+          "median_cpu_ns": 2498000,
+          "median_ns": 2905802,
+          "min_cpu_ns": 2244000,
+          "min_ns": 2659268,
+          "path": "spec/tests/compile-fail/E10601_addressof_outside_unsafe.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E10602_pointer_arithmetic_outside_unsafe.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 3392999,
+          "max_ns": 3829114,
+          "max_rss_kb": 17216,
+          "median_cpu_ns": 2897000,
+          "median_ns": 3326025,
+          "min_cpu_ns": 2712999,
+          "min_ns": 3098762,
+          "path": "spec/tests/compile-fail/E10602_pointer_arithmetic_outside_unsafe.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E10603_pointer_cast_outside_unsafe.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 2853999,
+          "max_ns": 3281905,
+          "max_rss_kb": 17216,
+          "median_cpu_ns": 2800000,
+          "median_ns": 3242601,
+          "min_cpu_ns": 2739000,
+          "min_ns": 3109383,
+          "path": "spec/tests/compile-fail/E10603_pointer_cast_outside_unsafe.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E10604_volatile_outside_unsafe.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 2882999,
+          "max_ns": 3318905,
+          "max_rss_kb": 17216,
+          "median_cpu_ns": 2863000,
+          "median_ns": 3290634,
+          "min_cpu_ns": 2735999,
+          "min_ns": 3109663,
+          "path": "spec/tests/compile-fail/E10604_volatile_outside_unsafe.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E11100_initializer_cycle.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 2741000,
+          "max_ns": 3129154,
+          "max_rss_kb": 17216,
+          "median_cpu_ns": 2641000,
+          "median_ns": 3032366,
+          "min_cpu_ns": 2580000,
+          "min_ns": 2934598,
+          "path": "spec/tests/compile-fail/E11100_initializer_cycle.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E11101_duplicate_declaration.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 2751999,
+          "max_ns": 3096520,
+          "max_rss_kb": 17216,
+          "median_cpu_ns": 2621000,
+          "median_ns": 3007620,
+          "min_cpu_ns": 2467999,
+          "min_ns": 2908583,
+          "path": "spec/tests/compile-fail/E11101_duplicate_declaration.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E11102_import_not_found.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 3057000,
+          "max_ns": 3413368,
+          "max_rss_kb": 17216,
+          "median_cpu_ns": 2646000,
+          "median_ns": 3028999,
+          "min_cpu_ns": 2506999,
+          "min_ns": 2876813,
+          "path": "spec/tests/compile-fail/E11102_import_not_found.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E11103_duplicate_import.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 2902999,
+          "max_ns": 3260124,
+          "max_rss_kb": 17216,
+          "median_cpu_ns": 2641000,
+          "median_ns": 3026325,
+          "min_cpu_ns": 2539999,
+          "min_ns": 2970258,
+          "path": "spec/tests/compile-fail/E11103_duplicate_import.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E11104_main_mistyped.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 2414999,
+          "max_ns": 2836597,
+          "max_rss_kb": 17220,
+          "median_cpu_ns": 2294999,
+          "median_ns": 2718078,
+          "min_cpu_ns": 2010000,
+          "min_ns": 2452436,
+          "path": "spec/tests/compile-fail/E11104_main_mistyped.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E11105_module_not_first.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 3140999,
+          "max_ns": 3586039,
+          "max_rss_kb": 17224,
+          "median_cpu_ns": 2374000,
+          "median_ns": 2855879,
+          "min_cpu_ns": 2065000,
+          "min_ns": 2498947,
+          "path": "spec/tests/compile-fail/E11105_module_not_first.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E11106_nonduplicable_global.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 4110000,
+          "max_ns": 4590353,
+          "max_rss_kb": 17224,
+          "median_cpu_ns": 3250000,
+          "median_ns": 3782521,
+          "min_cpu_ns": 3117000,
+          "min_ns": 3601911,
+          "path": "spec/tests/compile-fail/E11106_nonduplicable_global.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E11200_custom_module.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 3062999,
+          "max_ns": 3609369,
+          "max_rss_kb": 17228,
+          "median_cpu_ns": 2418999,
+          "median_ns": 2900243,
+          "min_cpu_ns": 2317999,
+          "min_ns": 2791962,
+          "path": "spec/tests/compile-fail/E11200_custom_module.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E11200_unavailable_module.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 2744999,
+          "max_ns": 3410899,
+          "max_rss_kb": 17228,
+          "median_cpu_ns": 2359999,
+          "median_ns": 2931618,
+          "min_cpu_ns": 2191000,
+          "min_ns": 2597471,
+          "path": "spec/tests/compile-fail/E11200_unavailable_module.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E11201_unknown_profile.clo": {
+          "exit_codes": [
+            0
+          ],
+          "max_cpu_ns": 2917000,
+          "max_ns": 3411381,
+          "max_rss_kb": 17228,
+          "median_cpu_ns": 2731000,
+          "median_ns": 3232718,
+          "min_cpu_ns": 2676999,
+          "min_ns": 3110929,
+          "path": "spec/tests/compile-fail/E11201_unknown_profile.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E20000_unexpected_token.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 2472000,
+          "max_ns": 3068338,
+          "max_rss_kb": 17228,
+          "median_cpu_ns": 2150999,
+          "median_ns": 2588118,
+          "min_cpu_ns": 2062000,
+          "min_ns": 2437621,
+          "path": "spec/tests/compile-fail/E20000_unexpected_token.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E20001_unterminated_block_comment.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 2222000,
+          "max_ns": 2584299,
+          "max_rss_kb": 17232,
+          "median_cpu_ns": 2059999,
+          "median_ns": 2421663,
+          "min_cpu_ns": 1984999,
+          "min_ns": 2394499,
+          "path": "spec/tests/compile-fail/E20001_unterminated_block_comment.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E20002_unterminated_string_literal.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 2582000,
+          "max_ns": 3112147,
+          "max_rss_kb": 17232,
+          "median_cpu_ns": 2219000,
+          "median_ns": 2726053,
+          "min_cpu_ns": 2104000,
+          "min_ns": 2494314,
+          "path": "spec/tests/compile-fail/E20002_unterminated_string_literal.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E20003_invalid_escape_sequence.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 2299000,
+          "max_ns": 2695790,
+          "max_rss_kb": 17232,
+          "median_cpu_ns": 1949000,
+          "median_ns": 2309081,
+          "min_cpu_ns": 1825000,
+          "min_ns": 2191421,
+          "path": "spec/tests/compile-fail/E20003_invalid_escape_sequence.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E20004_malformed_numeric_literal.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 2594000,
+          "max_ns": 2977928,
+          "max_rss_kb": 17232,
+          "median_cpu_ns": 2010000,
+          "median_ns": 2375643,
+          "min_cpu_ns": 1810000,
+          "min_ns": 2197466,
+          "path": "spec/tests/compile-fail/E20004_malformed_numeric_literal.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E20005_keyword_as_declared_name.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 2745999,
+          "max_ns": 3220836,
+          "max_rss_kb": 17284,
+          "median_cpu_ns": 2097000,
+          "median_ns": 2457188,
+          "min_cpu_ns": 1849999,
+          "min_ns": 2217081,
+          "path": "spec/tests/compile-fail/E20005_keyword_as_declared_name.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E20006_reserved_builtin_redeclared.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 2214000,
+          "max_ns": 2717089,
+          "max_rss_kb": 17232,
+          "median_cpu_ns": 1950000,
+          "median_ns": 2485773,
+          "min_cpu_ns": 1918000,
+          "min_ns": 2420904,
+          "path": "spec/tests/compile-fail/E20006_reserved_builtin_redeclared.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E20007_char_literal_not_one_byte.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 3297000,
+          "max_ns": 3688024,
+          "max_rss_kb": 17232,
+          "median_cpu_ns": 2058000,
+          "median_ns": 2585639,
+          "min_cpu_ns": 1967999,
+          "min_ns": 2513942,
+          "path": "spec/tests/compile-fail/E20007_char_literal_not_one_byte.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E20008_foreign_syntax.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 2722000,
+          "max_ns": 3096338,
+          "max_rss_kb": 17236,
+          "median_cpu_ns": 2286000,
+          "median_ns": 2658673,
+          "min_cpu_ns": 1977999,
+          "min_ns": 2332068,
+          "path": "spec/tests/compile-fail/E20008_foreign_syntax.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E90000_array_fixed_element.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 3639000,
+          "max_ns": 4198788,
+          "max_rss_kb": 17236,
+          "median_cpu_ns": 3285000,
+          "median_ns": 3713068,
+          "min_cpu_ns": 3003999,
+          "min_ns": 3377538,
+          "path": "spec/tests/compile-fail/E90000_array_fixed_element.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E90001_comptime_staged.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 2487000,
+          "max_ns": 2891016,
+          "max_rss_kb": 17236,
+          "median_cpu_ns": 2410000,
+          "median_ns": 2811745,
+          "min_cpu_ns": 2356000,
+          "min_ns": 2769387,
+          "path": "spec/tests/compile-fail/E90001_comptime_staged.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/E90005_nested_template.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 2704000,
+          "max_ns": 3065758,
+          "max_rss_kb": 17236,
+          "median_cpu_ns": 2346000,
+          "median_ns": 2765408,
+          "min_cpu_ns": 2142000,
+          "min_ns": 2567139,
+          "path": "spec/tests/compile-fail/E90005_nested_template.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/W10000_deny_warnings.clo": {
+          "exit_codes": [
+            0
+          ],
+          "max_cpu_ns": 3030000,
+          "max_ns": 3462289,
+          "max_rss_kb": 17236,
+          "median_cpu_ns": 2776000,
+          "median_ns": 3182084,
+          "min_cpu_ns": 2719999,
+          "min_ns": 3125449,
+          "path": "spec/tests/compile-fail/W10000_deny_warnings.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/W10000_unused_local.clo": {
+          "exit_codes": [
+            0
+          ],
+          "max_cpu_ns": 3054000,
+          "max_ns": 3782199,
+          "max_rss_kb": 17236,
+          "median_cpu_ns": 2853999,
+          "median_ns": 3265918,
+          "min_cpu_ns": 2707000,
+          "min_ns": 3168483,
+          "path": "spec/tests/compile-fail/W10000_unused_local.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/W10001_needless_lend.clo": {
+          "exit_codes": [
+            0
+          ],
+          "max_cpu_ns": 4070000,
+          "max_ns": 4900771,
+          "max_rss_kb": 17240,
+          "median_cpu_ns": 3309000,
+          "median_ns": 4152437,
+          "min_cpu_ns": 3041999,
+          "min_ns": 3811739,
+          "path": "spec/tests/compile-fail/W10001_needless_lend.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/W10002_switch_fallthrough.clo": {
+          "exit_codes": [
+            0
+          ],
+          "max_cpu_ns": 3799000,
+          "max_ns": 4515930,
+          "max_rss_kb": 17240,
+          "median_cpu_ns": 3204000,
+          "median_ns": 3921609,
+          "min_cpu_ns": 2920000,
+          "min_ns": 3685795,
+          "path": "spec/tests/compile-fail/W10002_switch_fallthrough.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/W10003_unreachable_code.clo": {
+          "exit_codes": [
+            0
+          ],
+          "max_cpu_ns": 4327000,
+          "max_ns": 4837178,
+          "max_rss_kb": 17248,
+          "median_cpu_ns": 3175000,
+          "median_ns": 3905921,
+          "min_cpu_ns": 2799000,
+          "min_ns": 3531784,
+          "path": "spec/tests/compile-fail/W10003_unreachable_code.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/W10004_large_stack_frame.clo": {
+          "exit_codes": [
+            0
+          ],
+          "max_cpu_ns": 3966000,
+          "max_ns": 4427122,
+          "max_rss_kb": 17248,
+          "median_cpu_ns": 3659000,
+          "median_ns": 4166759,
+          "min_cpu_ns": 3462000,
+          "min_ns": 3883590,
+          "path": "spec/tests/compile-fail/W10004_large_stack_frame.clo",
+          "profile": "host"
+        },
+        "spec/tests/compile-fail/W10006_unused_import.clo": {
+          "exit_codes": [
+            0
+          ],
+          "max_cpu_ns": 6033999,
+          "max_ns": 6518567,
+          "max_rss_kb": 17248,
+          "median_cpu_ns": 5811999,
+          "median_ns": 6333843,
+          "min_cpu_ns": 5526000,
+          "min_ns": 6016570,
+          "path": "spec/tests/compile-fail/W10006_unused_import.clo",
+          "profile": "host"
+        },
+        "spec/tests/corpus/buffer-container/program.clo": {
+          "exit_codes": [
+            0
+          ],
+          "max_cpu_ns": 9884000,
+          "max_ns": 10426530,
+          "max_rss_kb": 17248,
+          "median_cpu_ns": 8989000,
+          "median_ns": 9635960,
+          "min_cpu_ns": 8802000,
+          "min_ns": 9450871,
+          "path": "spec/tests/corpus/buffer-container/program.clo",
+          "profile": "host"
+        },
+        "spec/tests/corpus/file-copier/program.clo": {
+          "exit_codes": [
+            0
+          ],
+          "max_cpu_ns": 12371000,
+          "max_ns": 13016702,
+          "max_rss_kb": 17248,
+          "median_cpu_ns": 11255999,
+          "median_ns": 11889129,
+          "min_cpu_ns": 10658999,
+          "min_ns": 11342697,
+          "path": "spec/tests/corpus/file-copier/program.clo",
+          "profile": "host"
+        },
+        "spec/tests/corpus/freestanding/program.clo": {
+          "exit_codes": [
+            0
+          ],
+          "max_cpu_ns": 4680999,
+          "max_ns": 5149406,
+          "max_rss_kb": 17248,
+          "median_cpu_ns": 4297000,
+          "median_ns": 4748254,
+          "min_cpu_ns": 4202000,
+          "min_ns": 4731739,
+          "path": "spec/tests/corpus/freestanding/program.clo",
+          "profile": "host"
+        },
+        "spec/tests/corpus/graphics/program.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 2852000,
+          "max_ns": 3317070,
+          "max_rss_kb": 17248,
+          "median_cpu_ns": 2761000,
+          "median_ns": 3163532,
+          "min_cpu_ns": 2656000,
+          "min_ns": 3041883,
+          "path": "spec/tests/corpus/graphics/program.clo",
+          "profile": "host"
+        },
+        "spec/tests/corpus/interrupt-counter/program.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 3159000,
+          "max_ns": 3595451,
+          "max_rss_kb": 17248,
+          "median_cpu_ns": 2688000,
+          "median_ns": 3088739,
+          "min_cpu_ns": 2608000,
+          "min_ns": 2987736,
+          "path": "spec/tests/corpus/interrupt-counter/program.clo",
+          "profile": "host"
+        },
+        "spec/tests/corpus/string-parser/program.clo": {
+          "exit_codes": [
+            0
+          ],
+          "max_cpu_ns": 8554000,
+          "max_ns": 8992807,
+          "max_rss_kb": 17248,
+          "median_cpu_ns": 7721000,
+          "median_ns": 8305690,
+          "min_cpu_ns": 7640000,
+          "min_ns": 8156939,
+          "path": "spec/tests/corpus/string-parser/program.clo",
+          "profile": "host"
+        },
+        "spec/tests/corpus/volatile-mmio/program.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 3055999,
+          "max_ns": 3813252,
+          "max_rss_kb": 17252,
+          "median_cpu_ns": 2838000,
+          "median_ns": 3682166,
+          "min_cpu_ns": 2157999,
+          "min_ns": 2835952,
+          "path": "spec/tests/corpus/volatile-mmio/program.clo",
+          "profile": "host"
+        },
+        "spec/tests/run/E11210_division_by_zero.clo": {
+          "exit_codes": [
+            0
+          ],
+          "max_cpu_ns": 4009999,
+          "max_ns": 4416968,
+          "max_rss_kb": 17252,
+          "median_cpu_ns": 3339999,
+          "median_ns": 3931716,
+          "min_cpu_ns": 2885999,
+          "min_ns": 3601595,
+          "path": "spec/tests/run/E11210_division_by_zero.clo",
+          "profile": "host"
+        },
+        "spec/tests/run/E11210_min_neg_one.clo": {
+          "exit_codes": [
+            0
+          ],
+          "max_cpu_ns": 3597999,
+          "max_ns": 4111589,
+          "max_rss_kb": 17256,
+          "median_cpu_ns": 3413000,
+          "median_ns": 3832646,
+          "min_cpu_ns": 3255000,
+          "min_ns": 3697621,
+          "path": "spec/tests/run/E11210_min_neg_one.clo",
+          "profile": "host"
+        },
+        "spec/tests/run/E11211_index_out_of_range.clo": {
+          "exit_codes": [
+            0
+          ],
+          "max_cpu_ns": 3635000,
+          "max_ns": 4123859,
+          "max_rss_kb": 17256,
+          "median_cpu_ns": 3406000,
+          "median_ns": 3823716,
+          "min_cpu_ns": 3313000,
+          "min_ns": 3748690,
+          "path": "spec/tests/run/E11211_index_out_of_range.clo",
+          "profile": "host"
+        },
+        "spec/tests/run/E11212_float_to_int_range.clo": {
+          "exit_codes": [
+            0
+          ],
+          "max_cpu_ns": 3829999,
+          "max_ns": 4254269,
+          "max_rss_kb": 17256,
+          "median_cpu_ns": 3250000,
+          "median_ns": 3674815,
+          "min_cpu_ns": 3173999,
+          "min_ns": 3620435,
+          "path": "spec/tests/run/E11212_float_to_int_range.clo",
+          "profile": "host"
+        },
+        "spec/tests/run/E11212_nan_float_to_int.clo": {
+          "exit_codes": [
+            0
+          ],
+          "max_cpu_ns": 4020000,
+          "max_ns": 4441797,
+          "max_rss_kb": 17256,
+          "median_cpu_ns": 3570000,
+          "median_ns": 3998714,
+          "min_cpu_ns": 3250000,
+          "min_ns": 3634538,
+          "path": "spec/tests/run/E11212_nan_float_to_int.clo",
+          "profile": "host"
+        },
+        "spec/tests/run/E11213_assertion_failed.clo": {
+          "exit_codes": [
+            0
+          ],
+          "max_cpu_ns": 3949999,
+          "max_ns": 4385062,
+          "max_rss_kb": 17256,
+          "median_cpu_ns": 3323999,
+          "median_ns": 3733810,
+          "min_cpu_ns": 3153999,
+          "min_ns": 3542446,
+          "path": "spec/tests/run/E11213_assertion_failed.clo",
+          "profile": "host"
+        },
+        "spec/tests/staged/E90003_stores_contract.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 3006999,
+          "max_ns": 3525388,
+          "max_rss_kb": 17256,
+          "median_cpu_ns": 2506000,
+          "median_ns": 2884550,
+          "min_cpu_ns": 2362000,
+          "min_ns": 2762790,
+          "path": "spec/tests/staged/E90003_stores_contract.clo",
+          "profile": "host"
+        },
+        "spec/tests/staged/E90004_pool_api.clo": {
+          "exit_codes": [
+            1
+          ],
+          "max_cpu_ns": 3294000,
+          "max_ns": 3705462,
+          "max_rss_kb": 17256,
+          "median_cpu_ns": 2611000,
+          "median_ns": 3025987,
+          "min_cpu_ns": 2568999,
+          "min_ns": 2991291,
+          "path": "spec/tests/staged/E90004_pool_api.clo",
+          "profile": "host"
+        },
+        "spec/tests/staged/W10005_user_contract_table.clo": {
+          "exit_codes": [
+            0
+          ],
+          "max_cpu_ns": 3745999,
+          "max_ns": 4153778,
+          "max_rss_kb": 17264,
+          "median_cpu_ns": 3244000,
+          "median_ns": 3632207,
+          "min_cpu_ns": 3204000,
+          "min_ns": 3587590,
+          "path": "spec/tests/staged/W10005_user_contract_table.clo",
+          "profile": "host"
+        }
+      },
+      "max_cpu_ns": 428200954,
+      "max_ns": 500624481,
+      "max_rss_kb": 17284,
+      "median_cpu_ns": 378686977,
+      "median_ns": 445710155,
+      "min_cpu_ns": 354320960,
+      "min_ns": 418250668,
+      "ok": 19,
+      "profile": "host"
+    },
+    "generated/calls-4000": {
+      "exit_codes": [
+        0
+      ],
+      "max_cpu_ns": 119454999,
+      "max_ns": 121603771,
+      "max_rss_kb": 27976,
+      "median_cpu_ns": 115837000,
+      "median_ns": 118814308,
+      "min_cpu_ns": 112479000,
+      "min_ns": 113633158,
+      "path": "build/perf/compile-time/inputs/calls-4000.clo",
+      "profile": "host"
+    },
+    "generated/functions-1000": {
+      "exit_codes": [
+        0
+      ],
+      "max_cpu_ns": 40457999,
+      "max_ns": 41568719,
+      "max_rss_kb": 18072,
+      "median_cpu_ns": 34767000,
+      "median_ns": 35945155,
+      "min_cpu_ns": 34392000,
+      "min_ns": 35544453,
+      "path": "build/perf/compile-time/inputs/functions-1000.clo",
+      "profile": "host"
+    },
+    "generated/functions-2000": {
+      "exit_codes": [
+        0
+      ],
+      "max_cpu_ns": 76715999,
+      "max_ns": 77851876,
+      "max_rss_kb": 24828,
+      "median_cpu_ns": 71577000,
+      "median_ns": 74017672,
+      "min_cpu_ns": 68790000,
+      "min_ns": 69918610,
+      "path": "build/perf/compile-time/inputs/functions-2000.clo",
+      "profile": "host"
+    },
+    "generated/functions-4000": {
+      "exit_codes": [
+        0
+      ],
+      "max_cpu_ns": 144729000,
+      "max_ns": 145875754,
+      "max_rss_kb": 43792,
+      "median_cpu_ns": 143187000,
+      "median_ns": 144287587,
+      "min_cpu_ns": 142826999,
+      "min_ns": 143931787,
+      "path": "build/perf/compile-time/inputs/functions-4000.clo",
+      "profile": "host"
+    },
+    "generated/functions-8000": {
+      "exit_codes": [
+        0
+      ],
+      "max_cpu_ns": 305973000,
+      "max_ns": 308270312,
+      "max_rss_kb": 81512,
+      "median_cpu_ns": 298802000,
+      "median_ns": 299634903,
+      "min_cpu_ns": 294542000,
+      "min_ns": 295660489,
+      "path": "build/perf/compile-time/inputs/functions-8000.clo",
+      "profile": "host"
+    },
+    "generated/locals-4000": {
+      "exit_codes": [
+        0
+      ],
+      "max_cpu_ns": 300896999,
+      "max_ns": 301967809,
+      "max_rss_kb": 29152,
+      "median_cpu_ns": 293168000,
+      "median_ns": 294313635,
+      "min_cpu_ns": 292187000,
+      "min_ns": 293380660,
+      "path": "build/perf/compile-time/inputs/locals-4000.clo",
+      "profile": "host"
+    },
+    "generated/mixed-4000": {
+      "exit_codes": [
+        0
+      ],
+      "max_cpu_ns": 518779000,
+      "max_ns": 519893508,
+      "max_rss_kb": 66448,
+      "median_cpu_ns": 502742999,
+      "median_ns": 503921001,
+      "min_cpu_ns": 492382999,
+      "min_ns": 493577870,
+      "path": "build/perf/compile-time/inputs/mixed-4000.clo",
+      "profile": "host"
+    },
+    "generated/statements-4000": {
+      "exit_codes": [
+        0
+      ],
+      "max_cpu_ns": 52169999,
+      "max_ns": 53310791,
+      "max_rss_kb": 18664,
+      "median_cpu_ns": 50399000,
+      "median_ns": 51506039,
+      "min_cpu_ns": 49524000,
+      "min_ns": 50611864,
+      "path": "build/perf/compile-time/inputs/statements-4000.clo",
+      "profile": "host"
+    },
+    "real/boing": {
+      "exit_codes": [
+        0
+      ],
+      "max_cpu_ns": 19667000,
+      "max_ns": 20876278,
+      "max_rss_kb": 17264,
+      "median_cpu_ns": 19084000,
+      "median_ns": 19875850,
+      "min_cpu_ns": 18572000,
+      "min_ns": 19618116,
+      "path": "examples/amiga/boing.clo",
+      "profile": "hosted-amiga"
+    },
+    "real/exec-demo": {
+      "exit_codes": [
+        0
+      ],
+      "max_cpu_ns": 22651000,
+      "max_ns": 23713212,
+      "max_rss_kb": 17264,
+      "median_cpu_ns": 22267000,
+      "median_ns": 23283372,
+      "min_cpu_ns": 21850000,
+      "min_ns": 22891213,
+      "path": "examples/amiga/exec-demo.clo",
+      "profile": "hosted-amiga"
+    },
+    "real/gui": {
+      "exit_codes": [
+        0
+      ],
+      "max_cpu_ns": 23451000,
+      "max_ns": 24527053,
+      "max_rss_kb": 17264,
+      "median_cpu_ns": 23069000,
+      "median_ns": 24060414,
+      "min_cpu_ns": 22867000,
+      "min_ns": 23612553,
+      "path": "examples/amiga/gui.clo",
+      "profile": "hosted-amiga"
+    },
+    "real/imageviewer": {
+      "exit_codes": [
+        0
+      ],
+      "max_cpu_ns": 52061000,
+      "max_ns": 53246998,
+      "max_rss_kb": 17264,
+      "median_cpu_ns": 48599000,
+      "median_ns": 49560747,
+      "min_cpu_ns": 47331000,
+      "min_ns": 48395169,
+      "path": "examples/amiga/imageviewer.clo",
+      "profile": "hosted-amiga"
+    },
+    "real/services": {
+      "exit_codes": [
+        0
+      ],
+      "max_cpu_ns": 10048000,
+      "max_ns": 10925064,
+      "max_rss_kb": 17264,
+      "median_cpu_ns": 7487000,
+      "median_ns": 8383474,
+      "min_cpu_ns": 7292000,
+      "min_ns": 8217887,
+      "path": "examples/amiga/services.clo",
+      "profile": "hosted-amiga"
+    },
+    "real/workbench": {
+      "exit_codes": [
+        0
+      ],
+      "max_cpu_ns": 17827000,
+      "max_ns": 18827829,
+      "max_rss_kb": 17264,
+      "median_cpu_ns": 17665000,
+      "median_ns": 18701371,
+      "min_cpu_ns": 17615000,
+      "min_ns": 18544000,
+      "path": "examples/amiga/workbench.clo",
+      "profile": "hosted-amiga"
+    }
+  }
+}

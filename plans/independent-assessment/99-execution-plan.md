@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-25 19:13
-> **Progress**: 4/95 tasks (4%)
+> **Last Updated**: 2026-11-25 19:49
+> **Progress**: 11/95 tasks (11%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -99,21 +99,21 @@ this plan's folder and the roadmap; 03-01 §Ground rules)
 **Objective**: Capture every baseline number later phases cite.
 
 - [x] 0.2.1 Build the release and debug `clc` in the container; copy the release binary to `build/tmp/assessment/baseline/clc` with its sha256; record the Docker image ID, the amitools commit, and the versions of host GCC, `m68k-amigaos-gcc`, vbcc, `vamos`, and FS-UAE ✅ (completed: 2026-11-25 19:13)
-- [ ] 0.2.2 With the pinned `clc`, emit C for the spec corpus, the benchmarks, and `examples/amiga/` on every profile that accepts each program, twice, into `build/tmp/assessment/baseline/emit/`; record expected rejections, whether the two emissions are byte-identical, the debug-`clc` emission for WS3-09, and the C compile time of each emitted program on each C compiler (for WS3-11)
-- [ ] 0.2.3 Run the bench harness, the compile-time harness, and the flag audit once per 03-01 §Ground rules (pinned `--clc`, new `build/perf/assessment-baseline-*.json` outputs copied to `build/tmp/assessment/baseline/`, `--compiler-git <sha>` where supported); record the numbers (labelled nix20 where they are) and any failing floor as a `WS0` observation in `findings/WS0-baseline.md` (ST-12)
-- [ ] 0.2.4 Check whether `vamos` runs a 68020 CPU; record the method, or the static-section-size fallback and its named limit (ST-15)
-- [ ] 0.2.5 Run `measure.py` for every benchmark and both calibrations, Clorraine and C, on every lens; confirm the outputs (ST-13, green); record the full matrix, raw and netted, in `findings/WS0-baseline.md`
-- [ ] 0.2.6 Re-record the inventory of `02-current-state.md` §What Exists at the baseline and note every difference
+- [x] 0.2.2 With the pinned `clc`, emit C for the spec corpus, the benchmarks, and `examples/amiga/` on every profile that accepts each program, twice, into `build/tmp/assessment/baseline/emit/`; record expected rejections, whether the two emissions are byte-identical, the debug-`clc` emission for WS3-09, and the C compile time of each emitted program on each C compiler (for WS3-11) ✅ (completed: 2026-11-25 19:19)
+- [x] 0.2.3 Run the bench harness, the compile-time harness, and the flag audit once per 03-01 §Ground rules (pinned `--clc`, new `build/perf/assessment-baseline-*.json` outputs copied to `build/tmp/assessment/baseline/`, `--compiler-git <sha>` where supported); record the numbers (labelled nix20 where they are) and any failing floor as a `WS0` observation in `findings/WS0-baseline.md` (ST-12) ✅ (completed: 2026-11-25 19:42)
+- [x] 0.2.4 Check whether `vamos` runs a 68020 CPU; record the method, or the static-section-size fallback and its named limit (ST-15) ✅ (completed: 2026-11-25 19:42)
+- [x] 0.2.5 Run `measure.py` for every benchmark and both calibrations, Clorraine and C, on every lens; confirm the outputs (ST-13, green); record the full matrix, raw and netted, in `findings/WS0-baseline.md` ✅ (completed: 2026-11-25 19:49)
+- [x] 0.2.6 Re-record the inventory of `02-current-state.md` §What Exists at the baseline and note every difference ✅ (completed: 2026-11-25 19:49)
 
 ### Step 0.3: Hardening and gate
 
-- [ ] 0.3.1 Write the `tools/assessment/README.md` stub with the full-mode steps (copy this plan's documents to a new `plans/assessment-<date>/`, reset progress, fill the baseline, preflight, run `exec-plan`), so a repeat is possible even if this run stalls (AR #29)
-- [ ] 0.3.2 Phase gate: run Task verify and check the Phase 0 row of `07` §Check points; record the result in `findings/WS0-baseline.md`; escalate any Critical; commit through the git-commit skill, local only
+- [x] 0.3.1 Write the `tools/assessment/README.md` stub with the full-mode steps (copy this plan's documents to a new `plans/assessment-<date>/`, reset progress, fill the baseline, preflight, run `exec-plan`), so a repeat is possible even if this run stalls (AR #29) ✅ (completed: 2026-11-25 19:49)
+- [x] 0.3.2 Phase gate: run Task verify and check the Phase 0 row of `07` §Check points; record the result in `findings/WS0-baseline.md`; escalate any Critical; commit through the git-commit skill, local only ✅ (completed: 2026-11-25 19:49)
 
 **Deliverables**:
-- [ ] `findings/WS0-baseline.md` with baseline, pinned versions, emission record, harness numbers, and the measurement matrix
-- [ ] `probes/WS0/` with `drift-check.sh`, `measure.py`, and the C references
-- [ ] `tools/assessment/README.md` stub (full mode)
+- [x] `findings/WS0-baseline.md` with baseline, pinned versions, emission record, harness numbers, and the measurement matrix
+- [x] `probes/WS0/` with `drift-check.sh`, `measure.py`, and the C references
+- [x] `tools/assessment/README.md` stub (full mode)
 
 **Test slices**: N/A — no test map
 **Verify (gate)**: `bash plans/independent-assessment/probes/WS0/drift-check.sh plans/independent-assessment`, then the Phase 0 row of `07` §Check points (AR #20)
