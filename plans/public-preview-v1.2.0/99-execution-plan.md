@@ -1,7 +1,7 @@
 # Task T-01: Publish the v1.2.0 developer preview
 
 > **Type**: Task (lightweight) · **CodeOps Artifact Schema**: 1
-> **Progress**: 5/8 tasks (63%)
+> **Progress**: 8/8 tasks (100%)
 > **Reasoning**: high — public release, interactive installer, immutable tag,
 > asset verification, rollback
 > **Decision**: Public GitHub **prerelease**, tag `v1.2.0`, title
@@ -98,22 +98,22 @@ release; deleting `v1.1.2`; public announcements.
   requirements, the A1200-vs-A500 caveat, and the docs/site-pending notice.
   The first instruction must be the one-line command above. ⏳ (implemented: 2026-11-25 11:14)
 
-- [ ] T-01.6 **Create the public prerelease.** `gh release create v1.2.0
+- [x] T-01.6 **Create the public prerelease.** `gh release create v1.2.0
   --prerelease --title "v1.2.0 developer preview" --notes-file <body>
   --target main` with the four rebuilt assets. Do not pass `--latest`. Record
-  the release URL and database ID.
+  the release URL and database ID. ✅ (completed: 2026-11-25 11:16)
 
-- [ ] T-01.7 **Verify the uploaded release.** Require `isPrerelease=true`,
+- [x] T-01.7 **Verify the uploaded release.** Require `isPrerelease=true`,
   `isDraft=false`, tag `v1.2.0`, and exactly four assets; `v1.1.2` remains Latest.
   Download the public assets; compare sizes and SHA-256 to the release body and
   `SHA256SUMS`; require public asset URLs to return HTTP 200; confirm `v1.1.2`
   remains Latest. Run the one-line command in a fresh HOME on this host with a
-  terminal and confirm the prompts, installed version, and hello output.
+  terminal and confirm the prompts, installed version, and hello output. ✅ (completed: 2026-11-25 11:16)
 
-- [ ] T-01.8 **Deliver and close.** Give the user the one-line command and the
+- [x] T-01.8 **Deliver and close.** Give the user the one-line command and the
   test checklist; record that their test is the next decision point. Confirm
   no docs/site/README/release-note changes; record rollback options; commit the
-  plan update with the `git-commit` skill.
+  plan update with the `git-commit` skill. ✅ (completed: 2026-11-25 11:16)
 
 ## Execution evidence
 
@@ -127,7 +127,15 @@ release; deleting `v1.1.2`; public announcements.
 - **Acceptance:** `make acceptance` passed the seven-guest matrix on the rebuilt
   candidate; evidence `build/acceptance/20261125T101025Z/evidence.json`;
   `make acceptance-check` reports `ok`. `make check` passes.
-- **Docs/site:** unchanged.
+- **Release:** public prerelease `v1.2.0` at
+  `https://github.com/OpenLorraine/clorraine/releases/tag/v1.2.0`; title
+  `v1.2.0 developer preview`; `isPrerelease=true`, `isDraft=false`; `v1.1.2`
+  remains Latest. The four assets downloaded with HTTP 200 and their
+  `SHA256SUMS` verify. The one-line command installed the public asset into a
+  fresh HOME with the interactive prompts, printed `clorraine 1.2.0`, and ran
+  the host hello (`Hello, Amiga, from Clorraine!`). Log:
+  `build/tmp/one-line-e2e.log`.
+- **Docs/site:** unchanged; no or website edits were made.
 
 ## Verify
 
