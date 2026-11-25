@@ -36,6 +36,9 @@ Options:
   --uninstall               remove the active version and PATH block
   --purge                   also remove versions and the CLI config
   -h, --help                show this help
+
+When stdin and stdout are terminals, an install asks for the prefix, the PATH
+choice, and confirmation. Non-terminal runs keep the flag/default behavior.
 EOF
 }
 
@@ -483,6 +486,25 @@ install_archive() {
         printf 'add this to your shell profile: export PATH=%s:$PATH\n' "$(single_quote "$PREFIX/bin")"
     fi
     printf 'installed Clorraine %s in %s\n' "$VERSION" "$PREFIX"
+    printf 'Next steps:\n'
+    printf '  %s/bin/clorraine setup --toolchain <rc24 root>\n' "$PREFIX"
+    printf '  %s/bin/clorraine run hello.clo\n' "$PREFIX"
+    printf '  Install the VS Code extension from the same release: clorraine-%s.vsix\n' "$VERSION"
+}
+
+# Asks a yes/no question on the terminal; an empty answer uses the default.
+confirm() {
+    local prompt=$1 default=$2 answer
+    while :; do
+        printf '%s' "$prompt"
+        read -r answer || return 0
+        case "$answer" in
+            '') [ "$default" = yes ] && return 0 || return 1 ;;
+            y|Y|yes|YES) return 0 ;;
+            n|N|no|NO) return 1 ;;
+            *) printf 'Please answer y or n.\n' ;;
+        esac
+    done
 }
 
 # Removes this prefix's links, current, and PATH block; keeps versions/config.
@@ -511,7 +533,9 @@ purge() {
 
 main() {
     PREFIX="$HOME/.local"
+    PREFIX_SET=0
     MODIFY_PATH=0
+    MODIFY_PATH_SET=0
     UNINSTALL=0
     PURGE=0
     ARCHIVE=
@@ -532,10 +556,12 @@ main() {
             --prefix)
                 [ "$#" -ge 2 ] || usage_error "--prefix needs a value"
                 PREFIX=$2
+                PREFIX_SET=1
                 shift 2
                 ;;
             --modify-path)
                 MODIFY_PATH=1
+                MODIFY_PATH_SET=1
                 shift
                 ;;
             --archive)
@@ -578,10 +604,10 @@ main() {
 
     require_commands uname tar gzip sha256sum getconf mktemp awk sed grep find \
         wc basename dirname sort ln mv rm mkdir cp chmod readlink sleep tr
-    check_prefix
     check_host
 
     if [ "$UNINSTALL" = 1 ]; then
+        check_prefix
         acquire_lock
         trap 'release_lock; cleanup_temp' EXIT
         uninstall
@@ -591,6 +617,29 @@ main() {
         trap - EXIT
         return 0
     fi
+
+    if [ -t 0 ] && [ -t 1 ]; then
+        printf 'Clorraine %s developer preview\n' "$VERSION"
+        printf 'Detected %s %s, %s.\n' "$(uname -s)" "$(uname -m)" "$libc"
+        if [ "$PREFIX_SET" = 0 ]; then
+            printf 'Install prefix [%s]: ' "$PREFIX"
+            read -r answer || answer=
+            [ -n "$answer" ] && PREFIX=$answer
+        fi
+        if [ "$MODIFY_PATH_SET" = 0 ]; then
+            if confirm "Add $PREFIX/bin to PATH in $HOME/.profile? [Y/n] " yes; then
+                MODIFY_PATH=1
+            else
+                MODIFY_PATH=0
+            fi
+        fi
+        if ! confirm "Install Clorraine $VERSION into $PREFIX? [Y/n] " yes; then
+            printf 'install cancelled\n'
+            exit 0
+        fi
+    fi
+
+    check_prefix
 
     if [ -n "$ARCHIVE" ]; then
         verify_local_archive "$ARCHIVE" "$CHECKSUMS"

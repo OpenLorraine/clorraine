@@ -23,6 +23,21 @@ fixture() {
     mkdir -p "$prefix/share"
 }
 
+# Runs the installer under a pseudo-terminal and feeds the interactive answers.
+run_interactive() {
+    local root=$1 input=$2 status
+    cat >"$root/interactive.sh" <<EOF
+#!/bin/sh
+exec "$installer" --archive "$archive" --checksums "$checksums"
+EOF
+    chmod +x "$root/interactive.sh"
+    ( export HOME="$root/home" XDG_CONFIG_HOME="$root/config" PATH="$root/fake:$PATH"
+      printf '%b' "$input" | script -qec "$root/interactive.sh" /dev/null ) \
+        >"$root/stdout" 2>"$root/stderr"
+    status=$?
+    printf '%s\n' "$status"
+}
+
 # Runs the installer with a reduced PATH that contains every required tool
 # except curl; local mode must not need the downloader.
 run_without_curl() {
@@ -335,8 +350,60 @@ foreign_symlinks_are_not_owned() {
     rm -f "$prefix/bin/clorraine"
 }
 
+# Interactive prompts install into the default prefix and update PATH.
+interactive_install_uses_the_prompts() {
+    fixture
+    local status
+    status="$(run_interactive "$root" '\ny\ny\n')"
+    check_status 0 "$status" "interactive install"
+    check_contains "$root/stdout" "Install prefix" "prefix prompt"
+    check_contains "$root/stdout" "Add " "path prompt"
+    check_contains "$root/stdout" "Install Clorraine" "confirm prompt"
+    check_contains "$root/stdout" "installed Clorraine 1.2.0" "interactive success"
+    check_contains "$root/stdout" "Next steps" "next-step output"
+    check_exists "$root/home/.local/bin/clorraine" "default prefix"
+    check_contains "$root/home/.profile" "# >>> clorraine >>>" "interactive PATH block"
+}
+
+# A typed prefix is used, and declining PATH leaves the profile untouched.
+interactive_custom_prefix_is_used() {
+    fixture
+    local status
+    status="$(run_interactive "$root" "$root/custom prefix\nn\ny\n")"
+    check_status 0 "$status" "interactive custom prefix"
+    check_exists "$root/custom prefix/bin/clorraine" "custom prefix"
+    check_absent "$root/home/.profile" "no PATH block after decline"
+}
+
+# Declining the final confirmation installs nothing.
+interactive_decline_cancels() {
+    fixture
+    local status
+    status="$(run_interactive "$root" '\ny\nn\n')"
+    check_status 0 "$status" "interactive decline"
+    check_contains "$root/stdout" "cancelled" "cancellation message"
+    check_absent "$root/home/.local/bin/clorraine" "no install after decline"
+}
+
+# A non-terminal run keeps the old defaults and never blocks on a prompt.
+non_interactive_defaults_do_not_prompt() {
+    fixture
+    local status=0
+    HOME="$root/home" XDG_CONFIG_HOME="$root/config" PATH="$root/fake:$PATH" \
+        "$installer" --archive "$archive" --checksums "$checksums" </dev/null \
+        >"$root/stdout" 2>"$root/stderr" || status=$?
+    check_status 0 "$status" "non-interactive defaults"
+    check_exists "$root/home/.local/bin/clorraine" "non-interactive default prefix"
+    check_not_contains "$root/stdout" "Install prefix" "no prefix prompt"
+    check_absent "$root/home/.profile" "no implicit PATH change"
+}
+
 host_checks_are_enforced
 command_checks_are_enforced
+interactive_install_uses_the_prompts
+interactive_custom_prefix_is_used
+interactive_decline_cancels
+non_interactive_defaults_do_not_prompt
 foreign_symlinks_are_not_owned
 hostile_member_types_are_rejected
 purge_scope_is_exact

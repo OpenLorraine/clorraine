@@ -1,7 +1,7 @@
 # Task T-01: Publish the v1.2.0 developer preview
 
 > **Type**: Task (lightweight) · **CodeOps Artifact Schema**: 1
-> **Progress**: 0/8 tasks (0%)
+> **Progress**: 5/8 tasks (63%)
 > **Reasoning**: high — public release, interactive installer, immutable tag,
 > asset verification, rollback
 > **Decision**: Public GitHub **prerelease**, tag `v1.2.0`, title
@@ -67,36 +67,36 @@ release; deleting `v1.1.2`; public announcements.
 
 ## Tasks
 
-- [ ] T-01.1 **Preflight.** Confirm the current candidate hashes and
+- [x] T-01.1 **Preflight.** Confirm the current candidate hashes and
   `06-publication-handoff.md`; confirm `gh` is authenticated as an admin of
   `OpenLorraine/clorraine`; confirm no `v1.2.0` release or tag exists; confirm
-  `v1.1.2` is Latest. Record the release target commit. Do not publish yet.
+  `v1.1.2` is Latest. Record the release target commit. Do not publish yet. ✅ (completed: 2026-11-25 11:14)
 
-- [ ] T-01.2 **Installer tests first.** Extend the shell installer suites with
+- [x] T-01.2 **Installer tests first.** Extend the shell installer suites with
   failing cases for: a pseudo-terminal session that answers prefix/PATH/confirm
   prompts; the default answers; a non-terminal run that never blocks and keeps
   the existing flags/defaults; and the post-install next-step output. Use the
-  existing fixture archive; do not require network, Docker, or a real toolchain.
+  existing fixture archive; do not require network, Docker, or a real toolchain. ✅ (completed: 2026-11-25 11:14)
 
-- [ ] T-01.3 **Implement the interactive installer.** In
+- [x] T-01.3 **Implement the interactive installer.** In
   `tools/setup/install.sh`, enable prompts only when stdin and stdout are
   terminals; prompt for the prefix (`~/.local`), the PATH block (yes), and the
   install confirmation (yes). Preserve `--prefix`, `--modify-path`,
   `--archive`, `--checksums`, `--uninstall`, and `--purge` exactly. Print the
   installed version, the toolchain-setup command, a hello example, and the VSIX
-  command. Reject nothing new; no literal-pipe mode. Run the installer suites.
+  command. Reject nothing new; no literal-pipe mode. Run the installer suites. ✅ (completed: 2026-11-25 11:14)
 
-- [ ] T-01.4 **Rebuild and re-accept the candidate.** Run `make dist` and
+- [x] T-01.4 **Rebuild and re-accept the candidate.** Run `make dist` and
   `make acceptance` with the pinned rc24 archive and licensed KS3.1 A1200 ROM;
   update the release-body hashes from the rebuilt `build/dist`. Verify
   `make acceptance-check` and the new asset sizes/SHA-256. The candidate bytes
-  change; do not reuse the old hashes.
+  change; do not reuse the old hashes. ✅ (completed: 2026-11-25 11:14)
 
-- [ ] T-01.5 **Write the preview release body** under `build/tmp/` (not a
+- [x] T-01.5 **Write the preview release body** under `build/tmp/` (not a
   repository document). Include the one-line command, the optional verified
   path, the prompt description, the rebuilt hashes, the rc24/FS-UAE/KS3.1
   requirements, the A1200-vs-A500 caveat, and the docs/site-pending notice.
-  The first instruction must be the one-line command above.
+  The first instruction must be the one-line command above. ⏳ (implemented: 2026-11-25 11:14)
 
 - [ ] T-01.6 **Create the public prerelease.** `gh release create v1.2.0
   --prerelease --title "v1.2.0 developer preview" --notes-file <body>
@@ -104,7 +104,7 @@ release; deleting `v1.1.2`; public announcements.
   the release URL and database ID.
 
 - [ ] T-01.7 **Verify the uploaded release.** Require `isPrerelease=true`,
-  `isDraft=false`, `isLatest=false`, tag `v1.2.0`, and exactly four assets.
+  `isDraft=false`, tag `v1.2.0`, and exactly four assets; `v1.1.2` remains Latest.
   Download the public assets; compare sizes and SHA-256 to the release body and
   `SHA256SUMS`; require public asset URLs to return HTTP 200; confirm `v1.1.2`
   remains Latest. Run the one-line command in a fresh HOME on this host with a
@@ -115,12 +115,26 @@ release; deleting `v1.1.2`; public announcements.
   no docs/site/README/release-note changes; record rollback options; commit the
   plan update with the `git-commit` skill.
 
+## Execution evidence
+
+- **Installer tests red:** 7 failures in `build/tmp/interactive-installer-red.log`
+  (missing prefix/PATH/confirm prompts, custom prefix, cancel, and PATH block).
+- **Installer tests green:** 101 public checks and 21 internal checks; the
+  non-interactive defaults test passes.
+- **Candidate:** `make dist` produced the new archive (6,530,165 bytes,
+  `8ea293eb…d288`), VSIX (26,435 bytes, `a1fb7cab…ee12`), and installer
+  (21,925 bytes, `903849fe…de6f`). `make dist-verify` passes.
+- **Acceptance:** `make acceptance` passed the seven-guest matrix on the rebuilt
+  candidate; evidence `build/acceptance/20261125T101025Z/evidence.json`;
+  `make acceptance-check` reports `ok`. `make check` passes.
+- **Docs/site:** unchanged.
+
 ## Verify
 
 The installer suites pass in both interactive (pseudo-terminal) and
 non-interactive modes; `make dist`, `make acceptance`, and `make
 acceptance-check` pass on the rebuilt candidate; `gh release view v1.2.0`
-reports `isPrerelease=true`, `isDraft=false`, `isLatest=false`, four assets with
+reports `isPrerelease=true`, `isDraft=false`, four assets with
 matching downloaded hashes, and public URLs return HTTP 200; the one-line
 command installs `clorraine 1.2.0` and prints the expected hello line; `v1.1.2`
 remains Latest; and `git status` shows no docs/website/release-note changes.
