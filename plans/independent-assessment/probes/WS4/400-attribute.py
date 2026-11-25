@@ -7,7 +7,8 @@ Usage (inside the SDK container, from the repository root):
 
 Each program (the Clorraine emission for hosted-amiga-13 and the equivalent C
 reference) is built with the A500 shipped -O2 line but without -s, so its symbols
-remain; it runs under `vamos -B --instr-trace`, whose lines name the hunk and the
+remain and a link map is written (static functions are absent from the hunk
+symbol table but present in the map as `.text.<name>` sections); it runs under `vamos -B --instr-trace`, whose lines name the hunk and the
 offset of every executed instruction (`prog_0:code +000123`). Offsets are mapped to
 the enclosing text symbol from `m68k-amigaos-nm -n`; instructions executed inside
 library jump tables and traps are counted under the library label. Output: the top
@@ -29,14 +30,35 @@ LINE = re.compile(r"instr:\s+\S+:\s+@[0-9a-f]+ \+([0-9a-f]+) (\S+)")
 
 
 def symbols(binary: Path) -> tuple[list[int], list[str]]:
+    """Function start offsets from the linker map, falling back to nm.
+
+    The Amiga hunk symbol table keeps only global symbols, so a `static` function
+    (most of the emitted program) has no nm entry. With -ffunction-sections every
+    function, static or not, is its own `.text.<name>` input section, and the link map
+    records each section's address. Library members without such a section are taken
+    from nm.
+    """
+    pairs = {}
+    map_file = binary.with_suffix(".map")
+    if map_file.is_file():
+        lines = map_file.read_text(errors="replace").splitlines()
+        for k, line in enumerate(lines):
+            m = re.match(r"^ \.text\.([A-Za-z0-9_.$]+)\s*(0x[0-9a-f]+)?", line)
+            if not m:
+                continue
+            addr = m.group(2)
+            if addr is None and k + 1 < len(lines):
+                nxt = lines[k + 1].split()
+                addr = nxt[0] if nxt and nxt[0].startswith("0x") else None
+            if addr is not None:
+                pairs.setdefault(int(addr, 16), m.group(1))
     out = subprocess.run(["m68k-amigaos-nm", "-n", str(binary)], capture_output=True, text=True).stdout
-    addrs, names = [], []
     for line in out.splitlines():
         parts = line.split()
         if len(parts) == 3 and parts[1] in "tT":
-            addrs.append(int(parts[0], 16))
-            names.append(parts[2])
-    return addrs, names
+            pairs.setdefault(int(parts[0], 16), parts[2])
+    ordered = sorted(pairs.items())
+    return [a for a, _ in ordered], [n for _, n in ordered]
 
 
 def attribute(binary: Path) -> Counter:
@@ -60,7 +82,8 @@ def attribute(binary: Path) -> Counter:
 
 
 def build(src: Path, binary: Path) -> None:
-    subprocess.run(["m68k-amigaos-gcc", *FLAGS, "-o", str(binary), str(src), "-lamiga", "-lm"],
+    subprocess.run(["m68k-amigaos-gcc", *FLAGS, f"-Wl,-Map={binary.with_suffix('.map')}", "-o",
+                    str(binary), str(src), "-lamiga", "-lm"],
                    check=True, capture_output=True, timeout=600)
 
 
