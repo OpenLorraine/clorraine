@@ -1,7 +1,7 @@
 # Task T-01: Publish the v1.2.0 developer preview
 
 > **Type**: Task (lightweight) · **CodeOps Artifact Schema**: 1
-> **Progress**: 17/18 tasks (94%)
+> **Progress**: 18/18 tasks (100%)
 > **Reasoning**: high — public release, interactive installer, immutable tag,
 > asset verification, rollback
 > **Decision**: Public GitHub **prerelease**, tag `v1.2.0`, title
@@ -119,31 +119,30 @@ release; deleting `v1.1.2`; public announcements.
 
 ## Execution evidence
 
-- **Installer tests red:** the Revision 2 cases failed before the change (spec
-  and internal suites), proving the first-run behavior was missing.
-- **Installer tests green:** 113 public checks and 24 internal checks, including
-  `--toolchain`, the interactive toolchain path, the pinned download with
-  verification, `--no-toolchain`, and the exact host hello.
-- **Candidate:** `make dist` produced the archive (6,530,214 bytes,
-  `a23706d2…6485`), VSIX (26,435 bytes, `9fa9e826…6ffa`), and installer
-  (28,026 bytes, `8cb95c34…d72a`). `make dist-verify` passes.
+- **Installer tests:** 147 public checks, 28 internal checks, and 41 producer
+  checks pass; `make dist-check` passes. The new cases cover VS Code detection,
+  the pinned VSIX download, persistent examples, FS-UAE/ROM detection, the
+  guest run, and the fallback commands.
+- **Candidate:** `make dist` produced the archive (6,530,816 bytes,
+  `547d1bdd…fdbb`), VSIX (26,435 bytes, `3918ca3f…e180`), and installer
+  (42,958 bytes, `2239e244…3e05`). `make dist-verify` passes.
 - **Acceptance:** `make acceptance` passed the seven-guest matrix on the rebuilt
-  candidate; evidence `build/acceptance/20261125T104249Z/evidence.json`;
+  candidate; evidence `build/acceptance/20261125T112110Z/evidence.json`;
   `make acceptance-check` reports `ok`. `make check` passes.
 - **Release:** the rebuilt public prerelease `v1.2.0` is at
   `https://github.com/OpenLorraine/clorraine/releases/tag/v1.2.0`; title
   `v1.2.0 developer preview`; `isPrerelease=true`, `isDraft=false`; `v1.1.2`
   remains Latest. The four public assets returned HTTP 200 and `SHA256SUMS`
   verifies.
-- **Full first run:** the one-line command downloaded the installer, offered
-  and downloaded the pinned rc24 toolchain from AmigaPorts, configured it,
-  ran the host hello, and printed the next steps. The installed CLI reports
-  `clorraine 1.2.0`; the toolchain is under
-  `~/.local/share/clorraine/toolchains/rc24`; the hello output is exact. The
-  run was repeated in a fresh HOME with the same result. Log:
-  `build/tmp/first-run-verified.log`.
-- **README:** the install section now says the installer sets up the rc24
-  toolchain (download or existing copy) and runs the hello test.
+- **Full first run:** the public one-line command downloaded the installer and
+  the pinned rc24 toolchain, installed the CLI, ran the host hello, detected
+  FS-UAE and the licensed ROM, ran the five-second guest hello, downloaded and
+  installed the VSIX, and printed the complete summary. The installed CLI
+  reports `clorraine 1.2.0`; both examples are under
+  `~/.local/share/clorraine/examples`; `code --list-extensions` lists
+  `openlorraine.clorraine`. Log: `build/tmp/first-run-polish-public.log`.
+- **README:** the install section now describes the toolchain, VS Code, FS-UAE,
+  and persistent hello behavior.
 - **Docs/site:** unchanged; still pending the user's test.
 
 ## Revision 2 — full first run
@@ -192,9 +191,9 @@ release; deleting `v1.1.2`; public announcements.
   keep the host hello and print the exact guest command. Add `--no-emulator`.
 - [x] T-01.17 **Rebuild and re-accept.** `make dist`, `make acceptance`, and
   `make acceptance-check`; update the release body, asset hashes, and README.
-- [ ] T-01.18 **Recreate the prerelease.** Delete and recreate `v1.2.0` with the
+- [x] T-01.18 **Recreate the prerelease.** Delete and recreate `v1.2.0` with the
   rebuilt assets, then verify the one-line install with VS Code, FS-UAE, the
-  persistent examples, and `v1.1.2` still Latest.
+  persistent examples, and `v1.1.2` still Latest. ✅ (completed: 2026-11-25 12:29)
 
 ### Revision 3 evidence
 
@@ -217,7 +216,8 @@ non-interactive modes; `make dist`, `make acceptance`, and `make
 acceptance-check` pass on the rebuilt candidate; `gh release view v1.2.0`
 reports `isPrerelease=true`, `isDraft=false`, four assets with
 matching downloaded hashes, and public URLs return HTTP 200; the one-line
-command installs `clorraine 1.2.0` and prints the expected hello line; `v1.1.2`
+command installs `clorraine 1.2.0`, downloads the toolchain, runs the host and
+FS-UAE hello checks, installs the extension, and leaves both examples; `v1.1.2`
 remains Latest; and `git status` shows no docs/website/release-note changes.
 
 ## Install and test instructions (release body)
@@ -232,14 +232,18 @@ The installer asks:
 2. Whether to add the bin directory to `~/.profile` (default yes);
 3. Whether to install now (default yes);
 4. For an existing rc24 root, or whether to download the pinned AmigaPorts
-   archive (default yes; about 70 MB).
+   archive (default yes; about 70 MB);
+5. For a Kickstart ROM when FS-UAE is detected;
+6. Whether to install the VS Code extension when an editor is detected.
 
 It then verifies the archive, installs it under
 `$XDG_DATA_HOME/clorraine/toolchains/rc24` (or `~/.local/share`), runs
-`clorraine setup --toolchain`, and builds and runs a temporary host `hello.clo`.
-It requires the exact output `Hello, Amiga, from Clorraine!`. A host `cc` is
-needed for that check; non-interactive runs skip it unless `--toolchain PATH`
-is supplied.
+`clorraine setup --toolchain`, and builds and runs the host hello. It requires
+the exact output `Hello, Amiga, from Clorraine!`. A host `cc` is needed for that
+check. When FS-UAE and a licensed ROM are available it also runs the Amiga hello
+and leaves both sources under `$PREFIX/share/clorraine/examples`; otherwise it
+prints the exact guest command. Non-interactive runs skip the optional steps
+unless the matching flags are supplied.
 
 Confirm the install:
 

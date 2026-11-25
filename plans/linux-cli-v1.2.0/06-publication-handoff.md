@@ -3,21 +3,22 @@
 > **Status (2026-11-25)**: public prerelease `v1.2.0` published; `v1.1.2`
 > remains Latest. No stable v1.2.0 exists.
 > **Candidate**: `build/dist` (rebuilt first-run candidate)
-> **Evidence**: `build/acceptance/20261125T104249Z/evidence.json`
+> **Evidence**: `build/acceptance/20261125T112110Z/evidence.json`
 > **Release**: `https://github.com/OpenLorraine/clorraine/releases/tag/v1.2.0`
 
-## Revision 2 candidate identity (published)
+## Revision 3 candidate identity (published)
 
 | Asset | Bytes | SHA-256 |
 |---|---:|---|
-| `clorraine-1.2.0-x86_64-linux.tar.gz` | 6,530,214 | `a23706d258b3091342d1e651356bb688cc0a8e018b8582b589f04f9df7356485` |
-| `clorraine-1.2.0.vsix` | 26,435 | `9fa9e826ffa2e64b623fb55aa3c6e2e44c0f86ec4c5c5ec1a39d44fb3bb56ffa` |
-| `install.sh` | 28,026 | `8cb95c348602360ff46028bffa5f2d0973a05f63612eeb0c1cf8baf7839dd72a` |
+| `clorraine-1.2.0-x86_64-linux.tar.gz` | 6,530,816 | `547d1bdd42e8406f4be2a096055a7b6b638283ebb279c4c8901fbec063b7fdbb` |
+| `clorraine-1.2.0.vsix` | 26,435 | `3918ca3fc54b9cfd30022e84e70f3a1207a31b58656b9cf6cf8afeaddd2fe180` |
+| `install.sh` | 42,958 | `2239e2442dcc7b110cb2c69837d8f0dc1837e3a9efc380b0519ceb7d60b43e05` |
 
 The archive contains only `bin/{clc,clorraine,clorraine-lsp}` and the five
 release documents. The installer verifies and installs the pinned rc24
-toolchain from AmigaPorts, then runs the host hello; it never mirrors or bundles
-the toolchain. FS-UAE and licensed media are not included.
+toolchain from AmigaPorts, offers the pinned VSIX, runs the host hello, and runs
+the guest hello when FS-UAE and a licensed ROM are available. It never mirrors
+or bundles the toolchain, ROM, or emulator.
 
 ## Revision 1 candidate identity (historical, not published)
 
@@ -56,7 +57,8 @@ treat publication as a separate approval.
 - The public `v1.2.0` prerelease exists (`isPrerelease=true`,
   `isDraft=false`); `v1.1.2` remains Latest. No stable v1.2.0 exists.
 - Docs and website remain frozen until the user's test. The README and release
-  body describe the first-run installer.
+  body describe VS Code, the toolchain, the persistent hello examples, and the
+  FS-UAE guest hello.
 - If the user's test fails, do not delete or rewrite automatically. Choose to
   delete the prerelease and tag (a public history change) or publish a fixed
   prerelease under a new tag.
