@@ -1,0 +1,21 @@
+# WS5-05/06/08 (cleanup after a runtime fault), A1200/KS3.1 under FS-UAE
+# (54x-fs-uae.sh case 541). Sources: exec.library autodocs (AddIntServer: the server
+# must be removed with RemIntServer before its code or Interrupt structure goes away;
+# a public port must be removed before its memory is freed); spec/05-statements.md §15
+# and spec/11-memory.md (a runtime fault aborts the program without the cleanup
+# ladder); spec/appendix-amiga.md (the shim owns the OS-level resources). The
+# language rule and the platform rule together require the fault exit to leave no OS
+# registration pointing into the unloaded program.
+# Expected: the fault line, rc 20, and an after line equal to the before line
+# (vertb N, port 0); the machine keeps running to END.
+# Contrast 541c (pick(1), no fault): prints 2, removes the handler and the port, and
+# the walker lines are equal.
+# Detector: the walker reports vertb N+1 and port 1 after 54x-seeded.c.
+expect: script
+--- output
+before vertb N port 0 card 1
+armed
+error E11211: index out of range
+rc 20
+after vertb N port 0 card 1
+END

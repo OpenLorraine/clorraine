@@ -1,0 +1,16 @@
+# WS5-02/04 (resource lifecycle), A1200/KS3.1 under FS-UAE (54x-fs-uae.sh case 540).
+# Sources: exec.library autodocs (OpenResource returns a resource pointer; resources
+# have no open count and no close call; RemResource removes a resource from the system
+# list and is for the resource's owner); spec/appendix-stdlib.md (cardPresent: "True
+# when card.resource can be opened"). The A1200 ROM provides card.resource.
+# Expected: "card true true", and the walker reports the same state before and after
+# (card 1 both times; N = N).
+# Contrast 540c (no cardPresent call): the same walker lines.
+# Detector: the walker reports card 0 after 54x-seeded.c removes the resource.
+expect: script
+--- output
+before vertb N port 0 card 1
+card true true
+rc 0
+after vertb N port 0 card 1
+END

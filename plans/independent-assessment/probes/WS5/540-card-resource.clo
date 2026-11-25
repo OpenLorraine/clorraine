@@ -1,0 +1,11 @@
+module Probe.Main;
+
+import { println } from std.io;
+import { cardPresent } from std.amiga.expansion;
+
+func main(): i32 {
+    let a: bool = cardPresent();
+    let b: bool = cardPresent();
+    println($"card {a} {b}");
+    return 0;
+}
