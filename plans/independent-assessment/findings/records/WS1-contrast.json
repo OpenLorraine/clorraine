@@ -1,0 +1,2918 @@
+[
+ {
+  "probe": "001-u8-literal-range",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "001-u8-literal-range",
+  "profile": "host",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "001-u8-literal-range",
+  "profile": "hosted-amiga",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "001-u8-literal-range",
+  "profile": "hosted-amiga",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "001-u8-literal-range",
+  "profile": "hosted-amiga-13",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "001-u8-literal-range",
+  "profile": "hosted-amiga-13",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "002-default-i32-literal",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "002-default-i32-literal",
+  "profile": "host",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "002-default-i32-literal",
+  "profile": "hosted-amiga",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "002-default-i32-literal",
+  "profile": "hosted-amiga",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "002-default-i32-literal",
+  "profile": "hosted-amiga-13",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "002-default-i32-literal",
+  "profile": "hosted-amiga-13",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "003-negative-min-literals",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "003-negative-min-literals",
+  "profile": "host",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "003-negative-min-literals",
+  "profile": "hosted-amiga",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "003-negative-min-literals",
+  "profile": "hosted-amiga",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "003-negative-min-literals",
+  "profile": "hosted-amiga-13",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "003-negative-min-literals",
+  "profile": "hosted-amiga-13",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "004-double-underscore",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "004-double-underscore",
+  "profile": "host",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "004-double-underscore",
+  "profile": "hosted-amiga",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "004-double-underscore",
+  "profile": "hosted-amiga",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "004-double-underscore",
+  "profile": "hosted-amiga-13",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "004-double-underscore",
+  "profile": "hosted-amiga-13",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "005-trailing-underscore",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "005-trailing-underscore",
+  "profile": "host",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "005-trailing-underscore",
+  "profile": "hosted-amiga",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "005-trailing-underscore",
+  "profile": "hosted-amiga",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "005-trailing-underscore",
+  "profile": "hosted-amiga-13",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "005-trailing-underscore",
+  "profile": "hosted-amiga-13",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "006-float-trailing-dot",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "006-float-trailing-dot",
+  "profile": "host",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "006-float-trailing-dot",
+  "profile": "hosted-amiga",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "006-float-trailing-dot",
+  "profile": "hosted-amiga",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "006-float-trailing-dot",
+  "profile": "hosted-amiga-13",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "006-float-trailing-dot",
+  "profile": "hosted-amiga-13",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "007-literal-suffix",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "007-literal-suffix",
+  "profile": "host",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "007-literal-suffix",
+  "profile": "hosted-amiga",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "007-literal-suffix",
+  "profile": "hosted-amiga",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "007-literal-suffix",
+  "profile": "hosted-amiga-13",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "007-literal-suffix",
+  "profile": "hosted-amiga-13",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "008-char-escapes",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "008-char-escapes",
+  "profile": "host",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "008-char-escapes",
+  "profile": "hosted-amiga",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "008-char-escapes",
+  "profile": "hosted-amiga",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "008-char-escapes",
+  "profile": "hosted-amiga-13",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "008-char-escapes",
+  "profile": "hosted-amiga-13",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "009-char-multibyte",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "009-char-multibyte",
+  "profile": "host",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "009-char-multibyte",
+  "profile": "hosted-amiga",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "009-char-multibyte",
+  "profile": "hosted-amiga",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "009-char-multibyte",
+  "profile": "hosted-amiga-13",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "009-char-multibyte",
+  "profile": "hosted-amiga-13",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "010-bad-escape",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "010-bad-escape",
+  "profile": "host",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "010-bad-escape",
+  "profile": "hosted-amiga",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "010-bad-escape",
+  "profile": "hosted-amiga",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "010-bad-escape",
+  "profile": "hosted-amiga-13",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "010-bad-escape",
+  "profile": "hosted-amiga-13",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "011-short-hex-escape",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "011-short-hex-escape",
+  "profile": "host",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "011-short-hex-escape",
+  "profile": "hosted-amiga",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "011-short-hex-escape",
+  "profile": "hosted-amiga",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "011-short-hex-escape",
+  "profile": "hosted-amiga-13",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "011-short-hex-escape",
+  "profile": "hosted-amiga-13",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "012-block-comment-nonnesting",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "012-block-comment-nonnesting",
+  "profile": "host",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "012-block-comment-nonnesting",
+  "profile": "hosted-amiga",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "012-block-comment-nonnesting",
+  "profile": "hosted-amiga",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "012-block-comment-nonnesting",
+  "profile": "hosted-amiga-13",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "012-block-comment-nonnesting",
+  "profile": "hosted-amiga-13",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "013-unterminated-comment",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "013-unterminated-comment",
+  "profile": "host",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "013-unterminated-comment",
+  "profile": "hosted-amiga",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "013-unterminated-comment",
+  "profile": "hosted-amiga",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "013-unterminated-comment",
+  "profile": "hosted-amiga-13",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "013-unterminated-comment",
+  "profile": "hosted-amiga-13",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "014-nonascii-identifier",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "014-nonascii-identifier",
+  "profile": "host",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "014-nonascii-identifier",
+  "profile": "hosted-amiga",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "014-nonascii-identifier",
+  "profile": "hosted-amiga",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "014-nonascii-identifier",
+  "profile": "hosted-amiga-13",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "014-nonascii-identifier",
+  "profile": "hosted-amiga-13",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "015-string-byte-length",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "015-string-byte-length",
+  "profile": "host",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "015-string-byte-length",
+  "profile": "hosted-amiga",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "015-string-byte-length",
+  "profile": "hosted-amiga",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "015-string-byte-length",
+  "profile": "hosted-amiga-13",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "015-string-byte-length",
+  "profile": "hosted-amiga-13",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "016-keyword-as-name",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "016-keyword-as-name",
+  "profile": "host",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "016-keyword-as-name",
+  "profile": "hosted-amiga",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "016-keyword-as-name",
+  "profile": "hosted-amiga",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "016-keyword-as-name",
+  "profile": "hosted-amiga-13",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "016-keyword-as-name",
+  "profile": "hosted-amiga-13",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "017-reserved-builtin-decl",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "017-reserved-builtin-decl",
+  "profile": "host",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "017-reserved-builtin-decl",
+  "profile": "hosted-amiga",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "017-reserved-builtin-decl",
+  "profile": "hosted-amiga",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "017-reserved-builtin-decl",
+  "profile": "hosted-amiga-13",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "017-reserved-builtin-decl",
+  "profile": "hosted-amiga-13",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "018-foreign-syntax",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "018-foreign-syntax",
+  "profile": "host",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "018-foreign-syntax",
+  "profile": "hosted-amiga",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "018-foreign-syntax",
+  "profile": "hosted-amiga",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "018-foreign-syntax",
+  "profile": "hosted-amiga-13",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "018-foreign-syntax",
+  "profile": "hosted-amiga-13",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "019-precedence",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "019-precedence",
+  "profile": "host",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "019-precedence",
+  "profile": "hosted-amiga",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "019-precedence",
+  "profile": "hosted-amiga",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "019-precedence",
+  "profile": "hosted-amiga-13",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "019-precedence",
+  "profile": "hosted-amiga-13",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "020-assignment-chain",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "020-assignment-chain",
+  "profile": "host",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "020-assignment-chain",
+  "profile": "hosted-amiga",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "020-assignment-chain",
+  "profile": "hosted-amiga",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "020-assignment-chain",
+  "profile": "hosted-amiga-13",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "020-assignment-chain",
+  "profile": "hosted-amiga-13",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "021-evaluation-order",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "output",
+  "ok": false,
+  "detail": "rc=0 got='10 1\\n2 2\\n20 1\\n-1\\n1 2 3\\n' want='10 1\\n2 2\\n10 2\\n-1\\n1 2 3\\n'",
+  "contrast": true
+ },
+ {
+  "probe": "021-evaluation-order",
+  "profile": "host",
+  "mode": "release",
+  "kind": "output",
+  "ok": false,
+  "detail": "rc=0 got='10 1\\n2 2\\n20 1\\n-1\\n1 2 3\\n' want='10 1\\n2 2\\n10 2\\n-1\\n1 2 3\\n'",
+  "contrast": true
+ },
+ {
+  "probe": "021-evaluation-order",
+  "profile": "hosted-amiga",
+  "mode": "debug",
+  "kind": "output",
+  "ok": false,
+  "detail": "rc=0 got='10 1\\n2 2\\n20 1\\n-1\\n1 2 3\\n' want='10 1\\n2 2\\n10 2\\n-1\\n1 2 3\\n'",
+  "contrast": true
+ },
+ {
+  "probe": "021-evaluation-order",
+  "profile": "hosted-amiga",
+  "mode": "release",
+  "kind": "output",
+  "ok": false,
+  "detail": "rc=0 got='10 1\\n2 2\\n20 1\\n-1\\n1 2 3\\n' want='10 1\\n2 2\\n10 2\\n-1\\n1 2 3\\n'",
+  "contrast": true
+ },
+ {
+  "probe": "021-evaluation-order",
+  "profile": "hosted-amiga-13",
+  "mode": "debug",
+  "kind": "output",
+  "ok": false,
+  "detail": "rc=0 got='10 1\\n2 2\\n20 1\\n-1\\n1 2 3\\n' want='10 1\\n2 2\\n10 2\\n-1\\n1 2 3\\n'",
+  "contrast": true
+ },
+ {
+  "probe": "021-evaluation-order",
+  "profile": "hosted-amiga-13",
+  "mode": "release",
+  "kind": "output",
+  "ok": false,
+  "detail": "rc=0 got='10 1\\n2 2\\n20 1\\n-1\\n1 2 3\\n' want='10 1\\n2 2\\n10 2\\n-1\\n1 2 3\\n'",
+  "contrast": true
+ },
+ {
+  "probe": "022-shadowing",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "022-shadowing",
+  "profile": "host",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "022-shadowing",
+  "profile": "hosted-amiga",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "022-shadowing",
+  "profile": "hosted-amiga",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "022-shadowing",
+  "profile": "hosted-amiga-13",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "022-shadowing",
+  "profile": "hosted-amiga-13",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "023-use-before-decl",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "023-use-before-decl",
+  "profile": "host",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "023-use-before-decl",
+  "profile": "hosted-amiga",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "023-use-before-decl",
+  "profile": "hosted-amiga",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "023-use-before-decl",
+  "profile": "hosted-amiga-13",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "023-use-before-decl",
+  "profile": "hosted-amiga-13",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "024-import-not-exported",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "024-import-not-exported",
+  "profile": "host",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "024-import-not-exported",
+  "profile": "hosted-amiga",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "024-import-not-exported",
+  "profile": "hosted-amiga",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "024-import-not-exported",
+  "profile": "hosted-amiga-13",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "024-import-not-exported",
+  "profile": "hosted-amiga-13",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "025-import-unknown",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "025-import-unknown",
+  "profile": "host",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "025-import-unknown",
+  "profile": "hosted-amiga",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "025-import-unknown",
+  "profile": "hosted-amiga",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "025-import-unknown",
+  "profile": "hosted-amiga-13",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "025-import-unknown",
+  "profile": "hosted-amiga-13",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "026-duplicate-import",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "026-duplicate-import",
+  "profile": "host",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "026-duplicate-import",
+  "profile": "hosted-amiga",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "026-duplicate-import",
+  "profile": "hosted-amiga",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "026-duplicate-import",
+  "profile": "hosted-amiga-13",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "026-duplicate-import",
+  "profile": "hosted-amiga-13",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "027-qualified-without-import",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "027-qualified-without-import",
+  "profile": "host",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "027-qualified-without-import",
+  "profile": "hosted-amiga",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "027-qualified-without-import",
+  "profile": "hosted-amiga",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "027-qualified-without-import",
+  "profile": "hosted-amiga-13",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "027-qualified-without-import",
+  "profile": "hosted-amiga-13",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "028-circular-imports",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "028-circular-imports",
+  "profile": "host",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "028-circular-imports",
+  "profile": "hosted-amiga",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "028-circular-imports",
+  "profile": "hosted-amiga",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "028-circular-imports",
+  "profile": "hosted-amiga-13",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "028-circular-imports",
+  "profile": "hosted-amiga-13",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "029-init-cycle",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "029-init-cycle",
+  "profile": "host",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "029-init-cycle",
+  "profile": "hosted-amiga",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "029-init-cycle",
+  "profile": "hosted-amiga",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "029-init-cycle",
+  "profile": "hosted-amiga-13",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "029-init-cycle",
+  "profile": "hosted-amiga-13",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "030-mixed-sign",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "030-mixed-sign",
+  "profile": "host",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "030-mixed-sign",
+  "profile": "hosted-amiga",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "030-mixed-sign",
+  "profile": "hosted-amiga",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "030-mixed-sign",
+  "profile": "hosted-amiga-13",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "030-mixed-sign",
+  "profile": "hosted-amiga-13",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "031-u8-to-i16",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "031-u8-to-i16",
+  "profile": "host",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "031-u8-to-i16",
+  "profile": "hosted-amiga",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "031-u8-to-i16",
+  "profile": "hosted-amiga",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "031-u8-to-i16",
+  "profile": "hosted-amiga-13",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "031-u8-to-i16",
+  "profile": "hosted-amiga-13",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "032-literal-operand-type",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "032-literal-operand-type",
+  "profile": "host",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "032-literal-operand-type",
+  "profile": "hosted-amiga",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "032-literal-operand-type",
+  "profile": "hosted-amiga",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "032-literal-operand-type",
+  "profile": "hosted-amiga-13",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "032-literal-operand-type",
+  "profile": "hosted-amiga-13",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "033-literal-operand-nofit",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "033-literal-operand-nofit",
+  "profile": "host",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "033-literal-operand-nofit",
+  "profile": "hosted-amiga",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "033-literal-operand-nofit",
+  "profile": "hosted-amiga",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "033-literal-operand-nofit",
+  "profile": "hosted-amiga-13",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "033-literal-operand-nofit",
+  "profile": "hosted-amiga-13",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "034-int-condition",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "034-int-condition",
+  "profile": "host",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "034-int-condition",
+  "profile": "hosted-amiga",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "034-int-condition",
+  "profile": "hosted-amiga",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "034-int-condition",
+  "profile": "hosted-amiga-13",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "034-int-condition",
+  "profile": "hosted-amiga-13",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "035-nullable-scalar",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "035-nullable-scalar",
+  "profile": "host",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "035-nullable-scalar",
+  "profile": "hosted-amiga",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "035-nullable-scalar",
+  "profile": "hosted-amiga",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "035-nullable-scalar",
+  "profile": "hosted-amiga-13",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "035-nullable-scalar",
+  "profile": "hosted-amiga-13",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "036-enum-ordering",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "036-enum-ordering",
+  "profile": "host",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "036-enum-ordering",
+  "profile": "hosted-amiga",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "036-enum-ordering",
+  "profile": "hosted-amiga",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "036-enum-ordering",
+  "profile": "hosted-amiga-13",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "036-enum-ordering",
+  "profile": "hosted-amiga-13",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "037-enum-float-backing",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "037-enum-float-backing",
+  "profile": "host",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "037-enum-float-backing",
+  "profile": "hosted-amiga",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "037-enum-float-backing",
+  "profile": "hosted-amiga",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "037-enum-float-backing",
+  "profile": "hosted-amiga-13",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "037-enum-float-backing",
+  "profile": "hosted-amiga-13",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "038-u8-eq-negative",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "038-u8-eq-negative",
+  "profile": "host",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "038-u8-eq-negative",
+  "profile": "hosted-amiga",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "038-u8-eq-negative",
+  "profile": "hosted-amiga",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "038-u8-eq-negative",
+  "profile": "hosted-amiga-13",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "038-u8-eq-negative",
+  "profile": "hosted-amiga-13",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "039-wrap-differential",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "039-wrap-differential",
+  "profile": "host",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "039-wrap-differential",
+  "profile": "hosted-amiga",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "039-wrap-differential",
+  "profile": "hosted-amiga",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "039-wrap-differential",
+  "profile": "hosted-amiga-13",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "039-wrap-differential",
+  "profile": "hosted-amiga-13",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "040-shift-differential",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "040-shift-differential",
+  "profile": "host",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "040-shift-differential",
+  "profile": "hosted-amiga",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "040-shift-differential",
+  "profile": "hosted-amiga",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "040-shift-differential",
+  "profile": "hosted-amiga-13",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "040-shift-differential",
+  "profile": "hosted-amiga-13",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "041-negative-shift-count",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "041-negative-shift-count",
+  "profile": "host",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "041-negative-shift-count",
+  "profile": "hosted-amiga",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "041-negative-shift-count",
+  "profile": "hosted-amiga",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "041-negative-shift-count",
+  "profile": "hosted-amiga-13",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "041-negative-shift-count",
+  "profile": "hosted-amiga-13",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "042-i8-min-div-fault",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "042-i8-min-div-fault",
+  "profile": "host",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "042-i8-min-div-fault",
+  "profile": "hosted-amiga",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "042-i8-min-div-fault",
+  "profile": "hosted-amiga",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "042-i8-min-div-fault",
+  "profile": "hosted-amiga-13",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "042-i8-min-div-fault",
+  "profile": "hosted-amiga-13",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "043-i16-min-mod-fault",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "043-i16-min-mod-fault",
+  "profile": "host",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "043-i16-min-mod-fault",
+  "profile": "hosted-amiga",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "043-i16-min-mod-fault",
+  "profile": "hosted-amiga",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "043-i16-min-mod-fault",
+  "profile": "hosted-amiga-13",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "043-i16-min-mod-fault",
+  "profile": "hosted-amiga-13",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "044-const-div-zero",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "044-const-div-zero",
+  "profile": "host",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "044-const-div-zero",
+  "profile": "hosted-amiga",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "044-const-div-zero",
+  "profile": "hosted-amiga",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "044-const-div-zero",
+  "profile": "hosted-amiga-13",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "044-const-div-zero",
+  "profile": "hosted-amiga-13",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "045-const-min-div",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "045-const-min-div",
+  "profile": "host",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "045-const-min-div",
+  "profile": "hosted-amiga",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "045-const-min-div",
+  "profile": "hosted-amiga",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "045-const-min-div",
+  "profile": "hosted-amiga-13",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "045-const-min-div",
+  "profile": "hosted-amiga-13",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "046-const-float-int-overflow",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "046-const-float-int-overflow",
+  "profile": "host",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "046-const-float-int-overflow",
+  "profile": "hosted-amiga",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "046-const-float-int-overflow",
+  "profile": "hosted-amiga",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "046-const-float-int-overflow",
+  "profile": "hosted-amiga-13",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "046-const-float-int-overflow",
+  "profile": "hosted-amiga-13",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "047-float-to-u8-fault",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "047-float-to-u8-fault",
+  "profile": "host",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "047-float-to-u8-fault",
+  "profile": "hosted-amiga",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "047-float-to-u8-fault",
+  "profile": "hosted-amiga",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "047-float-to-u8-fault",
+  "profile": "hosted-amiga-13",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "047-float-to-u8-fault",
+  "profile": "hosted-amiga-13",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": true
+ },
+ {
+  "probe": "048-layout-sizeof",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "companion-differs",
+  "ok": true,
+  "detail": "differs from companion",
+  "contrast": true
+ },
+ {
+  "probe": "048-layout-sizeof",
+  "profile": "host",
+  "mode": "release",
+  "kind": "companion-differs",
+  "ok": true,
+  "detail": "differs from companion",
+  "contrast": true
+ },
+ {
+  "probe": "048-layout-sizeof",
+  "profile": "hosted-amiga",
+  "mode": "debug",
+  "kind": "companion-differs",
+  "ok": true,
+  "detail": "differs from companion",
+  "contrast": true
+ },
+ {
+  "probe": "048-layout-sizeof",
+  "profile": "hosted-amiga",
+  "mode": "release",
+  "kind": "companion-differs",
+  "ok": true,
+  "detail": "differs from companion",
+  "contrast": true
+ },
+ {
+  "probe": "048-layout-sizeof",
+  "profile": "hosted-amiga-13",
+  "mode": "debug",
+  "kind": "companion-differs",
+  "ok": true,
+  "detail": "differs from companion",
+  "contrast": true
+ },
+ {
+  "probe": "048-layout-sizeof",
+  "profile": "hosted-amiga-13",
+  "mode": "release",
+  "kind": "companion-differs",
+  "ok": true,
+  "detail": "differs from companion",
+  "contrast": true
+ },
+ {
+  "probe": "053-gating-ks13-rejects-asl",
+  "profile": "hosted-amiga-13",
+  "mode": "debug",
+  "kind": "accept",
+  "ok": true,
+  "detail": "built",
+  "contrast": true
+ },
+ {
+  "probe": "053-gating-ks13-rejects-asl",
+  "profile": "hosted-amiga-13",
+  "mode": "release",
+  "kind": "accept",
+  "ok": true,
+  "detail": "built",
+  "contrast": true
+ },
+ {
+  "probe": "054-gating-host-rejects-amiga",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "accept",
+  "ok": true,
+  "detail": "built",
+  "contrast": true
+ },
+ {
+  "probe": "054-gating-host-rejects-amiga",
+  "profile": "host",
+  "mode": "release",
+  "kind": "accept",
+  "ok": true,
+  "detail": "built",
+  "contrast": true
+ },
+ {
+  "probe": "055-gating-freestanding-string",
+  "profile": "freestanding",
+  "mode": "debug",
+  "kind": "accept",
+  "ok": true,
+  "detail": "built",
+  "contrast": true
+ },
+ {
+  "probe": "055-gating-freestanding-string",
+  "profile": "freestanding",
+  "mode": "release",
+  "kind": "accept",
+  "ok": true,
+  "detail": "built",
+  "contrast": true
+ },
+ {
+  "probe": "058-embed-bytes",
+  "profile": "host",
+  "mode": "clc",
+  "kind": "output",
+  "ok": false,
+  "detail": "rejected rc=1 first=E10224",
+  "contrast": true
+ },
+ {
+  "probe": "058-embed-bytes",
+  "profile": "hosted-amiga",
+  "mode": "clc",
+  "kind": "output",
+  "ok": false,
+  "detail": "rejected rc=1 first=E10224",
+  "contrast": true
+ },
+ {
+  "probe": "058-embed-bytes",
+  "profile": "hosted-amiga-13",
+  "mode": "clc",
+  "kind": "output",
+  "ok": false,
+  "detail": "rejected rc=1 first=E10224",
+  "contrast": true
+ },
+ {
+  "probe": "059-embed-absolute",
+  "profile": "host",
+  "mode": "clc",
+  "kind": "output",
+  "ok": false,
+  "detail": "rejected rc=1 first=E10213",
+  "contrast": true
+ },
+ {
+  "probe": "059-embed-absolute",
+  "profile": "hosted-amiga",
+  "mode": "clc",
+  "kind": "output",
+  "ok": false,
+  "detail": "rejected rc=1 first=E10213",
+  "contrast": true
+ },
+ {
+  "probe": "059-embed-absolute",
+  "profile": "hosted-amiga-13",
+  "mode": "clc",
+  "kind": "output",
+  "ok": false,
+  "detail": "rejected rc=1 first=E10213",
+  "contrast": true
+ },
+ {
+  "probe": "060-embed-escape",
+  "profile": "host",
+  "mode": "clc",
+  "kind": "output",
+  "ok": false,
+  "detail": "rejected rc=1 first=E10213",
+  "contrast": true
+ },
+ {
+  "probe": "060-embed-escape",
+  "profile": "hosted-amiga",
+  "mode": "clc",
+  "kind": "output",
+  "ok": false,
+  "detail": "rejected rc=1 first=E10213",
+  "contrast": true
+ },
+ {
+  "probe": "060-embed-escape",
+  "profile": "hosted-amiga-13",
+  "mode": "clc",
+  "kind": "output",
+  "ok": false,
+  "detail": "rejected rc=1 first=E10213",
+  "contrast": true
+ },
+ {
+  "probe": "061-embed-dotdot-inside",
+  "profile": "host",
+  "mode": "clc",
+  "kind": "output",
+  "ok": false,
+  "detail": "rejected rc=1 first=E10213",
+  "contrast": true
+ },
+ {
+  "probe": "061-embed-dotdot-inside",
+  "profile": "hosted-amiga",
+  "mode": "clc",
+  "kind": "output",
+  "ok": false,
+  "detail": "rejected rc=1 first=E10213",
+  "contrast": true
+ },
+ {
+  "probe": "061-embed-dotdot-inside",
+  "profile": "hosted-amiga-13",
+  "mode": "clc",
+  "kind": "output",
+  "ok": false,
+  "detail": "rejected rc=1 first=E10213",
+  "contrast": true
+ },
+ {
+  "probe": "062-embed-missing",
+  "profile": "host",
+  "mode": "clc",
+  "kind": "output",
+  "ok": false,
+  "detail": "rejected rc=1 first=E10213",
+  "contrast": true
+ },
+ {
+  "probe": "062-embed-missing",
+  "profile": "hosted-amiga",
+  "mode": "clc",
+  "kind": "output",
+  "ok": false,
+  "detail": "rejected rc=1 first=E10213",
+  "contrast": true
+ },
+ {
+  "probe": "062-embed-missing",
+  "profile": "hosted-amiga-13",
+  "mode": "clc",
+  "kind": "output",
+  "ok": false,
+  "detail": "rejected rc=1 first=E10213",
+  "contrast": true
+ },
+ {
+  "probe": "063-embed-local-let",
+  "profile": "host",
+  "mode": "clc",
+  "kind": "output",
+  "ok": false,
+  "detail": "rejected rc=1 first=E10213",
+  "contrast": true
+ },
+ {
+  "probe": "063-embed-local-let",
+  "profile": "hosted-amiga",
+  "mode": "clc",
+  "kind": "output",
+  "ok": false,
+  "detail": "rejected rc=1 first=E10213",
+  "contrast": true
+ },
+ {
+  "probe": "063-embed-local-let",
+  "profile": "hosted-amiga-13",
+  "mode": "clc",
+  "kind": "output",
+  "ok": false,
+  "detail": "rejected rc=1 first=E10213",
+  "contrast": true
+ },
+ {
+  "probe": "064-embed-module-let",
+  "profile": "host",
+  "mode": "clc",
+  "kind": "output",
+  "ok": false,
+  "detail": "rejected rc=1 first=E10213",
+  "contrast": true
+ },
+ {
+  "probe": "064-embed-module-let",
+  "profile": "hosted-amiga",
+  "mode": "clc",
+  "kind": "output",
+  "ok": false,
+  "detail": "rejected rc=1 first=E10213",
+  "contrast": true
+ },
+ {
+  "probe": "064-embed-module-let",
+  "profile": "hosted-amiga-13",
+  "mode": "clc",
+  "kind": "output",
+  "ok": false,
+  "detail": "rejected rc=1 first=E10213",
+  "contrast": true
+ },
+ {
+  "probe": "050-ffi-all-modules",
+  "profile": "hosted-amiga",
+  "mode": "debug",
+  "kind": "build-fails",
+  "ok": true,
+  "detail": "C build rc=1 /work/build/tmp/assessment/WS1/probes-ffi/050-ffi-all-modules/contrast/hosted-amiga/prog.c:6667:7: error: conflicting types for 'strlen'; have 'UWORD(char *)' {",
+  "contrast": true
+ },
+ {
+  "probe": "051-ffi-ks13-modules",
+  "profile": "hosted-amiga-13",
+  "mode": "debug",
+  "kind": "build-fails",
+  "ok": true,
+  "detail": "C build rc=1 /work/build/tmp/assessment/WS1/probes-ffi/051-ffi-ks13-modules/contrast/hosted-amiga-13/prog.c:6418:7: error: conflicting types for 'strlen'; have 'UWORD(char *",
+  "contrast": true
+ },
+ {
+  "probe": "052-ffi-core-host",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "build-fails",
+  "ok": true,
+  "detail": "C build rc=1 /work/build/tmp/assessment/WS1/probes-ffi/052-ffi-core-host/contrast/host/prog.c:803:7: error: conflicting types for \u2018strlen\u2019; have \u2018UWORD(char *)\u2019 {aka \u2018short ",
+  "contrast": true
+ },
+ {
+  "probe": "066-evaluation-order-shapes",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "output",
+  "ok": false,
+  "detail": "rc=0 got='1 2\\n1 2 3\\n120\\ntrue\\n321\\n0 20 0 0\\n' want='1 2\\n1 2 3\\n120\\ntrue\\n123\\n0 20 0 0\\n'",
+  "contrast": true
+ },
+ {
+  "probe": "066-evaluation-order-shapes",
+  "profile": "host",
+  "mode": "release",
+  "kind": "output",
+  "ok": false,
+  "detail": "rc=0 got='1 2\\n1 2 3\\n120\\ntrue\\n321\\n0 20 0 0\\n' want='1 2\\n1 2 3\\n120\\ntrue\\n123\\n0 20 0 0\\n'",
+  "contrast": true
+ },
+ {
+  "probe": "066-evaluation-order-shapes",
+  "profile": "hosted-amiga",
+  "mode": "debug",
+  "kind": "output",
+  "ok": false,
+  "detail": "rc=0 got='1 2\\n1 2 3\\n120\\ntrue\\n321\\n0 20 0 0\\n' want='1 2\\n1 2 3\\n120\\ntrue\\n123\\n0 20 0 0\\n'",
+  "contrast": true
+ },
+ {
+  "probe": "066-evaluation-order-shapes",
+  "profile": "hosted-amiga",
+  "mode": "release",
+  "kind": "output",
+  "ok": false,
+  "detail": "rc=0 got='1 2\\n1 2 3\\n120\\ntrue\\n321\\n0 20 0 0\\n' want='1 2\\n1 2 3\\n120\\ntrue\\n123\\n0 20 0 0\\n'",
+  "contrast": true
+ },
+ {
+  "probe": "066-evaluation-order-shapes",
+  "profile": "hosted-amiga-13",
+  "mode": "debug",
+  "kind": "output",
+  "ok": false,
+  "detail": "rc=0 got='1 2\\n1 2 3\\n120\\ntrue\\n321\\n0 20 0 0\\n' want='1 2\\n1 2 3\\n120\\ntrue\\n123\\n0 20 0 0\\n'",
+  "contrast": true
+ },
+ {
+  "probe": "066-evaluation-order-shapes",
+  "profile": "hosted-amiga-13",
+  "mode": "release",
+  "kind": "output",
+  "ok": false,
+  "detail": "rc=0 got='1 2\\n1 2 3\\n120\\ntrue\\n321\\n0 20 0 0\\n' want='1 2\\n1 2 3\\n120\\ntrue\\n123\\n0 20 0 0\\n'",
+  "contrast": true
+ }
+]

@@ -1,0 +1,20 @@
+ Container clorraine-dev-run-1a1b5411baf3 Creating 
+ Container clorraine-dev-run-1a1b5411baf3 Created 
+FAIL parens-10k: rc=-6 178ms (limit 233) rss=11776KB (limit 172640) size=20131 first=- PANIC
+FAIL parens-100k: rc=-6 185ms (limit 1443) rss=20332KB (limit 437920) size=200131 first=- PANIC
+FAIL blocks-10k: rc=-6 176ms (limit 122) rss=11748KB (limit 172640) size=40111 first=- PANIC
+FAIL unary-100k: rc=-6 199ms (limit 5039) rss=25312KB (limit 664480) size=300131 first=- PANIC
+FAIL addchain-100k: rc=-6 260ms (limit 2996) rss=37332KB (limit 815120) size=400127 first=- PANIC
+FAIL ifchain-5k: rc=-6 290ms (limit 1443) rss=67560KB (limit 437920) size=202892 first=- PANIC
+PASS switch-5k: rc=0 974ms (limit 5039) rss=61704KB (limit 664480) size=332952 first=-
+PASS ident-1m: rc=0 45ms (limit 13923) rss=24408KB (limit 3787466) size=2000129 first=-
+PASS literal-10k-digits: rc=1 2ms (limit 199) rss=10208KB (limit 172640) size=10125 first=E20004:
+PASS string-1mb: rc=0 23ms (limit 6962) rss=15516KB (limit 1893881) size=1000143 first=-
+FAIL calls-10k: rc=-6 191ms (limit 122) rss=12716KB (limit 172640) size=30174 first=- PANIC
+FAIL locals-50k: rc=0 53307ms (limit 8938) rss=145620KB (limit 2431407) size=1284006 first=-
+PASS template-10k: rc=0 55ms (limit 122) rss=21888KB (limit 172640) size=40143 first=-
+PASS array-literal-100k: rc=1 82ms (limit 3405) rss=36788KB (limit 926248) size=489144 first=E10224:
+FAIL generic-recursion: rc=-999 600000ms (limit 49) rss=0KB (limit 172640) size=288 first=-
+robustness: 9 failure(s)
+
+make: *** [Makefile:74: exec] Error 1

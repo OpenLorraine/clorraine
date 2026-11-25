@@ -1,0 +1,47 @@
+ Container clorraine-dev-run-b5c3283ff6c0 Creating 
+ Container clorraine-dev-run-b5c3283ff6c0 Created 
+PASS std.amiga.amigaguide: host=R hosted-amiga=A hosted-amiga-13=R freestanding=R
+PASS std.amiga.arexx: host=R hosted-amiga=A hosted-amiga-13=R freestanding=R
+PASS std.amiga.args: host=R hosted-amiga=A hosted-amiga-13=R freestanding=R
+PASS std.amiga.asl: host=R hosted-amiga=A hosted-amiga-13=R freestanding=R
+PASS std.amiga.audio: host=R hosted-amiga=A hosted-amiga-13=A freestanding=R
+PASS std.amiga.boopsi: host=R hosted-amiga=A hosted-amiga-13=R freestanding=R
+PASS std.amiga.bsdsocket: host=R hosted-amiga=A hosted-amiga-13=R freestanding=R
+PASS std.amiga.clipboard: host=R hosted-amiga=A hosted-amiga-13=R freestanding=R
+PASS std.amiga.commodities: host=R hosted-amiga=A hosted-amiga-13=R freestanding=R
+PASS std.amiga.custom: host=R hosted-amiga=A hosted-amiga-13=A freestanding=R
+PASS std.amiga.datatypes: host=R hosted-amiga=A hosted-amiga-13=R freestanding=R
+PASS std.amiga.devices: host=R hosted-amiga=A hosted-amiga-13=R freestanding=R
+PASS std.amiga.dos: host=R hosted-amiga=A hosted-amiga-13=A freestanding=R
+PASS std.amiga.eclock: host=R hosted-amiga=A hosted-amiga-13=R freestanding=R
+PASS std.amiga.exec: host=R hosted-amiga=A hosted-amiga-13=A freestanding=R
+PASS std.amiga.expansion: host=R hosted-amiga=A hosted-amiga-13=R freestanding=R
+PASS std.amiga.gadtools: host=R hosted-amiga=A hosted-amiga-13=R freestanding=R
+PASS std.amiga.graphics: host=R hosted-amiga=A hosted-amiga-13=A freestanding=R
+PASS std.amiga.icon: host=R hosted-amiga=A hosted-amiga-13=R freestanding=R
+PASS std.amiga.ilbm: host=R hosted-amiga=A hosted-amiga-13=A freestanding=R
+PASS std.amiga.input: host=R hosted-amiga=A hosted-amiga-13=A freestanding=R
+PASS std.amiga.interrupt: host=R hosted-amiga=A hosted-amiga-13=A freestanding=R
+PASS std.amiga.intuition: host=R hosted-amiga=A hosted-amiga-13=A freestanding=R
+PASS std.amiga.layers: host=R hosted-amiga=A hosted-amiga-13=A freestanding=R
+PASS std.amiga.locale: host=R hosted-amiga=A hosted-amiga-13=R freestanding=R
+PASS std.amiga.lowlevel: host=R hosted-amiga=A hosted-amiga-13=R freestanding=R
+PASS std.amiga.nonvolatile: host=R hosted-amiga=A hosted-amiga-13=R freestanding=R
+PASS std.amiga.picasso96: host=R hosted-amiga=A hosted-amiga-13=R freestanding=R
+PASS std.amiga.pool: host=R hosted-amiga=A hosted-amiga-13=R freestanding=R
+PASS std.amiga.regions: host=R hosted-amiga=A hosted-amiga-13=R freestanding=R
+PASS std.amiga.semaphore: host=R hosted-amiga=A hosted-amiga-13=R freestanding=R
+PASS std.amiga.sprite: host=R hosted-amiga=A hosted-amiga-13=A freestanding=R
+PASS std.amiga.text: host=R hosted-amiga=A hosted-amiga-13=A freestanding=R
+PASS std.amiga.timer: host=R hosted-amiga=A hosted-amiga-13=A freestanding=R
+PASS std.amiga.utility: host=R hosted-amiga=A hosted-amiga-13=R freestanding=R
+PASS std.amiga.video: host=R hosted-amiga=A hosted-amiga-13=A freestanding=R
+PASS std.amiga.workbench: host=R hosted-amiga=A hosted-amiga-13=R freestanding=R
+PASS std.fmt: host=A hosted-amiga=A hosted-amiga-13=A freestanding=R
+PASS std.iff: host=A hosted-amiga=A hosted-amiga-13=A freestanding=R
+PASS std.io: host=A hosted-amiga=A hosted-amiga-13=A freestanding=A
+PASS std.math: host=A hosted-amiga=A hosted-amiga-13=A freestanding=R
+PASS std.mem: host=A hosted-amiga=A hosted-amiga-13=A freestanding=R
+PASS std.text: host=A hosted-amiga=A hosted-amiga-13=A freestanding=R
+PASS unknown-profile: rc=1 ["error E11201: unknown profile 'amiga-os4'"]
+gating: 0 mismatch(es)

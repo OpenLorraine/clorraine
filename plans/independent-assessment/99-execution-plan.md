@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-25 20:05
-> **Progress**: 13/95 tasks (13%)
+> **Last Updated**: 2026-11-25 20:24
+> **Progress**: 18/95 tasks (18%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -135,14 +135,14 @@ this plan's folder and the roadmap; 03-01 §Ground rules)
 
 ### Step 1.2: Analysis
 
-- [ ] 1.2.1 Review `lex`, `parse`, `load`, `resolve`, and `analysis.rs` against WS1-01..WS1-03; run their probes; record outcomes, coverage, and findings in `findings/WS1-semantic-core.md`
-- [ ] 1.2.2 Review `sema`, `types`, `consts` against WS1-04..WS1-06, including the folded-vs-runtime differential and `sizeof` probes on host and m68k
-- [ ] 1.2.3 Review `ffi.rs`, `abi.rs`, `profile.rs`, `driver.rs`, data inclusion, and robustness against WS1-07..WS1-10
+- [x] 1.2.1 Review `lex`, `parse`, `load`, `resolve`, and `analysis.rs` against WS1-01..WS1-03; run their probes; record outcomes, coverage, and findings in `findings/WS1-semantic-core.md` ✅ (completed: 2026-11-25 20:23)
+- [x] 1.2.2 Review `sema`, `types`, `consts` against WS1-04..WS1-06, including the folded-vs-runtime differential and `sizeof` probes on host and m68k ✅ (completed: 2026-11-25 20:23)
+- [x] 1.2.3 Review `ffi.rs`, `abi.rs`, `profile.rs`, `driver.rs`, data inclusion, and robustness against WS1-07..WS1-10 ✅ (completed: 2026-11-25 20:23)
 
 ### Step 1.3: Hardening and gate
 
-- [ ] 1.3.1 Self-refutation: re-read each finding against `spec/`, `docs/known-limitations.md`, and earlier plans (03-01 §Independence); fix confidence and severity; escalate any Critical (03-01 §Escalation)
-- [ ] 1.3.2 Phase gate: Task verify and the Phases 1–8 row of `07` §Check points for `findings/WS1-semantic-core.md` and `probes/WS1/`; commit, local only
+- [x] 1.3.1 Self-refutation: re-read each finding against `spec/`, `docs/known-limitations.md`, and earlier plans (03-01 §Independence); fix confidence and severity; escalate any Critical (03-01 §Escalation) ✅ (completed: 2026-11-25 20:24)
+- [x] 1.3.2 Phase gate: Task verify and the Phases 1–8 row of `07` §Check points for `findings/WS1-semantic-core.md` and `probes/WS1/`; commit, local only ✅ (completed: 2026-11-25 20:24)
 
 **Test slices**: N/A — no test map
 **Verify (gate)**: `bash plans/independent-assessment/probes/WS0/drift-check.sh plans/independent-assessment`, then the Phases 1–8 row of `07` §Check points (AR #20)
