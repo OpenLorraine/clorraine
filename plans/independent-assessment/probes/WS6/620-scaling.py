@@ -32,6 +32,8 @@ import { padLeft, toDecimal } from std.fmt;
 import { clone, stringOf, bytes } from std.text;
 import { ilbmPixelHash } from std.iff;
 
+volatile let sink: i32 = 0;
+
 func main(): i32 {
     let n: i32 = @N@;
 """
@@ -70,9 +72,9 @@ WORKLOADS = {
     let t: String = stringOf(s);
     println($"{len(bytes(t))}");
 """,
-    "seeded-quadratic": """    let total: i32 = 0;
-    let i: i32 = 0;
-    while (i < n) { let j: i32 = 0; while (j < n) { total = total + 1; j = j + 1; } i = i + 1; }
+    "seeded-quadratic": """    let i: i32 = 0;
+    while (i < n) { let j: i32 = 0; while (j < n) { sink = sink + 1; j = j + 1; } i = i + 1; }
+    let total: i32 = sink;
     println($"{total}");
 """,
 }

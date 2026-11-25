@@ -15,8 +15,8 @@ It reports:
   above-min    a shim request above the appendix minimum (the module never works on
                a system the appendix says is supported)
 
-Usage: 640-kickstart-gating.py [--seed]   (--seed pretends std.amiga.workbench is
-allowed on 1.3, which must produce 13-listed and 13-too-new reports)
+Usage: 640-kickstart-gating.py [--seed]   (--seed pretends std.amiga.workbench and
+std.amiga.semaphore are allowed on 1.3, which must produce 13-too-new and 13-listed)
 """
 import re
 import sys
@@ -48,6 +48,7 @@ def main() -> int:
     on13 = set(re.findall(r'"(std\.[\w.]+)"', block))
     if seed:
         on13.add("std.amiga.workbench")
+        on13.add("std.amiga.semaphore")
     appendix = {}
     for m in re.finditer(r"^\| `(std\.amiga\.\w+)` \| [^|]* \| ([0-9.]+)", (ROOT / "spec" / "appendix-amiga.md").read_text(), re.M):
         appendix[m.group(1)] = m.group(2)

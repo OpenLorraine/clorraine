@@ -28,12 +28,13 @@ contrast)
     python3 "$P/WS1/probe.py" "$P/WS6" --clc "$clc" --out "$out/contrast" --sanitize --vamos-leaks --contrast --jobs 6
     ;;
 seeded)
+    mkdir -p "$out/seeded"
     sed -e 's/`bufferLen(b: Buffer)`/`bufferLenX(b: Buffer)`/' \
         -e 's/| `bufferNew(size: usize)` | `Buffer?` |/| `bufferNew(size: usize)` | `Buffer` |/' \
         -e 's/`bufferBytes(borrow b: Buffer)`/`bufferBytes(take b: Buffer)`/' \
-        spec/appendix-stdlib.md > "$out/appendix-seeded.md"
-    echo "== 600 seeded"; python3 "$P/WS6/600-api-conformance.py" --appendix "$out/appendix-seeded.md" | grep -E "bufferLenX|bufferNew|bufferBytes"
-    echo "== 640 seeded"; python3 "$P/WS6/640-kickstart-gating.py" --seed | grep -E "workbench"
+        spec/appendix-stdlib.md > "$out/seeded/appendix-stdlib.md"
+    echo "== 600 seeded"; python3 "$P/WS6/600-api-conformance.py" --appendix "$out/seeded/appendix-stdlib.md" | grep -E "bufferLenX|bufferNew|bufferBytes"
+    echo "== 640 seeded"; python3 "$P/WS6/640-kickstart-gating.py" --seed | grep -E "workbench|semaphore"
     echo "== 650 seeded"; python3 "$P/WS6/650-handle-ownership.py" --seed | grep -E "seeded"
     echo "== 670 seeded"; python3 "$P/WS6/670-embedding.py" --seed | grep -E "seeded"
     echo "== 620 seeded"; python3 "$P/WS6/620-scaling.py" "$clc" "$out/scaling-seeded" --seeded-only
