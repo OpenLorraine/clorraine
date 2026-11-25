@@ -173,7 +173,7 @@ Red check 2026-11-26 (`run.sh … seeded`, `run.sh … contrast`; logs under
   the lazily opened bases `vamos` does not model (graphics, intuition, layers, diskfont;
   ASM-WS5-013). No WS6 handle finding duplicates a WS5 finding; WS6-05 cites them.
 - **DEF ledger**: no DEF row covers `readFile` error reporting, `str` slicing, or NaN
-  text (`grep -n "readFile\|slice.*str\|NaN" plans/00-roadmap.md` finds no such row).
+  text (`grep -n "readFile\|slice.*str\|NaN" plans/00-roadmap.md` finds only DEF-75, DEF-89, and DEF-98, which concern array slices and emission, not these behaviors).
 - **Downgrades considered**: ASM-WS6-002 could be read as a missing feature; the
   appendix row is explicit, so it stays a conformance Major. ASM-WS6-001 rests on a host
   reproduction; the Amiga path is the same `fread` code (code reading), stated in Lens.

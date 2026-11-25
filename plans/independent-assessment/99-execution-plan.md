@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-26 00:32
-> **Progress**: 60/95 tasks (63%)
+> **Last Updated**: 2026-11-26 00:34
+> **Progress**: 61/95 tasks (64%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -303,7 +303,7 @@ this plan's folder and the roadmap; 03-01 §Ground rules)
 
 ## Phase 7: WS7 Runtime and compile-time performance
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill)_
+> **Phase baseline tree**: a01f85163be8cd9db29df914720a2dac65499cea
 > **Reasoning**: high — measurement across both target lenses (AR #19)
 
 ### Step 7.1: Probe specification
@@ -311,7 +311,7 @@ this plan's folder and the roadmap; 03-01 §Ground rules)
 **Reference**: 03-03 §WS7 · 03-01 §Measurement rules · AR #2, AR #14, AR #17
 **Objective**: WS7's own probes and their expectations fixed before measuring.
 
-- [ ] 7.1.1 Write WS7's probes under `probes/WS7/`: the host-time runner (≥5 runs), the ownership-heavy, generic, and closure scaling generators that `compile_time.py` lacks, and the FS-UAE frame-timing probe used only if WS5/WS6 flagged a shim cost; expectations are the golden outputs or the generator's documented size; commit them, local only
+- [x] 7.1.1 Write WS7's probes under `probes/WS7/`: the host-time runner (≥5 runs), the ownership-heavy, generic, and closure scaling generators that `compile_time.py` lacks, and the FS-UAE frame-timing probe used only if WS5/WS6 flagged a shim cost; expectations are the golden outputs or the generator's documented size; commit them, local only ✅ (completed: 2026-11-26 00:34)
 - [ ] 7.1.2 Red check: each script rejects a run whose output differs from its expectation; log in `findings/WS7-performance.md`
 
 ### Step 7.2: Analysis

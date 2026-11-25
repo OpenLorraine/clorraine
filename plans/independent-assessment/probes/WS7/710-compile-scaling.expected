@@ -1,0 +1,15 @@
+# WS7-06/07 (compile time and memory scaling). Sources: 03-01 §Severity (a compile time
+# or peak RSS above 10x the Phase 0 bench-compile value for the same input size is
+# Major; Phase 0 record records/assessment-baseline-compile.json: functions-1000/2000/
+# 4000/8000 = 35/74/144/299 ms median wall, 18/25/44/82 MB peak RSS); spec/03, spec/16,
+# spec/06 §generics, spec/06 lambdas (every generated program is valid: owned Strings
+# with moves and drops, Array<T> instantiations, capturing lambdas through a callable
+# bound).
+# Expected: every program compiles (exit 0, non-empty C). The reported exponents are
+# measurements; a series is a finding candidate when its time exponent is above 1.3
+# (superlinear) or its 8000 point is above 10x the functions-8000 baseline (2,990 ms) or
+# its RSS above 10x 82 MB.
+# Detector: --seeded (a program with a type error) must be reported as FAIL.
+expect: script
+--- output
+PASS for every series and size; compile-scaling: 0 failure(s)

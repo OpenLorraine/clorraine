@@ -1,0 +1,11 @@
+# WS7-01 (host time). Sources: the benchmark goldens (benchmarks/<name>/expected-output.txt;
+# the Phase 0 C references produce the same text, ST-13) and 03-01 §Measurement rules
+# (host time only with at least 5 runs and the spread; each side netted against its own
+# calibration). Lens: host release (cc -std=c99 -O2, section GC, strip), 15 runs.
+# Expected: every Clorraine and C binary prints its golden. The timing lines are
+# measurements, reported with their spread; host time never decides a Major on its own
+# (03-01: the deciding lens is the shipped 68000 instruction count).
+# Detector: --seeded replaces the sieve golden; both sieve rows must FAIL.
+expect: script
+--- output
+PASS for every benchmark and side; host-time: 0 failure(s)

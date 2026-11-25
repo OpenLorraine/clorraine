@@ -1,0 +1,12 @@
+# WS7-02 (A500 footprint). Sources: spec/appendix-amiga.md §1 and docs/amiga-sdk/
+# registry.tsv (the baseline machine is a stock A500 with 512 KB chip RAM, which holds
+# the operating system, the program image, and every runtime allocation). No smaller
+# budget figure is specified, so the table is a measurement: each program's static image
+# (.text + .data + .bss, A500 shipped release line) and its share of 512 KB; a share is a
+# finding candidate only when it leaves too little for the program's own runtime
+# allocations (judged per program in the analysis, citing its allocation sizes).
+# Expected: every program builds; none exceeds 512 KB (OVER).
+# Detector: --seeded (a 600 KB table) must be reported OVER.
+expect: script
+--- output
+footprint: 0 report(s)
