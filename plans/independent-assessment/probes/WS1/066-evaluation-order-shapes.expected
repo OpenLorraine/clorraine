@@ -1,0 +1,24 @@
+# WS1-02/WS3-03, added in task 1.2.1 to scope the 021 observation (committed
+# before it runs). Source: spec/04-expressions.md §3: struct-literal fields and
+# array-literal elements evaluate in source order; a binary operator evaluates its
+# left operand first; a call evaluates its arguments left to right; an assignment
+# evaluates the target location, then the right-hand side.
+# P{next(),next()} = 1 2; [next() x3] = 1 2 3; 1*100+2*10+3 = 123; 1 < 2 = true;
+# three(1, one(2), 3) = 123; ys[1] = 2*10.
+expect: output
+contrast: next() * 100 + next() * 10 + next() ==> next() * 100 + next() * 10
+contrast-expect: output
+--- output
+1 2
+1 2 3
+123
+true
+123
+0 20 0 0
+--- contrast-output
+1 2
+1 2 3
+120
+true
+123
+0 20 0 0

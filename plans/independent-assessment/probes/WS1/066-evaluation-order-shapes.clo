@@ -1,0 +1,45 @@
+module Probe.Main;
+
+import { println } from std.io;
+
+struct P {
+    a: i32;
+    b: i32;
+}
+
+let counter: i32 = 0;
+
+func next(): i32 {
+    counter = counter + 1;
+    return counter;
+}
+
+func three(a: i32, b: i32, c: i32): i32 {
+    return a * 100 + b * 10 + c;
+}
+
+func one(a: i32): i32 {
+    return a;
+}
+
+func main(): i32 {
+    let p: P = P { a: next(), b: next() };
+    println($"{p.a} {p.b}");
+    counter = 0;
+    let xs: i32[3] = [next(), next(), next()];
+    println($"{xs[0]} {xs[1]} {xs[2]}");
+    counter = 0;
+    let m: i32 = next() * 100 + next() * 10 + next();
+    println($"{m}");
+    counter = 0;
+    let lt: bool = next() < next();
+    println($"{lt}");
+    counter = 0;
+    let t: i32 = three(next(), one(next()), next());
+    println($"{t}");
+    counter = 0;
+    let ys: i32[4] = [0, 0, 0, 0];
+    ys[next()] = next() * 10;
+    println($"{ys[0]} {ys[1]} {ys[2]} {ys[3]}");
+    return 0;
+}

@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-25 20:00
-> **Progress**: 12/95 tasks (12%)
+> **Last Updated**: 2026-11-25 20:05
+> **Progress**: 13/95 tasks (13%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -131,7 +131,7 @@ this plan's folder and the roadmap; 03-01 §Ground rules)
 **Objective**: Expected outcomes from accepted sources before any probe runs.
 
 - [x] 1.1.1 Write probes and expectations for WS1-01..WS1-10 under `probes/WS1/`, each citing its expectation source (ST-5); commit them, local only ✅ (completed: 2026-11-25 20:00)
-- [ ] 1.1.2 Red check: each probe discriminates by contrasting input or seeded defect; log in `findings/WS1-semantic-core.md` §Falsifiability log
+- [x] 1.1.2 Red check: each probe discriminates by contrasting input or seeded defect; log in `findings/WS1-semantic-core.md` §Falsifiability log ✅ (completed: 2026-11-25 20:05)
 
 ### Step 1.2: Analysis
 
