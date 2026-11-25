@@ -5,7 +5,13 @@ profiles: hosted-amiga-13
 # Seeded defect (contrast): a user ffi block redeclares a shim function with a
 # different return type; the C build must then fail.
 expect: output
-contrast: func main(): i32 { ==> ffi probe {\n    func cl_dos_ticks(): u16;\n}\n\nfunc main(): i32 {
+# Amended contrast (2026-11-25, red check): the original seed was
+#   contrast: func main(): i32 { ==> ffi probe {\n    func cl_dos_ticks(): u16;\n}\n\nfunc main(): i32 {
+# clc rejects it with E11101 before any C is emitted (an ffi name may be declared
+# once across the program), so it never reaches the C compiler. The new seed
+# declares libc strlen (declared by the shim's <string.h>) with a different
+# return type; the C build must fail with conflicting types.
+contrast: func main(): i32 { ==> ffi probe {\n    func strlen(s: cstring): u16;\n}\n\nfunc main(): i32 {
 contrast-expect: build-fails
 --- output
 all modules
