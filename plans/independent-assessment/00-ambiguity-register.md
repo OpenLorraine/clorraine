@@ -1,6 +1,6 @@
 ## Ambiguity Register: Independent Assessment of Clorraine
 
-> **Status**: ✅ GATE PASSED — all 29 items resolved
+> **Status**: ✅ GATE PASSED — all 30 items resolved (AR #30 added during execution)
 > **Last Updated**: 2026-11-25
 
 | # | Category | Ambiguity / Gap | Options Presented | User Decision | Status |
@@ -34,6 +34,7 @@
 | 27 | Behavioral (post-preflight) | Whether issue creation needs a separate approval | A) Phase 10 shows the full label set and issue list; nothing is created until the user approves / B) create automatically | ✅ Resolved — User chose A: "Confirm first" | ✅ Resolved |
 | 28 | Integration (post-preflight) | When the issue labels are created | A) now, at planning / B) in Phase 10 | ✅ Resolved — User: "create whatever tags, labels is needed to correctly organize the issues" (2026-11-25); the 20 labels of 03-04 §Labels (`assessment`, `kind:*`, `severity:*`, `priority:*`, `domain:*`) were created on `OpenLorraine/clorraine` the same day; the bracketed title tags follow the existing vocabulary (03-04 §Issue kinds) | ✅ Resolved |
 | 29 | Technical (complexity escalation) | Tooling to repeat the assessment | Original goal: "make a solution, perhaps a skill or something so we can repeat the assessment and auditing whenever we want". Extra system: committed `tools/assessment/` (the two scripts parameterized by plan folder and baseline SHA, the C references, a plan template with placeholders and standing defaults, `README.md` runbook with full / scoped / delta modes) plus a ≤40-line `.opencode/skills/clorraine-assessment/SKILL.md` that only points at the README, force-tracked. Why: a second run would otherwise copy a finished plan folder by hand, and the scripts would be tied to one run. Evidence: run paths are hard-coded in the drift check and probe layout; `.opencode/skills/` is excluded in `.git/info/exclude`; `tools/perf/` and `tools/fuzz/` set the committed-tool pattern. Smallest solution: parameterize the two scripts now; a README stub in Phase 0; promote and runbook tasks in Phase 10 after the method is proven. Extra cost: about 10 files, three tasks (one in Phase 0, two in Phase 10), one optional skill file; no new logic, nothing joins `make check`; the template is refreshed by each run's Phase 0. Independent verdict: skill-now Unnecessary; full packaging phase Simplify; runbook-only insufficient; recommended the smallest solution above plus the Phase 0 stub. Direct user decision: approved larger — option A (with the thin skill) | ✅ Resolved — User: "i approve" (2026-11-25), the only complexity packet awaiting a decision | ✅ Resolved |
+| 30 | Integration (runtime) | The run was invoked with `--auto-commit` (commit and push after every task), while the plan commits locally at two points per phase and pushes only on request | A) the plan's two commit points per phase, without prompting, each pushed / B) the plan's points, local only / C) commit and push after every task | ✅ Resolved — User chose A: "Plan points, push each time" (2026-11-25); also confirmed the settled tree, baseline `e24a8752` (AR #7) | ✅ Resolved |
 
 ## Coverage Map
 

@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-25
-> **Progress**: 0/95 tasks (0%)
+> **Last Updated**: 2026-11-25 19:10
+> **Progress**: 2/95 tasks (2%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -20,7 +20,8 @@ Step 3 tries to refute every finding and checks the phase gate. Method and evide
 - Run with `exec-plan independent-assessment --ask-commit`. Commit locally through the
   git-commit skill at two points per phase — at the end of the last Step N.1 writing task,
   before the red check runs anything, and at the phase gate — and nowhere else; push only when
-  the user asks (PF-006, PB-004).
+  the user asks (PF-006, PB-004). Runtime ruling AR #30: this run commits at those same points
+  without prompting and pushes each commit.
 - The commit and task verification command is `**Task verify**` below; it never runs
   `make check`, `make verify`, `make asan`, or `make ubsan` (AR #3).
 - AR #16 replaces exec-plan's post-phase quality step for Phases 0–9 (AR #22). Phase 9 is the
@@ -80,7 +81,7 @@ this plan's folder and the roadmap; 03-01 §Ground rules)
 
 ## Phase 0: Baseline, pins, C references, measurement matrix
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill)_
+> **Phase baseline tree**: cbe40157ba205e36b0f58379963103c91013e3b6
 > **Reasoning**: medium — mechanical baseline capture and small reference programs (AR #19)
 
 ### Step 0.1: Probe specification
@@ -88,8 +89,8 @@ this plan's folder and the roadmap; 03-01 §Ground rules)
 **Reference**: 03-01 §Ground rules, §Probe layout, §Measurement rules · AR #5, AR #7, AR #11, AR #23
 **Objective**: Pin the baseline and write the references, calibration, and measurement script with their expectations first.
 
-- [ ] 0.1.1 Confirm with the user that the working tree is settled; record `> **Baseline**: <sha>` and the date in `findings/WS0-baseline.md`; write `probes/WS0/drift-check.sh` implementing the drift check of 03-01 §Ground rules, taking the plan folder as its argument and reading the baseline from that folder's `findings/WS0-baseline.md` (no run path written in), and run it
-- [ ] 0.1.2 Write one equivalent C reference per scored benchmark (`container`, `local-table`, `lookup`, `matrix`, `moves`, `sieve`, `strings`, `text-scan`) and `calibration.c` under `probes/WS0/ref/`, following the fairness rules of 03-01 §Measurement rules, each with its golden output as the expectation (ST-13)
+- [x] 0.1.1 Confirm with the user that the working tree is settled; record `> **Baseline**: <sha>` and the date in `findings/WS0-baseline.md`; write `probes/WS0/drift-check.sh` implementing the drift check of 03-01 §Ground rules, taking the plan folder as its argument and reading the baseline from that folder's `findings/WS0-baseline.md` (no run path written in), and run it ✅ (completed: 2026-11-25 19:07)
+- [x] 0.1.2 Write one equivalent C reference per scored benchmark (`container`, `local-table`, `lookup`, `matrix`, `moves`, `sieve`, `strings`, `text-scan`) and `calibration.c` under `probes/WS0/ref/`, following the fairness rules of 03-01 §Measurement rules, each with its golden output as the expectation (ST-13) ✅ (completed: 2026-11-25 19:10)
 - [ ] 0.1.3 Write `probes/WS0/measure.py` per 03-01 §Measurement rules (lens flag arrays; only the listed `bench.py` functions; the plan folder and baseline SHA as arguments; output under `build/tmp/assessment/`); commit Step 0.1 through the git-commit skill, local only; then red check: the comparator rejects a mutated expectation (comparator form, ST-5)
 
 ### Step 0.2: Measurement
