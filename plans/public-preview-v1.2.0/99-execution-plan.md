@@ -1,7 +1,7 @@
 # Task T-01: Publish the v1.2.0 developer preview
 
 > **Type**: Task (lightweight) · **CodeOps Artifact Schema**: 1
-> **Progress**: 11/12 tasks (92%)
+> **Progress**: 12/12 tasks (100%)
 > **Reasoning**: high — public release, interactive installer, immutable tag,
 > asset verification, rollback
 > **Decision**: Public GitHub **prerelease**, tag `v1.2.0`, title
@@ -129,14 +129,21 @@ release; deleting `v1.1.2`; public announcements.
 - **Acceptance:** `make acceptance` passed the seven-guest matrix on the rebuilt
   candidate; evidence `build/acceptance/20261125T101025Z/evidence.json`;
   `make acceptance-check` reports `ok`. `make check` passes.
-- **Release:** public prerelease `v1.2.0` at
+- **Release:** the rebuilt public prerelease `v1.2.0` is at
   `https://github.com/OpenLorraine/clorraine/releases/tag/v1.2.0`; title
   `v1.2.0 developer preview`; `isPrerelease=true`, `isDraft=false`; `v1.1.2`
-  remains Latest. The four assets downloaded with HTTP 200 and their
-  `SHA256SUMS` verify. The one-line command installed the public asset into a
-  fresh HOME with the interactive prompts, printed `clorraine 1.2.0`, and ran
-  the host hello (`Hello, Amiga, from Clorraine!`). Log:
-  `build/tmp/one-line-e2e.log`.
+  remains Latest. Assets: archive 6,530,214 bytes `a23706d2…6485`, VSIX 26,435
+  `9fa9e826…6ffa`, installer 28,026 `8cb95c34…d72a`. The four public assets
+  returned HTTP 200 and `SHA256SUMS` verifies.
+- **Full first run:** the one-line command downloaded the installer, offered
+  and downloaded the pinned rc24 toolchain from AmigaPorts, configured it,
+  ran the host hello, and printed the next steps. The installed CLI reports
+  `clorraine 1.2.0`; the toolchain is under
+  `~/.local/share/clorraine/toolchains/rc24`; the hello output is exact. Log:
+  `build/tmp/full-first-run-e2e.log`.
+- **README:** the install section now says the installer sets up the rc24
+  toolchain (download or existing copy) and runs the hello test.
+- **Docs/site:** unchanged; still pending the user's test.
 - **Docs/site:** unchanged; no or website edits were made.
 
 ## Revision 2 — full first run
@@ -158,11 +165,11 @@ release; deleting `v1.1.2`; public announcements.
   `make acceptance-check` on the rebuilt candidate; update the release body and
   hashes. Update the README toolchain wording (the installer now offers the
   download) while leaving docs/site frozen.
-- [~] T-01.12 **Recreate the v1.2.0 prerelease.** After the new candidate
+- [x] T-01.12 **Recreate the v1.2.0 prerelease.** After the new candidate
   passes, delete the current `v1.2.0` prerelease and tag (0 downloads), then
   recreate it with the rebuilt assets and body. Verify the one-line command end
   to end: download, toolchain download/setup, host hello, version, and
-  `v1.1.2` remaining Latest. Record rollback options. ✅ (completed: 2026-11-25 11:49) ✅ (completed: 2026-11-25 11:49) ✅ (completed: 2026-11-25 11:49)
+  `v1.1.2` remaining Latest. Record rollback options. ✅ (completed: 2026-11-25 11:49) ✅ (completed: 2026-11-25 11:49) ✅ (completed: 2026-11-25 11:49) ✅ (completed: 2026-11-25 11:50)
 
 ## Verify
 
