@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-25 20:42
-> **Progress**: 28/95 tasks (29%)
+> **Last Updated**: 2026-11-25 21:04
+> **Progress**: 29/95 tasks (30%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -191,7 +191,7 @@ this plan's folder and the roadmap; 03-01 §Ground rules)
 **Objective**: Expected emission properties written before builds run.
 
 - [x] 3.1.1 Write probes and expectations for WS3-01..WS3-11 under `probes/WS3/` (strict-flag build scripts, UB probes, odd-address probes, MMIO probes, collision probes); commit them, local only ✅ (completed: 2026-11-25 20:42)
-- [ ] 3.1.2 Red check: each strict-flag script fails on a seeded bad C file; each UB and odd-address probe fires on a seeded violation or its item is marked `limit`; log in `findings/WS3-codegen.md`
+- [x] 3.1.2 Red check: each strict-flag script fails on a seeded bad C file; each UB and odd-address probe fires on a seeded violation or its item is marked `limit`; log in `findings/WS3-codegen.md` ✅ (completed: 2026-11-25 21:04)
 
 ### Step 3.2: Analysis
 

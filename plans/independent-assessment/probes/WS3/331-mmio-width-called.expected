@@ -1,0 +1,13 @@
+# Corrected version of 330 (added in task 3.2.3, committed before it runs): in 330
+# poke() was never called, so -O2 removed it and no assembly could be inspected.
+# WS3-06. Sources: spec/07-structs.md §7 and spec/04 §11 (volatile intrinsics and
+# volatile overlay fields are the audited hardware primitives, T7: "no folding,
+# caching, or reordering"), spec/17-codegen.md §3 ("volatile field: C volatile member").
+# Checked by 331-mmio-width.sh on the -O2 m68k assembly of poke() (hosted-amiga and
+# hosted-amiga-13): exactly one 16-bit store to $DFF096, one 32-bit store to $DFF080
+# (not two word stores), one byte load and one byte store at $BFE001 in that order,
+# and two separate 16-bit loads from $DFF006 (not merged into one).
+profiles: hosted-amiga hosted-amiga-13
+expect: accept
+contrast: let w: u16 = VHPOS.vhposr; ==> let w: u16 = v;
+contrast-expect: accept

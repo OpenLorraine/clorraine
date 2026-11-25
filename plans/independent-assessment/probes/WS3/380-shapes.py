@@ -2,7 +2,10 @@
 """WS3-11 generated-C shape robustness probe (expectation in 380-shapes.expected).
 
 Usage (inside the SDK container, from the repository root):
-    python3 <plan>/probes/WS3/380-shapes.py <pinned-clc> <emission-record.tsv> [<out-dir>]
+    python3 <plan>/probes/WS3/380-shapes.py <pinned-clc> <emission-record.tsv> [<out-dir> [<case,...>]]
+
+A compile that exceeds twice its limit (at least 60 s) is stopped and reported as a
+FAIL with the timeout.
 
 Each case is a large but valid program, kept below the nesting depths at which clc
 itself fails (see ASM-WS1-004). It is emitted for host and hosted-amiga and compiled
@@ -62,7 +65,10 @@ def main() -> int:
         ("vbcc", "hosted-amiga"): ["vc", "+aos68k", "-c99", "-O2", "-cpu=68000",
                                    "-I/opt/amiga/m68k-amigaos/ndk-include", "-c"],
     }
+    only = sys.argv[4].split(",") if len(sys.argv) > 4 else None
     for name, text in cases().items():
+        if only and name not in only:
+            continue
         src = out / f"{name}.clo"
         src.write_text(text)
         for profile in ("host", "hosted-amiga"):
@@ -79,8 +85,14 @@ def main() -> int:
                     continue
                 cap, near = limit(base, comp, profile, lines)
                 start = time.monotonic()
-                run = subprocess.run([*argv, "-o", str(out / f"{name}.{comp}.o"), str(c_file)],
-                                     capture_output=True, text=True, timeout=1200)
+                try:
+                    run = subprocess.run([*argv, "-o", str(out / f"{name}.{comp}.o"), str(c_file)],
+                                         capture_output=True, text=True, timeout=max(60, cap // 1000 * 2))
+                except subprocess.TimeoutExpired:
+                    failures += 1
+                    print(f"FAIL {name} {profile} {comp}: timeout after {max(60, cap // 1000 * 2)}s "
+                          f"(limit {cap}ms from {near[0]} lines/{near[1]}ms) lines={lines}")
+                    continue
                 if run.returncode != 0 and "No config file" in run.stdout + run.stderr:
                     start = time.monotonic()
                     run = subprocess.run([*argv, "-o", str(out / f"{name}.{comp}.o"), str(c_file)],
