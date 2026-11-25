@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-25 20:32
-> **Progress**: 20/95 tasks (21%)
+> **Last Updated**: 2026-11-25 20:37
+> **Progress**: 27/95 tasks (28%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -161,19 +161,19 @@ this plan's folder and the roadmap; 03-01 §Ground rules)
 
 - [x] 2.1.1 Write probes and expectations for WS2-01..WS2-06 (WS2a) under `probes/WS2/` ✅ (completed: 2026-11-25 20:32)
 - [x] 2.1.2 Write probes and expectations for WS2-07..WS2-12 (WS2b) under `probes/WS2/`; commit Step 2.1 probes and expectations, local only ✅ (completed: 2026-11-25 20:32)
-- [ ] 2.1.3 Red check: the ASan/UBSan builds of 03-01 detect a seeded leak, double free, and signed overflow in a C control program, and each Clorraine probe discriminates; log in `findings/WS2-ownership.md`
+- [x] 2.1.3 Red check: the ASan/UBSan builds of 03-01 detect a seeded leak, double free, and signed overflow in a C control program, and each Clorraine probe discriminates; log in `findings/WS2-ownership.md` ✅ (completed: 2026-11-25 20:34)
 
 ### Step 2.2: Analysis
 
-- [ ] 2.2.1 WS2a: review and probe WS2-01..WS2-03 (moves, drop elaboration, loops)
-- [ ] 2.2.2 WS2a: review and probe WS2-04..WS2-06 (`defer`, temporaries, NLL)
-- [ ] 2.2.3 WS2b: review and probe WS2-07..WS2-09 (views and escapes, generics, closures)
-- [ ] 2.2.4 WS2b: review and probe WS2-10..WS2-12 (projections, initialization, structural review of move/drop decision sites)
+- [x] 2.2.1 WS2a: review and probe WS2-01..WS2-03 (moves, drop elaboration, loops) ✅ (completed: 2026-11-25 20:36)
+- [x] 2.2.2 WS2a: review and probe WS2-04..WS2-06 (`defer`, temporaries, NLL) ✅ (completed: 2026-11-25 20:36)
+- [x] 2.2.3 WS2b: review and probe WS2-07..WS2-09 (views and escapes, generics, closures) ✅ (completed: 2026-11-25 20:36)
+- [x] 2.2.4 WS2b: review and probe WS2-10..WS2-12 (projections, initialization, structural review of move/drop decision sites) ✅ (completed: 2026-11-25 20:36)
 
 ### Step 2.3: Hardening and gate
 
-- [ ] 2.3.1 Self-refutation against `spec/`, known limitations, and the DEF ledger; mark regressions of closed DEFs as such; escalate any Critical
-- [ ] 2.3.2 Phase gate: Task verify and the Phases 1–8 row of `07` §Check points for `findings/WS2-ownership.md` and `probes/WS2/`; commit, local only
+- [x] 2.3.1 Self-refutation against `spec/`, known limitations, and the DEF ledger; mark regressions of closed DEFs as such; escalate any Critical ✅ (completed: 2026-11-25 20:37)
+- [x] 2.3.2 Phase gate: Task verify and the Phases 1–8 row of `07` §Check points for `findings/WS2-ownership.md` and `probes/WS2/`; commit, local only ✅ (completed: 2026-11-25 20:37)
 
 **Test slices**: N/A — no test map
 **Verify (gate)**: `bash plans/independent-assessment/probes/WS0/drift-check.sh plans/independent-assessment`, then the Phases 1–8 row of `07` §Check points (AR #20)

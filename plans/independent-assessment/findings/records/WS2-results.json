@@ -1,0 +1,1649 @@
+[
+ {
+  "probe": "200-instrument",
+  "profile": "host",
+  "mode": "asan",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "200-instrument",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "200-instrument",
+  "profile": "host",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "200-instrument",
+  "profile": "host",
+  "mode": "ubsan",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "201-move-let",
+  "profile": "host",
+  "mode": "asan",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "201-move-let",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "201-move-let",
+  "profile": "host",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "201-move-let",
+  "profile": "host",
+  "mode": "ubsan",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "202-move-take-arg",
+  "profile": "host",
+  "mode": "asan",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "202-move-take-arg",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "202-move-take-arg",
+  "profile": "host",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "202-move-take-arg",
+  "profile": "host",
+  "mode": "ubsan",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "203-move-return",
+  "profile": "host",
+  "mode": "asan",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "203-move-return",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "203-move-return",
+  "profile": "host",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "203-move-return",
+  "profile": "host",
+  "mode": "ubsan",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "204-move-struct-literal",
+  "profile": "host",
+  "mode": "asan",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "204-move-struct-literal",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "204-move-struct-literal",
+  "profile": "host",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "204-move-struct-literal",
+  "profile": "host",
+  "mode": "ubsan",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "205-move-array-literal",
+  "profile": "host",
+  "mode": "asan",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "205-move-array-literal",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "205-move-array-literal",
+  "profile": "host",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "205-move-array-literal",
+  "profile": "host",
+  "mode": "ubsan",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "206-move-conditional-arms",
+  "profile": "host",
+  "mode": "asan",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "206-move-conditional-arms",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "206-move-conditional-arms",
+  "profile": "host",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "206-move-conditional-arms",
+  "profile": "host",
+  "mode": "ubsan",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "207-partial-move",
+  "profile": "host",
+  "mode": "asan",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "207-partial-move",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "207-partial-move",
+  "profile": "host",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "207-partial-move",
+  "profile": "host",
+  "mode": "ubsan",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "208-partial-move-reinit",
+  "profile": "host",
+  "mode": "asan",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "208-partial-move-reinit",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "208-partial-move-reinit",
+  "profile": "host",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "208-partial-move-reinit",
+  "profile": "host",
+  "mode": "ubsan",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "209-partial-move-whole-use",
+  "profile": "host",
+  "mode": "clc",
+  "kind": "reject E10025",
+  "ok": true,
+  "detail": "rc=1 first=E10025 expected=E10025",
+  "contrast": false
+ },
+ {
+  "probe": "210-drop-order-params",
+  "profile": "host",
+  "mode": "asan",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "210-drop-order-params",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "210-drop-order-params",
+  "profile": "host",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "210-drop-order-params",
+  "profile": "host",
+  "mode": "ubsan",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "211-conditional-drop-flag",
+  "profile": "host",
+  "mode": "asan",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "211-conditional-drop-flag",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "211-conditional-drop-flag",
+  "profile": "host",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "211-conditional-drop-flag",
+  "profile": "host",
+  "mode": "ubsan",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "212-early-return",
+  "profile": "host",
+  "mode": "asan",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "212-early-return",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "212-early-return",
+  "profile": "host",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "212-early-return",
+  "profile": "host",
+  "mode": "ubsan",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "213-break-continue",
+  "profile": "host",
+  "mode": "asan",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "213-break-continue",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "213-break-continue",
+  "profile": "host",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "213-break-continue",
+  "profile": "host",
+  "mode": "ubsan",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "214-reassign-drops-old",
+  "profile": "host",
+  "mode": "asan",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "214-reassign-drops-old",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "214-reassign-drops-old",
+  "profile": "host",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "214-reassign-drops-old",
+  "profile": "host",
+  "mode": "ubsan",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "215-fault-no-ladder",
+  "profile": "host",
+  "mode": "asan",
+  "kind": "fault E11211",
+  "ok": true,
+  "detail": "rc=-6 first=E11211 expected=E11211",
+  "contrast": false
+ },
+ {
+  "probe": "215-fault-no-ladder",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "fault E11211",
+  "ok": true,
+  "detail": "rc=-6 first=E11211 expected=E11211",
+  "contrast": false
+ },
+ {
+  "probe": "215-fault-no-ladder",
+  "profile": "host",
+  "mode": "release",
+  "kind": "fault E11211",
+  "ok": true,
+  "detail": "rc=-6 first=E11211 expected=E11211",
+  "contrast": false
+ },
+ {
+  "probe": "215-fault-no-ladder",
+  "profile": "host",
+  "mode": "ubsan",
+  "kind": "fault E11211",
+  "ok": true,
+  "detail": "rc=-6 first=E11211 expected=E11211",
+  "contrast": false
+ },
+ {
+  "probe": "216-move-in-loop",
+  "profile": "host",
+  "mode": "clc",
+  "kind": "reject E10020",
+  "ok": true,
+  "detail": "rc=1 first=E10020 expected=E10020",
+  "contrast": false
+ },
+ {
+  "probe": "217-loop-reinit",
+  "profile": "host",
+  "mode": "asan",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "217-loop-reinit",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "217-loop-reinit",
+  "profile": "host",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "217-loop-reinit",
+  "profile": "host",
+  "mode": "ubsan",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "218-element-loop-borrow",
+  "profile": "host",
+  "mode": "asan",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "218-element-loop-borrow",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "218-element-loop-borrow",
+  "profile": "host",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "218-element-loop-borrow",
+  "profile": "host",
+  "mode": "ubsan",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "219-break-with-temporary",
+  "profile": "host",
+  "mode": "asan",
+  "kind": "output",
+  "ok": false,
+  "detail": "rc=0 got='drop 0\\ndrop 50\\ndrop 1\\nend\\ndrop 51\\n' want='drop 50\\ndrop 0\\ndrop 51\\ndrop 1\\nend\\n'",
+  "contrast": false
+ },
+ {
+  "probe": "219-break-with-temporary",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "output",
+  "ok": false,
+  "detail": "rc=0 got='drop 0\\ndrop 50\\ndrop 1\\nend\\ndrop 51\\n' want='drop 50\\ndrop 0\\ndrop 51\\ndrop 1\\nend\\n'",
+  "contrast": false
+ },
+ {
+  "probe": "219-break-with-temporary",
+  "profile": "host",
+  "mode": "release",
+  "kind": "output",
+  "ok": false,
+  "detail": "rc=0 got='drop 0\\ndrop 50\\ndrop 1\\nend\\ndrop 51\\n' want='drop 50\\ndrop 0\\ndrop 51\\ndrop 1\\nend\\n'",
+  "contrast": false
+ },
+ {
+  "probe": "219-break-with-temporary",
+  "profile": "host",
+  "mode": "ubsan",
+  "kind": "output",
+  "ok": false,
+  "detail": "rc=0 got='drop 0\\ndrop 50\\ndrop 1\\nend\\ndrop 51\\n' want='drop 50\\ndrop 0\\ndrop 51\\ndrop 1\\nend\\n'",
+  "contrast": false
+ },
+ {
+  "probe": "220-nested-loop-break",
+  "profile": "host",
+  "mode": "asan",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "220-nested-loop-break",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "220-nested-loop-break",
+  "profile": "host",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "220-nested-loop-break",
+  "profile": "host",
+  "mode": "ubsan",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "221-defer-order",
+  "profile": "host",
+  "mode": "asan",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "221-defer-order",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "221-defer-order",
+  "profile": "host",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "221-defer-order",
+  "profile": "host",
+  "mode": "ubsan",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "222-defer-early-return",
+  "profile": "host",
+  "mode": "asan",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "222-defer-early-return",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "222-defer-early-return",
+  "profile": "host",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "222-defer-early-return",
+  "profile": "host",
+  "mode": "ubsan",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "223-defer-uses-moved",
+  "profile": "host",
+  "mode": "clc",
+  "kind": "reject E10020",
+  "ok": true,
+  "detail": "rc=1 first=E10020 expected=E10020",
+  "contrast": false
+ },
+ {
+  "probe": "224-defer-in-loop",
+  "profile": "host",
+  "mode": "asan",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "224-defer-in-loop",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "224-defer-in-loop",
+  "profile": "host",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "224-defer-in-loop",
+  "profile": "host",
+  "mode": "ubsan",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "225-nested-defer",
+  "profile": "host",
+  "mode": "asan",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "225-nested-defer",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "225-nested-defer",
+  "profile": "host",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "225-nested-defer",
+  "profile": "host",
+  "mode": "ubsan",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "226-call-result-temp",
+  "profile": "host",
+  "mode": "asan",
+  "kind": "output",
+  "ok": false,
+  "detail": "rc=0 got='7\\nnext\\nend\\ndrop 7\\n' want='7\\ndrop 7\\nnext\\nend\\n'",
+  "contrast": false
+ },
+ {
+  "probe": "226-call-result-temp",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "output",
+  "ok": false,
+  "detail": "rc=0 got='7\\nnext\\nend\\ndrop 7\\n' want='7\\ndrop 7\\nnext\\nend\\n'",
+  "contrast": false
+ },
+ {
+  "probe": "226-call-result-temp",
+  "profile": "host",
+  "mode": "release",
+  "kind": "output",
+  "ok": false,
+  "detail": "rc=0 got='7\\nnext\\nend\\ndrop 7\\n' want='7\\ndrop 7\\nnext\\nend\\n'",
+  "contrast": false
+ },
+ {
+  "probe": "226-call-result-temp",
+  "profile": "host",
+  "mode": "ubsan",
+  "kind": "output",
+  "ok": false,
+  "detail": "rc=0 got='7\\nnext\\nend\\ndrop 7\\n' want='7\\ndrop 7\\nnext\\nend\\n'",
+  "contrast": false
+ },
+ {
+  "probe": "227-temp-reverse-order",
+  "profile": "host",
+  "mode": "asan",
+  "kind": "output",
+  "ok": false,
+  "detail": "rc=0 got='3\\nend\\ndrop 2\\ndrop 1\\n' want='drop 2\\ndrop 1\\n3\\nend\\n'",
+  "contrast": false
+ },
+ {
+  "probe": "227-temp-reverse-order",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "output",
+  "ok": false,
+  "detail": "rc=0 got='3\\nend\\ndrop 2\\ndrop 1\\n' want='drop 2\\ndrop 1\\n3\\nend\\n'",
+  "contrast": false
+ },
+ {
+  "probe": "227-temp-reverse-order",
+  "profile": "host",
+  "mode": "release",
+  "kind": "output",
+  "ok": false,
+  "detail": "rc=0 got='3\\nend\\ndrop 2\\ndrop 1\\n' want='drop 2\\ndrop 1\\n3\\nend\\n'",
+  "contrast": false
+ },
+ {
+  "probe": "227-temp-reverse-order",
+  "profile": "host",
+  "mode": "ubsan",
+  "kind": "output",
+  "ok": false,
+  "detail": "rc=0 got='3\\nend\\ndrop 2\\ndrop 1\\n' want='drop 2\\ndrop 1\\n3\\nend\\n'",
+  "contrast": false
+ },
+ {
+  "probe": "228-temp-short-circuit",
+  "profile": "host",
+  "mode": "asan",
+  "kind": "output",
+  "ok": false,
+  "detail": "rc=0 got='no\\nyes\\ndrop 3\\nend\\n' want='no\\ndrop 3\\nyes\\nend\\n'",
+  "contrast": false
+ },
+ {
+  "probe": "228-temp-short-circuit",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "output",
+  "ok": false,
+  "detail": "rc=0 got='no\\nyes\\ndrop 3\\nend\\n' want='no\\ndrop 3\\nyes\\nend\\n'",
+  "contrast": false
+ },
+ {
+  "probe": "228-temp-short-circuit",
+  "profile": "host",
+  "mode": "release",
+  "kind": "output",
+  "ok": false,
+  "detail": "rc=0 got='no\\nyes\\ndrop 3\\nend\\n' want='no\\ndrop 3\\nyes\\nend\\n'",
+  "contrast": false
+ },
+ {
+  "probe": "228-temp-short-circuit",
+  "profile": "host",
+  "mode": "ubsan",
+  "kind": "output",
+  "ok": false,
+  "detail": "rc=0 got='no\\nyes\\ndrop 3\\nend\\n' want='no\\ndrop 3\\nyes\\nend\\n'",
+  "contrast": false
+ },
+ {
+  "probe": "229-temp-conditional",
+  "profile": "host",
+  "mode": "asan",
+  "kind": "output",
+  "ok": false,
+  "detail": "rc=0 got='1\\ndrop 1\\n2\\ndrop 2\\nend\\n' want='drop 1\\n1\\ndrop 2\\n2\\nend\\n'",
+  "contrast": false
+ },
+ {
+  "probe": "229-temp-conditional",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "output",
+  "ok": false,
+  "detail": "rc=0 got='1\\ndrop 1\\n2\\ndrop 2\\nend\\n' want='drop 1\\n1\\ndrop 2\\n2\\nend\\n'",
+  "contrast": false
+ },
+ {
+  "probe": "229-temp-conditional",
+  "profile": "host",
+  "mode": "release",
+  "kind": "output",
+  "ok": false,
+  "detail": "rc=0 got='1\\ndrop 1\\n2\\ndrop 2\\nend\\n' want='drop 1\\n1\\ndrop 2\\n2\\nend\\n'",
+  "contrast": false
+ },
+ {
+  "probe": "229-temp-conditional",
+  "profile": "host",
+  "mode": "ubsan",
+  "kind": "output",
+  "ok": false,
+  "detail": "rc=0 got='1\\ndrop 1\\n2\\ndrop 2\\nend\\n' want='drop 1\\n1\\ndrop 2\\n2\\nend\\n'",
+  "contrast": false
+ },
+ {
+  "probe": "230-string-temporaries",
+  "profile": "host",
+  "mode": "asan",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "230-string-temporaries",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "230-string-temporaries",
+  "profile": "host",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "230-string-temporaries",
+  "profile": "host",
+  "mode": "ubsan",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "231-nll-loan-ends",
+  "profile": "host",
+  "mode": "asan",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "231-nll-loan-ends",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "231-nll-loan-ends",
+  "profile": "host",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "231-nll-loan-ends",
+  "profile": "host",
+  "mode": "ubsan",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "232-nll-branch",
+  "profile": "host",
+  "mode": "asan",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "232-nll-branch",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "232-nll-branch",
+  "profile": "host",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "232-nll-branch",
+  "profile": "host",
+  "mode": "ubsan",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "233-nll-move-while-loan",
+  "profile": "host",
+  "mode": "clc",
+  "kind": "reject E10022",
+  "ok": true,
+  "detail": "rc=1 first=E10022 expected=E10022",
+  "contrast": false
+ },
+ {
+  "probe": "234-nll-field-loans",
+  "profile": "host",
+  "mode": "asan",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "234-nll-field-loans",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "234-nll-field-loans",
+  "profile": "host",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "234-nll-field-loans",
+  "profile": "host",
+  "mode": "ubsan",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "235-view-escape-return-local",
+  "profile": "host",
+  "mode": "clc",
+  "kind": "reject E10035",
+  "ok": false,
+  "detail": "rc=1 first=E10200 expected=E10035",
+  "contrast": false
+ },
+ {
+  "probe": "236-view-escape-global",
+  "profile": "host",
+  "mode": "clc",
+  "kind": "reject E10038",
+  "ok": false,
+  "detail": "rc=1 first=E10200 expected=E10038",
+  "contrast": false
+ },
+ {
+  "probe": "237-out-slot-store-other-lend",
+  "profile": "host",
+  "mode": "clc",
+  "kind": "reject E10034",
+  "ok": true,
+  "detail": "rc=1 first=E10034 expected=E10034",
+  "contrast": false
+ },
+ {
+  "probe": "238-out-slot-replace",
+  "profile": "host",
+  "mode": "asan",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "238-out-slot-replace",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "238-out-slot-replace",
+  "profile": "host",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "238-out-slot-replace",
+  "profile": "host",
+  "mode": "ubsan",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "239-generic-move-drop",
+  "profile": "host",
+  "mode": "asan",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "239-generic-move-drop",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "239-generic-move-drop",
+  "profile": "host",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "239-generic-move-drop",
+  "profile": "host",
+  "mode": "ubsan",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "240-generic-array-drop",
+  "profile": "host",
+  "mode": "asan",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "240-generic-array-drop",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "240-generic-array-drop",
+  "profile": "host",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "240-generic-array-drop",
+  "profile": "host",
+  "mode": "ubsan",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "241-generic-struct-instances",
+  "profile": "host",
+  "mode": "asan",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "241-generic-struct-instances",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "241-generic-struct-instances",
+  "profile": "host",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "241-generic-struct-instances",
+  "profile": "host",
+  "mode": "ubsan",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "242-box-drop",
+  "profile": "host",
+  "mode": "asan",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "242-box-drop",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "242-box-drop",
+  "profile": "host",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "242-box-drop",
+  "profile": "host",
+  "mode": "ubsan",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "243-closure-borrow-capture",
+  "profile": "host",
+  "mode": "clc",
+  "kind": "output",
+  "ok": false,
+  "detail": "rejected rc=1 first=E10405",
+  "contrast": false
+ },
+ {
+  "probe": "244-closure-move-capture",
+  "profile": "host",
+  "mode": "clc",
+  "kind": "reject E10401",
+  "ok": false,
+  "detail": "rc=1 first=E10405 expected=E10401",
+  "contrast": false
+ },
+ {
+  "probe": "245-closure-escape",
+  "profile": "host",
+  "mode": "clc",
+  "kind": "reject E10404",
+  "ok": false,
+  "detail": "rc=1 first=E10405 expected=E10404",
+  "contrast": false
+ },
+ {
+  "probe": "246-projection-call-result",
+  "profile": "host",
+  "mode": "asan",
+  "kind": "output",
+  "ok": false,
+  "detail": "rc=0 got='2\\nend\\ndrop 1\\ndrop 2\\n' want='drop 1\\ndrop 2\\n2\\nend\\n'",
+  "contrast": false
+ },
+ {
+  "probe": "246-projection-call-result",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "output",
+  "ok": false,
+  "detail": "rc=0 got='2\\nend\\ndrop 1\\ndrop 2\\n' want='drop 1\\ndrop 2\\n2\\nend\\n'",
+  "contrast": false
+ },
+ {
+  "probe": "246-projection-call-result",
+  "profile": "host",
+  "mode": "release",
+  "kind": "output",
+  "ok": false,
+  "detail": "rc=0 got='2\\nend\\ndrop 1\\ndrop 2\\n' want='drop 1\\ndrop 2\\n2\\nend\\n'",
+  "contrast": false
+ },
+ {
+  "probe": "246-projection-call-result",
+  "profile": "host",
+  "mode": "ubsan",
+  "kind": "output",
+  "ok": false,
+  "detail": "rc=0 got='2\\nend\\ndrop 1\\ndrop 2\\n' want='drop 1\\ndrop 2\\n2\\nend\\n'",
+  "contrast": false
+ },
+ {
+  "probe": "247-projection-conditional",
+  "profile": "host",
+  "mode": "asan",
+  "kind": "output",
+  "ok": false,
+  "detail": "rc=0 got='1\\ndrop 1\\ndrop 2\\n3\\ndrop 3\\ndrop 4\\nend\\n' want='drop 1\\ndrop 2\\n1\\ndrop 3\\ndrop 4\\n3\\nend\\n'",
+  "contrast": false
+ },
+ {
+  "probe": "247-projection-conditional",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "output",
+  "ok": false,
+  "detail": "rc=0 got='1\\ndrop 1\\ndrop 2\\n3\\ndrop 3\\ndrop 4\\nend\\n' want='drop 1\\ndrop 2\\n1\\ndrop 3\\ndrop 4\\n3\\nend\\n'",
+  "contrast": false
+ },
+ {
+  "probe": "247-projection-conditional",
+  "profile": "host",
+  "mode": "release",
+  "kind": "output",
+  "ok": false,
+  "detail": "rc=0 got='1\\ndrop 1\\ndrop 2\\n3\\ndrop 3\\ndrop 4\\nend\\n' want='drop 1\\ndrop 2\\n1\\ndrop 3\\ndrop 4\\n3\\nend\\n'",
+  "contrast": false
+ },
+ {
+  "probe": "247-projection-conditional",
+  "profile": "host",
+  "mode": "ubsan",
+  "kind": "output",
+  "ok": false,
+  "detail": "rc=0 got='1\\ndrop 1\\ndrop 2\\n3\\ndrop 3\\ndrop 4\\nend\\n' want='drop 1\\ndrop 2\\n1\\ndrop 3\\ndrop 4\\n3\\nend\\n'",
+  "contrast": false
+ },
+ {
+  "probe": "248-projection-move-from-temporary",
+  "profile": "host",
+  "mode": "clc",
+  "kind": "reject E10026",
+  "ok": false,
+  "detail": "rc=0 first=None expected=E10026",
+  "contrast": false
+ },
+ {
+  "probe": "249-projection-nested-move",
+  "profile": "host",
+  "mode": "clc",
+  "kind": "reject E10026",
+  "ok": true,
+  "detail": "rc=1 first=E10026 expected=E10026",
+  "contrast": false
+ },
+ {
+  "probe": "250-init-one-branch",
+  "profile": "host",
+  "mode": "clc",
+  "kind": "reject E10021",
+  "ok": true,
+  "detail": "rc=1 first=E10021 expected=E10021",
+  "contrast": false
+ },
+ {
+  "probe": "251-init-switch",
+  "profile": "host",
+  "mode": "asan",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "251-init-switch",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "251-init-switch",
+  "profile": "host",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "251-init-switch",
+  "profile": "host",
+  "mode": "ubsan",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "252-init-loop-only",
+  "profile": "host",
+  "mode": "clc",
+  "kind": "reject E10021",
+  "ok": true,
+  "detail": "rc=1 first=E10021 expected=E10021",
+  "contrast": false
+ },
+ {
+  "probe": "253-init-read-after-move-join",
+  "profile": "host",
+  "mode": "clc",
+  "kind": "reject E10020",
+  "ok": true,
+  "detail": "rc=1 first=E10020 expected=E10020",
+  "contrast": false
+ },
+ {
+  "probe": "254-init-switch-fallthrough",
+  "profile": "host",
+  "mode": "asan",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "254-init-switch-fallthrough",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "254-init-switch-fallthrough",
+  "profile": "host",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "254-init-switch-fallthrough",
+  "profile": "host",
+  "mode": "ubsan",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "255-closure-borrow-capture-listed",
+  "profile": "host",
+  "mode": "asan",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "255-closure-borrow-capture-listed",
+  "profile": "host",
+  "mode": "debug",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "255-closure-borrow-capture-listed",
+  "profile": "host",
+  "mode": "release",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "255-closure-borrow-capture-listed",
+  "profile": "host",
+  "mode": "ubsan",
+  "kind": "output",
+  "ok": true,
+  "detail": "rc=0",
+  "contrast": false
+ },
+ {
+  "probe": "256-closure-move-capture-listed",
+  "profile": "host",
+  "mode": "clc",
+  "kind": "reject E10401",
+  "ok": true,
+  "detail": "rc=1 first=E10401 expected=E10401",
+  "contrast": false
+ },
+ {
+  "probe": "257-closure-escape-listed",
+  "profile": "host",
+  "mode": "clc",
+  "kind": "reject E10404",
+  "ok": false,
+  "detail": "rc=1 first=E10400 expected=E10404",
+  "contrast": false
+ },
+ {
+  "probe": "258-view-escape-array-local",
+  "profile": "host",
+  "mode": "clc",
+  "kind": "reject E10035",
+  "ok": true,
+  "detail": "rc=1 first=E10035 expected=E10035",
+  "contrast": false
+ },
+ {
+  "probe": "259-borrow-global",
+  "profile": "host",
+  "mode": "clc",
+  "kind": "reject E10038",
+  "ok": true,
+  "detail": "rc=1 first=E10038 expected=E10038",
+  "contrast": false
+ }
+]
