@@ -38,6 +38,14 @@ findings ledger, and one report ranking every finding and proposing remediation 
   report review (AR #13, AR #21).
 - [ ] **R10 Escalation.** Report any Critical to the user as soon as it is recorded or results
   from a Phase 9 verdict, and report later retractions (AR #12, 03-01 §Escalation).
+- [ ] **R11 Issue hand-offs.** After the user approves the list, file every surviving Critical,
+  Major, and quick-win Opportunity (except items the user declines or that link to an existing
+  issue) as a public GitHub issue, Minor findings as one tracking
+  issue per workstream, and each remediation theme as a parent issue, each a self-contained
+  hand-off for a coding agent (03-04 §GitHub issues; AR #24–#27).
+- [ ] **R12 Repeatability.** Leave committed tooling that lets the assessment run again in full,
+  scoped to chosen workstreams, or as a delta since the last report: `tools/assessment/` and a
+  thin skill trigger (03-04 §Repeatability; AR #29).
 
 ### Should Have
 
@@ -46,14 +54,16 @@ findings ledger, and one report ranking every finding and proposing remediation 
 
 ### Won't Have (Out of Scope)
 
-- Any change to `compiler/`, `stdlib/`, `spec/`, `tools/`, `docker/`, or `examples/` (AR #12).
+- Any change to `compiler/`, `stdlib/`, `spec/`, `tools/` (other than the new `tools/assessment/`),
+  `docker/`, or `examples/` (AR #12, AR #29).
 - `make check`, `make verify`, `make asan`, and `make ubsan` suite runs, including as commit or
   phase verification (AR #3, AR #14).
 - LSP, docgen, the driver CLI surface, installer, VS Code extension, demo tools, and site
   (AR #9). The driver's release-flag tables are in scope only as a performance input.
 - Compiler prototypes, new harnesses, or validators (AR #17; 00-index §Minimum-Sufficient
   Baseline).
-- Remediation plans themselves; the report proposes them, the user selects them later.
+- Remediation plans and fixes themselves; the report and the issues propose them, the user
+  selects them later.
 - Specification changes; a suspected spec defect is recorded as a spec question for the
   user's ruling (03-01 §Spec oracle).
 
@@ -93,6 +103,8 @@ findings ledger, and one report ranking every finding and proposing remediation 
 | Review model | Adversarial verification phase, replacing exec-plan's post-phase quality step | AR #16, AR #22 |
 | DEF meaning | Surviving Critical/Major, any confidence | AR #21 |
 | Measurement script | One probe runner over existing harness functions | AR #23 |
+| Repeatability | `tools/assessment/` plus a thin skill | AR #29 |
+| GitHub issues | Surviving findings filed publicly as hand-offs, Minors grouped per workstream, created only after the user approves the list | AR #24–#27 |
 | Effort | Per-phase levels up to `xhigh` | AR #4, AR #19 |
 
 ## Acceptance Criteria
@@ -100,5 +112,6 @@ findings ledger, and one report ranking every finding and proposing remediation 
 1. [ ] Every ST case in `07-testing-strategy.md` holds for the delivered artifacts.
 2. [ ] `10-assessment-report.md` exists and the user has reviewed it.
 3. [ ] The roadmap carries the plan row and one DEF row per surviving Critical/Major finding.
-4. [ ] No commit of this plan changed a file outside `plans/independent-assessment/` and
+4. [ ] Every approved issue exists with its labels and cross-links (ST-17).
+5. [ ] No commit of this plan changed a file outside `plans/independent-assessment/` and
    `plans/00-roadmap.md` (ST-7).

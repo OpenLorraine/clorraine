@@ -13,11 +13,11 @@ verification protocol. The workstream checklists (03-02, 03-03) and the report (
 
 | Rule | Detail | Ref |
 |------|--------|-----|
-| Read-only | No edit to any tracked file outside `plans/independent-assessment/`, except `plans/00-roadmap.md` as below | AR #12 |
+| Read-only | No edit to any tracked file outside `plans/independent-assessment/`, except `plans/00-roadmap.md` as below; new files may be added only under `tools/assessment/` and `.opencode/skills/clorraine-assessment/` (AR #29) | AR #12, AR #29 |
 | Roadmap | This plan's own row (stage, status, progress) is updated through the roadmap skill in any phase, as exec-plan does; exec-plan blocker `↳ DEF` rows are allowed in any phase; finding-derived DEF rows are added only in Phase 10 | AR #13, PF-003 |
 | No gate reruns | `make check`, `make verify`, `make asan`, `make ubsan` are never run, including through a commit or phase verification | AR #3, PF-006 |
 | Allowed runs | One baseline run each of the bench harness, compile-time harness, and flag audit, each with `--clc` set to the pinned `clc` and `--out` set to a new, uniquely named `build/perf/assessment-baseline-*.json` (the harnesses confine output to `build/perf/`; an existing result file is never overwritten), then copied to `build/tmp/assessment/baseline/`; the Phase 0 measurement script; single-probe sanitizer builds; `vamos`; FS-UAE for a named probe | AR #14, AR #6, PF-008, PB-001 |
-| Baseline | Baseline = commit X recorded in `findings/WS0-baseline.md`. **Drift check** (`probes/WS0/drift-check.sh`), run at every gate and before every reproduction: `git diff --check`; `git diff --quiet X HEAD -- . ':(exclude)plans'` and an empty `git status --porcelain -- . ':(exclude)plans'`; and no committed or working-tree change under `plans/` other than `plans/independent-assessment/` and `plans/00-roadmap.md` since X (`git diff --name-only X HEAD` and `git status --porcelain` over `plans` with those two paths excluded, both empty). "Reproduces at the baseline" means: at HEAD, with the drift check passing | AR #7, PF-005, PB-006 |
+| Baseline | Baseline = commit X recorded in `findings/WS0-baseline.md`. **Drift check** (`probes/WS0/drift-check.sh`), run at every gate and before every reproduction: `git diff --check`; `git diff --quiet X HEAD -- . ':(exclude)plans' ':(exclude)tools/assessment' ':(exclude).opencode/skills/clorraine-assessment'` and an empty `git status --porcelain` over the same pathspec; and no committed or working-tree change under `plans/` other than `plans/independent-assessment/` and `plans/00-roadmap.md` since X (`git diff --name-only X HEAD` and `git status --porcelain` over `plans` with those two paths excluded, both empty). "Reproduces at the baseline" means: at HEAD, with the drift check passing | AR #7, PF-005, PB-006 |
 | Pinned tools | Phase 0 copies the release `clc` to `build/tmp/assessment/baseline/clc` with its sha256 and records the Docker image ID and the amitools commit; every probe and harness run uses that `clc`; the Docker image is not rebuilt during the assessment; bench and compile-time harness runs pass `--compiler-git X` (the flag audit has no such option, so X is recorded beside its output) | PF-005, PB-001 |
 | Expectations first | Probes and expectations are committed at the end of the last Step N.1 writing task, before the red check runs anything; the red-check log is committed at the phase gate; probes added later are committed before they run; an amended expectation keeps the original value and the reason | AR #10, PF-005, PB-004 |
 | Bounded probes | Each command runs under `timeout` with `ulimit -f 1048576`; outputs go to `build/tmp/assessment/<WS>/` | AGENTS.md §Testing |
@@ -26,6 +26,7 @@ verification protocol. The workstream checklists (03-02, 03-03) and the report (
 | vbcc | A first invocation failing with "No config file!" in a fresh container is retried once; that message is never a finding | PF-025 |
 | FS-UAE | Ad-hoc probes run host-side through `docker/scripts/run.sh` (compose `emulator` service, private Xvfb), one emulator at a time; the KS1.3 ROM is decrypted into `build/tmp/assessment/` and deleted on exit, as the gates do; `build/run/out.txt` is copied to `build/tmp/assessment/<WS>/` after each run; no licensed media is copied into `plans/` | AR #6, PF-024 |
 | Effort | Per phase, up to `xhigh`; `max` is never requested | AR #4, AR #19 |
+| GitHub | Reading issues and labels is allowed in any phase; the label set already exists (created at planning on the user's instruction); creating issues or comments happens only in Phase 10, after the user approves the full list (03-04 §GitHub issues); commits are pushed only when the user asks | AR #24, AR #27 |
 
 ### Independence
 
@@ -125,6 +126,8 @@ plans/independent-assessment/probes/
 ├── WS0/ref/calibration.c          # C calibration program
 ├── WS0/measure.py                 # the Phase 0 measurement script (§Measurement rules)
 ├── WS0/drift-check.sh             # the drift check (§Ground rules)
+│                                  # both take the plan folder and the baseline SHA as
+│                                  # arguments; no run path is written into them (AR #29)
 ├── WS<n>/<NNN>-<slug>.clo         # Clorraine probe
 ├── WS<n>/<NNN>-<slug>.c           # C probe or patched emitted C (diff form preferred)
 ├── WS<n>/<NNN>-<slug>.expected    # expected outcome and its source, committed before the run

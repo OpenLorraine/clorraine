@@ -40,7 +40,7 @@ new harness, tool, or compiler prototype.
 **Excluded machinery:** a host mock harness for the Amiga shims; a prototype IR optimizer on a
 scratch branch (AR #17); per-phase exec-plan review loops (AR #16); automated finding
 validators. Each may appear only as a recommendation in the report.
-**Approved complexity:** None.
+**Approved complexity:** AR #29 — committed `tools/assessment/` tooling and a thin `clorraine-assessment` skill so the assessment can be repeated.
 
 ## Planning Coverage
 
@@ -82,6 +82,9 @@ Deliverables created during execution (AR #8, AR #11):
 | `probes/WS<n>/` | Committed probe sources (`.clo`, hand-written `.c`, small scripts) |
 | `05-findings.md` | Merged ledger with Phase 9 verdicts, clean sample, escalations, and the report review |
 | `10-assessment-report.md` | The final report |
+| `issues/<ID>.md` | Drafts of the GitHub issue hand-offs, reviewed by the user before creation |
+| `tools/assessment/` | Reusable tooling (AR #29): `README.md` runbook (stub in Phase 0, full in Phase 10), the parameterized scripts, the C references, and `template/` for the next run |
+| `.opencode/skills/clorraine-assessment/SKILL.md` | Thin, force-tracked skill that points at the runbook (AR #29) |
 
 ## Quick Reference
 
@@ -98,6 +101,8 @@ Deliverables created during execution (AR #8, AR #11):
 | Order and commits | Sequential in document order; `--ask-commit`, local commits after Step N.1 and at each gate (PF-004, PF-006) |
 | Measurement | Phase 0 owns the matrix via `probes/WS0/measure.py`; equivalent C references with their own calibration (AR #23, PF-008, PF-009) |
 | Roadmap | Surviving Critical/Major findings become DEF rows after the report review (AR #13, AR #21) |
+| Repeatability | `tools/assessment/` template and runbook (full, scoped, delta), promoted after the method is proven; thin skill trigger (AR #29) |
+| GitHub issues | Public hand-off issues for surviving findings, Minors grouped per workstream, theme parents; created only after the user approves the list (AR #24–#27) |
 
 ## Specialist Agents
 
@@ -114,4 +119,6 @@ PF-011). The briefs carry the domain knowledge; a new role would only restate th
 
 Created: everything under `plans/independent-assessment/`. Modified: `plans/00-roadmap.md` —
 this plan's row in any phase, finding-derived DEF rows in Phase 10 only (03-01 §Ground rules,
-AR #13). No other file is modified.
+AR #13). New files under `tools/assessment/` and the skill file are added (AR #29). No other
+file is modified. Outside the repository, Phase 10 creates labels and issues
+on `OpenLorraine/clorraine` after the user's approval (AR #24–#27).

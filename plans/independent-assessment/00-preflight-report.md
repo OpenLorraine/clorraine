@@ -210,3 +210,23 @@ Overview's Step 1 order, task 9.1.2's extra commit moved into 9.1.1, and a commi
 | PC-001 | 🔵 | ST-7's parenthetical understated the PB-006 drift check | Reworded to cite 03-01 §Ground rules; applied as part of the accepted PB-006 fix | Resolved — completes the accepted PB-006 recommendation |
 
 No further iteration: every 🔴/🟠 finding is resolved and no 🟡 remains open.
+
+---
+
+## Preflight Report: Independent Assessment of Clorraine — GitHub hand-off change (bounded)
+
+> **Status**: ✅ PASSED — 9 findings (2 major, 6 minor, 1 observation), all resolved
+> **Scope**: the AR #24–#27 change (03-04 §GitHub issues, R11, ST-17, Phase 10 tasks 10.3.3–10.3.5)
+> **Independence**: one fresh-context auditor session; Effort: high→high
+
+| ID | Severity | Problem | Resolution | User Decision |
+|----|----------|---------|------------|---------------|
+| PD-001 | 🟠 | Phase 10 had three commit points | 10.3.3 no longer commits; drafts are committed at the gate | Resolved — User accepted recommendation |
+| PD-002 | 🟠 | Public issues pointed at local-only probes; push rules disagreed | Bodies carry an inline minimal reproduction; 10.3.4 asks whether to push first and adds permalinks only if pushed; push only when the user asks | Resolved — User accepted recommendation |
+| PD-003 | 🟡 | Parent/child linking unspecified | Finding issues created with `--parent <theme#>`; tracking issues name the theme per line; theme number is the only post-approval field | Resolved — User accepted recommendation |
+| PD-004 | 🟡 | No priority/domain rule for themes and WS0 | Theme takes its highest child priority and one domain per child domain; WS0 fallbacks `domain:perf` / `domain:tests` | Resolved — User accepted recommendation |
+| PD-005 | 🟡 | ST-17/R11 failed on partial approval; one body check for all kinds | Exceptions for declined or linked items; per-kind body checks | Resolved — User accepted recommendation |
+| PD-006 | 🟡 | Duplicate search limited to the `assessment` label | Search all open issues; propose links or comments for overlaps (#15, #17, #20, #22, #23) | Resolved — User accepted recommendation |
+| PD-007 | 🟡 | No redaction rule for public bodies | Repository-relative paths, licensed-media placeholders, a grep before approval | Resolved — User accepted recommendation |
+| PD-008 | 🟡 | AGENTS.md identifier rule missing from the body | Added to Constraints | Resolved — User accepted recommendation |
+| PD-009 | 🔵 | Titles and labels drifted from repository conventions | Existing title tags; `enhancement` on Opportunities; `amiga-sdk` for shim and Amiga-library items | Resolved — User accepted recommendation |

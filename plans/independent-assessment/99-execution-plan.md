@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-11-25
-> **Progress**: 0/90 tasks (0%)
+> **Progress**: 0/95 tasks (0%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -26,12 +26,13 @@ Step 3 tries to refute every finding and checks the phase gate. Method and evide
 - AR #16 replaces exec-plan's post-phase quality step for Phases 0–9 (AR #22). Phase 9 is the
   independent review; Phase 10 adds the `correctness-reviewer` review of the report.
 - Never edit a file outside `plans/independent-assessment/`, except this plan's own roadmap
-  row and exec-plan blocker rows (03-01 §Ground rules); never request `max` effort (ST-16).
+  row and exec-plan blocker rows, and new files under `tools/assessment/` and
+  `.opencode/skills/clorraine-assessment/` (03-01 §Ground rules, AR #29); never request `max` effort (ST-16).
 - Criticals at `verified` or `probable` confidence, and Phase 9 verdicts resulting in a Critical, are escalated immediately (03-01 §Escalation).
 
 **🚨 Update this document after EACH completed task!**
 
-**Task verify**: `bash plans/independent-assessment/probes/WS0/drift-check.sh` (created in
+**Task verify**: `bash plans/independent-assessment/probes/WS0/drift-check.sh plans/independent-assessment` (created in
 task 0.1.1: whitespace check, baseline drift check, and no change under `plans/` other than
 this plan's folder and the roadmap; 03-01 §Ground rules)
 
@@ -41,7 +42,7 @@ this plan's folder and the roadmap; 03-01 §Ground rules)
 
 | Phase | Title | Tasks | Reasoning |
 | ----- | ----- | ----- | --------- |
-| 0 | Baseline, pins, C references, measurement matrix | 10 | medium |
+| 0 | Baseline, pins, C references, measurement matrix | 11 | medium |
 | 1 | WS1 Semantic core | 7 | high |
 | 2 | WS2 Ownership, borrowing, drops | 9 | xhigh |
 | 3 | WS3 IR and C codegen correctness | 8 | xhigh |
@@ -51,9 +52,9 @@ this plan's folder and the roadmap; 03-01 §Ground rules)
 | 7 | WS7 Runtime and compile-time performance | 8 | high |
 | 8 | WS8 Test integrity and defect history | 8 | high |
 | 9 | Adversarial verification | 9 | xhigh |
-| 10 | Synthesis and report | 6 | high |
+| 10 | Synthesis, report, issue hand-offs, and repeatability | 10 | high |
 
-**Total: 90 tasks across 11 phases**, run in document order (§Dependencies).
+**Total: 95 tasks across 11 phases**, run in document order (§Dependencies).
 
 > **⚠️ EXECUTION RULE — APPLIES TO EVERY AGENT EXECUTING THIS PLAN:**
 >
@@ -87,9 +88,9 @@ this plan's folder and the roadmap; 03-01 §Ground rules)
 **Reference**: 03-01 §Ground rules, §Probe layout, §Measurement rules · AR #5, AR #7, AR #11, AR #23
 **Objective**: Pin the baseline and write the references, calibration, and measurement script with their expectations first.
 
-- [ ] 0.1.1 Confirm with the user that the working tree is settled; record `> **Baseline**: <sha>` and the date in `findings/WS0-baseline.md`; write `probes/WS0/drift-check.sh` implementing the drift check of 03-01 §Ground rules (reads that line) and run it
+- [ ] 0.1.1 Confirm with the user that the working tree is settled; record `> **Baseline**: <sha>` and the date in `findings/WS0-baseline.md`; write `probes/WS0/drift-check.sh` implementing the drift check of 03-01 §Ground rules, taking the plan folder as its argument and reading the baseline from that folder's `findings/WS0-baseline.md` (no run path written in), and run it
 - [ ] 0.1.2 Write one equivalent C reference per scored benchmark (`container`, `local-table`, `lookup`, `matrix`, `moves`, `sieve`, `strings`, `text-scan`) and `calibration.c` under `probes/WS0/ref/`, following the fairness rules of 03-01 §Measurement rules, each with its golden output as the expectation (ST-13)
-- [ ] 0.1.3 Write `probes/WS0/measure.py` per 03-01 §Measurement rules (lens flag arrays; only the listed `bench.py` functions; output under `build/tmp/assessment/`); commit Step 0.1 through the git-commit skill, local only; then red check: the comparator rejects a mutated expectation (comparator form, ST-5)
+- [ ] 0.1.3 Write `probes/WS0/measure.py` per 03-01 §Measurement rules (lens flag arrays; only the listed `bench.py` functions; the plan folder and baseline SHA as arguments; output under `build/tmp/assessment/`); commit Step 0.1 through the git-commit skill, local only; then red check: the comparator rejects a mutated expectation (comparator form, ST-5)
 
 ### Step 0.2: Measurement
 
@@ -105,14 +106,16 @@ this plan's folder and the roadmap; 03-01 §Ground rules)
 
 ### Step 0.3: Hardening and gate
 
-- [ ] 0.3.1 Phase gate: run Task verify and check the Phase 0 row of `07` §Check points; record the result in `findings/WS0-baseline.md`; escalate any Critical; commit through the git-commit skill, local only
+- [ ] 0.3.1 Write the `tools/assessment/README.md` stub with the full-mode steps (copy this plan's documents to a new `plans/assessment-<date>/`, reset progress, fill the baseline, preflight, run `exec-plan`), so a repeat is possible even if this run stalls (AR #29)
+- [ ] 0.3.2 Phase gate: run Task verify and check the Phase 0 row of `07` §Check points; record the result in `findings/WS0-baseline.md`; escalate any Critical; commit through the git-commit skill, local only
 
 **Deliverables**:
 - [ ] `findings/WS0-baseline.md` with baseline, pinned versions, emission record, harness numbers, and the measurement matrix
 - [ ] `probes/WS0/` with `drift-check.sh`, `measure.py`, and the C references
+- [ ] `tools/assessment/README.md` stub (full mode)
 
 **Test slices**: N/A — no test map
-**Verify (gate)**: `bash plans/independent-assessment/probes/WS0/drift-check.sh`, then the Phase 0 row of `07` §Check points (AR #20)
+**Verify (gate)**: `bash plans/independent-assessment/probes/WS0/drift-check.sh plans/independent-assessment`, then the Phase 0 row of `07` §Check points (AR #20)
 
 ---
 
@@ -141,7 +144,7 @@ this plan's folder and the roadmap; 03-01 §Ground rules)
 - [ ] 1.3.2 Phase gate: Task verify and the Phases 1–8 row of `07` §Check points for `findings/WS1-semantic-core.md` and `probes/WS1/`; commit, local only
 
 **Test slices**: N/A — no test map
-**Verify (gate)**: `bash plans/independent-assessment/probes/WS0/drift-check.sh`, then the Phases 1–8 row of `07` §Check points (AR #20)
+**Verify (gate)**: `bash plans/independent-assessment/probes/WS0/drift-check.sh plans/independent-assessment`, then the Phases 1–8 row of `07` §Check points (AR #20)
 
 ---
 
@@ -172,7 +175,7 @@ this plan's folder and the roadmap; 03-01 §Ground rules)
 - [ ] 2.3.2 Phase gate: Task verify and the Phases 1–8 row of `07` §Check points for `findings/WS2-ownership.md` and `probes/WS2/`; commit, local only
 
 **Test slices**: N/A — no test map
-**Verify (gate)**: `bash plans/independent-assessment/probes/WS0/drift-check.sh`, then the Phases 1–8 row of `07` §Check points (AR #20)
+**Verify (gate)**: `bash plans/independent-assessment/probes/WS0/drift-check.sh plans/independent-assessment`, then the Phases 1–8 row of `07` §Check points (AR #20)
 
 ---
 
@@ -202,7 +205,7 @@ this plan's folder and the roadmap; 03-01 §Ground rules)
 - [ ] 3.3.2 Phase gate: Task verify and the Phases 1–8 row of `07` §Check points for `findings/WS3-codegen.md` and `probes/WS3/`; commit, local only
 
 **Test slices**: N/A — no test map
-**Verify (gate)**: `bash plans/independent-assessment/probes/WS0/drift-check.sh`, then the Phases 1–8 row of `07` §Check points (AR #20)
+**Verify (gate)**: `bash plans/independent-assessment/probes/WS0/drift-check.sh plans/independent-assessment`, then the Phases 1–8 row of `07` §Check points (AR #20)
 
 ---
 
@@ -232,7 +235,7 @@ this plan's folder and the roadmap; 03-01 §Ground rules)
 - [ ] 4.3.2 Phase gate: Task verify and the Phases 1–8 row of `07` §Check points for `findings/WS4-code-quality.md` and `probes/WS4/`; commit, local only
 
 **Test slices**: N/A — no test map
-**Verify (gate)**: `bash plans/independent-assessment/probes/WS0/drift-check.sh`, then the Phases 1–8 row of `07` §Check points (AR #20)
+**Verify (gate)**: `bash plans/independent-assessment/probes/WS0/drift-check.sh plans/independent-assessment`, then the Phases 1–8 row of `07` §Check points (AR #20)
 
 ---
 
@@ -264,7 +267,7 @@ this plan's folder and the roadmap; 03-01 §Ground rules)
 - [ ] 5.3.2 Phase gate: Task verify, the Phases 1–8 row of `07` §Check points (every coverage-table row complete for every WS5 file); commit, local only
 
 **Test slices**: N/A — no test map
-**Verify (gate)**: `bash plans/independent-assessment/probes/WS0/drift-check.sh`, then the Phases 1–8 row of `07` §Check points (AR #20)
+**Verify (gate)**: `bash plans/independent-assessment/probes/WS0/drift-check.sh plans/independent-assessment`, then the Phases 1–8 row of `07` §Check points (AR #20)
 
 ---
 
@@ -293,7 +296,7 @@ this plan's folder and the roadmap; 03-01 §Ground rules)
 - [ ] 6.3.2 Phase gate: Task verify, the Phases 1–8 row of `07` §Check points (every per-module coverage-table row complete); commit, local only
 
 **Test slices**: N/A — no test map
-**Verify (gate)**: `bash plans/independent-assessment/probes/WS0/drift-check.sh`, then the Phases 1–8 row of `07` §Check points (AR #20)
+**Verify (gate)**: `bash plans/independent-assessment/probes/WS0/drift-check.sh plans/independent-assessment`, then the Phases 1–8 row of `07` §Check points (AR #20)
 
 ---
 
@@ -323,7 +326,7 @@ this plan's folder and the roadmap; 03-01 §Ground rules)
 - [ ] 7.3.2 Phase gate: Task verify and the Phases 1–8 row of `07` §Check points for `findings/WS7-performance.md` and `probes/WS7/`; commit, local only
 
 **Test slices**: N/A — no test map
-**Verify (gate)**: `bash plans/independent-assessment/probes/WS0/drift-check.sh`, then the Phases 1–8 row of `07` §Check points (AR #20)
+**Verify (gate)**: `bash plans/independent-assessment/probes/WS0/drift-check.sh plans/independent-assessment`, then the Phases 1–8 row of `07` §Check points (AR #20)
 
 ---
 
@@ -353,7 +356,7 @@ this plan's folder and the roadmap; 03-01 §Ground rules)
 - [ ] 8.3.2 Phase gate: Task verify and the Phases 1–8 row of `07` §Check points for `findings/WS8-test-integrity.md` and `probes/WS8/`; commit, local only
 
 **Test slices**: N/A — no test map
-**Verify (gate)**: `bash plans/independent-assessment/probes/WS0/drift-check.sh`, then the Phases 1–8 row of `07` §Check points (AR #20)
+**Verify (gate)**: `bash plans/independent-assessment/probes/WS0/drift-check.sh plans/independent-assessment`, then the Phases 1–8 row of `07` §Check points (AR #20)
 
 ---
 
@@ -384,18 +387,18 @@ this plan's folder and the roadmap; 03-01 §Ground rules)
 - [ ] 9.3.2 Phase gate: Task verify and the Phase 9 row of `07` §Check points; commit, local only
 
 **Test slices**: N/A — no test map
-**Verify (gate)**: `bash plans/independent-assessment/probes/WS0/drift-check.sh`, then the Phase 9 row of `07` §Check points (AR #20)
+**Verify (gate)**: `bash plans/independent-assessment/probes/WS0/drift-check.sh plans/independent-assessment`, then the Phase 9 row of `07` §Check points (AR #20)
 
 ---
 
-## Phase 10: Synthesis and report
+## Phase 10: Synthesis, report, issue hand-offs, and repeatability
 
 > **Phase baseline tree**: _(recorded by the exec-plan skill)_
-> **Reasoning**: high — synthesis of surviving findings into the report (AR #19)
+> **Reasoning**: high — synthesis of surviving findings into the report and the issue hand-offs (AR #19)
 
 ### Step 10.1: Report specification
 
-**Reference**: 03-04 §Report structure, §DEF rows, §Handoff · AR #8, AR #13, AR #21
+**Reference**: 03-04 §Report structure, §DEF rows, §GitHub issues, §Handoff · AR #8, AR #13, AR #21, AR #24–#27
 **Objective**: The report skeleton and the ST-10 checklist fixed before writing.
 
 - [ ] 10.1.1 Create `10-assessment-report.md` with the ten sections of 03-04 and an ST-10 checklist at the end; commit, local only
@@ -405,14 +408,18 @@ this plan's folder and the roadmap; 03-01 §Ground rules)
 - [ ] 10.2.1 Write sections 1–7 (summary, scope and limits, scorecard, findings, themes, performance, quick wins) from `05-findings.md` and the workstream files, citing surviving findings only
 - [ ] 10.2.2 Write sections 8–10 (remediation roadmap with unranked recommendations, spec questions, appendix without DEF IDs yet)
 
-### Step 10.3: Review, DEF rows, and gate
+### Step 10.3: Review, DEF rows, issues, repeatability, and gate
 
 - [ ] 10.3.1 Independent `correctness-reviewer` review of the report against `05-findings.md`, ST-10, and ST-12; record its findings under `05-findings.md` §Report review and fix every critical/major one
 - [ ] 10.3.2 Allocate one DEF row per surviving Critical/Major in `plans/00-roadmap.md` per 03-04 §DEF rows; write the IDs back into the ledger, the findings, and the report appendix; re-check ST-10
-- [ ] 10.3.3 Phase gate: Task verify and the Phase 10 row of `07` §Check points; set this plan's roadmap row to Done through the roadmap skill; commit, local only; present the report to the user for the remediation-plan selection (03-04 §Handoff)
+- [ ] 10.3.3 Draft every issue under `issues/` per 03-04 §GitHub issues (finding issues, Minor tracking issues, theme parent issues): search all open issues for overlaps and propose links or comments instead of duplicates, apply the redaction rule and grep the drafts for it; present the full list, overlaps, and labels to the user and wait for approval (AR #27)
+- [ ] 10.3.4 After approval: ask the user whether to push the plan commits first (permalinks are added only if pushed); create any missing labels, then the approved theme parents, then finding issues with `gh issue create --parent <theme#>`, then tracking issues, checking all open issues for duplicates first; post the approved comments on overlapping existing issues; record every issue number in the findings, the ledger, the DEF rows, and the report appendix
+- [ ] 10.3.5 Promote the reusable assets per 03-04 §Repeatability: copy the two scripts and `probes/WS0/ref/` into `tools/assessment/`, and the method documents into `tools/assessment/template/` with placeholders, cleared checkboxes, the standing-default register, the widened drift-check exclusion, and only the lessons Phase 9 confirmed
+- [ ] 10.3.6 Complete `tools/assessment/README.md` (full, scoped, and delta modes; the path-to-workstream table; labels and issue filing) and write the thin `.opencode/skills/clorraine-assessment/SKILL.md`, staged with `git add -f` (ST-18)
+- [ ] 10.3.7 Phase gate: Task verify and the Phase 10 row of `07` §Check points; set this plan's roadmap row to Done through the roadmap skill; commit, local only; present the report and the issues to the user for the remediation-plan selection (03-04 §Handoff)
 
 **Test slices**: N/A — no test map
-**Verify (gate)**: `bash plans/independent-assessment/probes/WS0/drift-check.sh`, then the Phase 10 row of `07` §Check points (AR #20)
+**Verify (gate)**: `bash plans/independent-assessment/probes/WS0/drift-check.sh plans/independent-assessment`, then the Phase 10 row of `07` §Check points (AR #20)
 
 ---
 
@@ -441,5 +448,7 @@ Phases 1–7 ──► Phase 8 ──► Phase 9 ──► Phase 10
 4. ✅ Every finding and the clean sample have an independent verdict (ST-9)
 5. ✅ `10-assessment-report.md` delivered and reviewed (ST-10)
 6. ✅ DEF rows added for every surviving Critical/Major finding (AR #13, AR #21)
-7. ✅ No change outside the allowed paths; drift check passing (ST-7)
-8. ✅ The user has the remediation roadmap to choose from
+7. ✅ The approved GitHub issues exist as hand-offs, cross-linked (ST-17)
+8. ✅ No change outside the allowed paths; drift check passing (ST-7)
+9. ✅ The user has the remediation roadmap to choose from
+10. ✅ The assessment can be repeated from `tools/assessment/` (ST-18)
