@@ -1,0 +1,25 @@
+module Probe.Main;
+
+import { println } from std.io;
+import { Lock, PathInfo, lockPath, unlockPath, pathInfo, pathInfoIsDir, makeDir, deleteFile, renameFile, setCurrentDir } from std.amiga.dos;
+
+func main(): i32 {
+    let made: bool = makeDir("build/tmp/assessment/WS5/rt-dir");
+    let lock: Lock? = lockPath("build/tmp/assessment/WS5/rt-dir");
+    let locked: bool = lock != null;
+    if (lock != null) {
+        let l: Lock = lock;
+        unlockPath(take l);
+    }
+    let info: PathInfo? = pathInfo("build/tmp/assessment/WS5/rt-dir");
+    let isDir: bool = false;
+    if (info != null) {
+        let i: PathInfo = info;
+        isDir = pathInfoIsDir(i);
+    }
+    let renamed: bool = renameFile("build/tmp/assessment/WS5/rt-dir", "build/tmp/assessment/WS5/rt-dir2");
+    let deleted: bool = deleteFile("build/tmp/assessment/WS5/rt-dir2");
+    let moved: bool = setCurrentDir("build");
+    println($"{made} {locked} {isDir} {renamed} {deleted} {moved}");
+    return 0;
+}

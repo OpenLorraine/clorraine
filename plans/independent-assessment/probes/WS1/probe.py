@@ -31,7 +31,9 @@ under ``vamos``). ``freestanding`` is compiled (``-c``) but not run.
 ``--sanitize`` the host profile also builds and runs an AddressSanitizer line
 (``-fsanitize=address -no-pie``, ``ASAN_OPTIONS=detect_leaks=1``) and an
 UndefinedBehaviorSanitizer line (``-fsanitize=undefined
--fno-sanitize-recover=all -no-pie``); any sanitizer report fails the check. ``nocrash``
+-fno-sanitize-recover=all -no-pie``); any sanitizer report fails the check.
+With ``--vamos-leaks``, an Amiga run whose ``vamos`` log reports a library or device
+that cannot be expunged (open count left) or orphan memory fails the check. ``nocrash``
 requires ``clc`` to end with exit 0 or 1 (no panic, signal, or timeout) within
 ``limit-ms``.
 
@@ -88,6 +90,7 @@ SANITIZE = [
     ("ubsan", "cc", ["-std=c99", "-O0", "-g", "-fsanitize=undefined",
                      "-fno-sanitize-recover=all", "-no-pie"], []),
 ]
+LEAK_RE = re.compile(r"can't expunge|mem_alloc:WARNING:\s+orphan|shutdown: can't expunge")
 SAN_ENV = {"ASAN_OPTIONS": "detect_leaks=1", "UBSAN_OPTIONS": "print_stacktrace=1"}
 CODE_RE = re.compile(r"error (E\d{5})")
 
@@ -143,7 +146,8 @@ def first_code(text: str) -> str | None:
 
 
 def check(clc: Path, pid: str, sources: list[Path], kind: str, spec: dict, expected_out: str,
-          profile: str, work: Path, sanitize: bool = False) -> list[tuple[bool, str, str]]:
+          profile: str, work: Path, sanitize: bool = False,
+          vamos_leaks: bool = False) -> list[tuple[bool, str, str]]:
     """Check one probe (or its contrast) on one profile; return (ok, mode, detail) rows."""
     work.mkdir(parents=True, exist_ok=True)
     c_file = work / "prog.c"
@@ -184,6 +188,12 @@ def check(clc: Path, pid: str, sources: list[Path], kind: str, spec: dict, expec
         (work / f"run-{mode}.log").write_text(f"rc={xrc}\n--- stdout\n{xout}\n--- stderr\n{xerr}",
                                               encoding="utf-8")
         got = bench.normalize_output(xout.encode())
+        leak = ""
+        if vamos_leaks and profile != "host":
+            leak = next((ln.strip() for ln in xerr.splitlines() if LEAK_RE.search(ln)), "")
+            if leak:
+                rows.append((False, mode, f"VAMOS LEAK: {leak[:160]}"))
+                continue
         if word == "output":
             report = next((ln for ln in xerr.splitlines()
                            if "Sanitizer" in ln or "runtime error" in ln), "")
@@ -220,6 +230,8 @@ def main() -> int:
     parser.add_argument("--only", nargs="+", default=None)
     parser.add_argument("--contrast", action="store_true")
     parser.add_argument("--jobs", type=int, default=6)
+    parser.add_argument("--vamos-leaks", action="store_true",
+                        help="fail an Amiga run whose vamos log reports an open library or orphan memory")
     parser.add_argument("--sanitize", action="store_true",
                         help="also build and run the host ASan and UBSan lines")
     args = parser.parse_args()
@@ -277,7 +289,8 @@ def main() -> int:
                              out / pid / profile))
     results = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as pool:
-        futures = {pool.submit(check, clc, *job, sanitize=args.sanitize): job for job in jobs}
+        futures = {pool.submit(check, clc, *job, sanitize=args.sanitize, vamos_leaks=args.vamos_leaks): job
+                   for job in jobs}
         for future in concurrent.futures.as_completed(futures):
             pid, _, kind, _, _, profile, _ = futures[future]
             for ok, mode, detail in future.result():

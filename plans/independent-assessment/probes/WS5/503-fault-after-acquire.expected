@@ -1,0 +1,15 @@
+# WS5-08 (cleanup after a runtime fault). Sources: spec/05-statements.md §15 (a runtime
+# fault aborts without the cleanup ladder) and the exec/dos autodocs (AllocMem memory
+# and locks are not reclaimed by AmigaOS when a process exits; the program must free
+# them). The language rule and the platform rule together mean the runtime fault exit
+# must release OS resources the shim allocated; expected: fault E11211 and no orphan
+# memory or open lock reported by vamos.
+# Detector: probe.py --vamos-leaks fails an Amiga run whose vamos log reports a
+# library or device left open ("can't expunge … open count") or orphan AllocMem
+# memory (shown to fire on the seeded program 500-seeded-leak.c in the red check).
+profiles: hosted-amiga-13 hosted-amiga
+expect: fault E11211
+contrast: xs[pick(5)] ==> xs[pick(1)]
+contrast-expect: output
+--- contrast-output
+2

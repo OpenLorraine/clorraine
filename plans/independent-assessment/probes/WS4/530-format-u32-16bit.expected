@@ -1,0 +1,7 @@
+# WS5-13 patched-C estimate (hot path; kept beside the WS4 patch runner). The runtime
+# decimal writer cl_format_u32 divides by 10 in 32-bit arithmetic, which the 68000 has
+# no instruction for, so every digit calls libgcc's __udivsi4. Target shape: finish the
+# digits of values below 65,536 with 16-bit division (the 68000 DIVU.W). Expected:
+# output identical after bench.normalize_output; metric: net instructions and .text on
+# the A500 lens against the unpatched build (430-patch-measure.py).
+benchmark: strings

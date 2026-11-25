@@ -1,0 +1,15 @@
+module Probe.Main;
+
+import { println } from std.io;
+import { Timer, openTimer, timerWait, freeTimer } from std.amiga.timer;
+
+func main(): i32 {
+    let t: Timer? = openTimer();
+    if (t != null) {
+        let tm: Timer = t;
+        let ok: bool = timerWait(borrow tm, 1);
+        println($"{ok}");
+        freeTimer(take tm);
+    }
+    return 0;
+}

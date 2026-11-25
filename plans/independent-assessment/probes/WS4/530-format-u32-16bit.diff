@@ -1,0 +1,21 @@
+--- prog.c
++++ prog.c
+@@ -1102,9 +1102,17 @@
+     unsigned char digits[10];
+     ULONG count = 0;
+     /* `count == 0` makes the first pass unconditional, so zero prints "0". */
+-    while (value != 0 || count == 0) {
++    while (value > 0xFFFFu) {
+         digits[count++] = (unsigned char)('0' + (value % 10u));
+         value /= 10u;
++    }
++    {
++        unsigned short small = (unsigned short)value;
++        while (small != 0 || count == 0) {
++            unsigned short q = (unsigned short)(small / 10u);
++            digits[count++] = (unsigned char)('0' + (small - q * 10u));
++            small = q;
++        }
+     }
+     ULONG index;
+     for (index = 0; index < count; index++) {

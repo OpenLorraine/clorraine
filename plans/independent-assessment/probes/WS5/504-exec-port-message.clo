@@ -1,0 +1,27 @@
+module Probe.Main;
+
+import { println } from std.io;
+import { MsgPort, NewMessage, Message, createMsgPort, createMessage, putMsg, getMsg, replyMsg, deleteMsgPort, messagePayload } from std.amiga.exec;
+
+func main(): i32 {
+    let port: MsgPort? = createMsgPort();
+    let reply: MsgPort? = createMsgPort();
+    if (port != null && reply != null) {
+        let p: MsgPort = port;
+        let r: MsgPort = reply;
+        let m: NewMessage? = createMessage(borrow r, 41);
+        if (m != null) {
+            let nm: NewMessage = m;
+            putMsg(borrow p, take nm);
+        }
+        let got: Message? = getMsg(borrow p);
+        if (got != null) {
+            let g: Message = got;
+            println($"{messagePayload(borrow g) + 1}");
+            replyMsg(take g);
+        }
+        deleteMsgPort(take p);
+        deleteMsgPort(take r);
+    }
+    return 0;
+}

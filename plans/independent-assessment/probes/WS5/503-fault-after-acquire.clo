@@ -1,0 +1,16 @@
+module Probe.Main;
+
+import { println } from std.io;
+import { Lock, PathInfo, lockPath, pathInfo } from std.amiga.dos;
+
+func pick(n: usize): usize {
+    return n;
+}
+
+func main(): i32 {
+    let lock: Lock? = lockPath("build");
+    let info: PathInfo? = pathInfo("build");
+    let xs: u8[2] = [1, 2];
+    println($"{xs[pick(5)]}");
+    return 0;
+}

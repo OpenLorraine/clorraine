@@ -1,0 +1,16 @@
+# WS5-02/03/06 for the 2.0+ optional services under vamos. Sources:
+# spec/appendix-stdlib.md §14.4-§14.5 (tag lists, date stamps, signal semaphores) and
+# the utility/exec autodocs (AllocateTagItems/FreeTagItems, InitSemaphore,
+# ObtainSemaphore/ReleaseSemaphore, AttemptSemaphore returns TRUE when obtained).
+# Expected: "9 2", "true", and nothing left open or allocated.
+# Detector: probe.py --vamos-leaks (library left open or orphan AllocMem memory).
+profiles: hosted-amiga
+expect: output
+contrast: tagSet(borrow t, 0x80000002, 9); ==> tagSet(borrow t, 0x80000002, 8);
+contrast-expect: output
+--- output
+9 2
+true
+--- contrast-output
+8 2
+true

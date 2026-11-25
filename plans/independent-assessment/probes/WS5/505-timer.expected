@@ -1,0 +1,14 @@
+# WS5-06/02 (timer.device lifecycle). Sources: spec/appendix-amiga.md (std.amiga.timer)
+# and the timer.device and exec autodocs (OpenDevice/CloseDevice with a reply port and
+# IORequest that are deleted after the device is closed). Expected: true, no leak.
+# Detector: probe.py --vamos-leaks fails an Amiga run whose vamos log reports a
+# library or device left open ("can't expunge … open count") or orphan AllocMem
+# memory (shown to fire on the seeded program 500-seeded-leak.c in the red check).
+profiles: hosted-amiga-13 hosted-amiga
+expect: output
+contrast: println($"{ok}"); ==> println($"{!ok}");
+contrast-expect: output
+--- output
+true
+--- contrast-output
+false

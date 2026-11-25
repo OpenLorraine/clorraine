@@ -1,0 +1,16 @@
+# WS5-02 (library lifecycle). Sources: spec/appendix-stdlib.md §13.3 and the exec
+# OpenLibrary/CloseLibrary autodocs. Expected: dos.library opens at V33+, a missing
+# library returns null, nothing left open.
+# Detector: probe.py --vamos-leaks fails an Amiga run whose vamos log reports a
+# library or device left open ("can't expunge … open count") or orphan AllocMem
+# memory (shown to fire on the seeded program 500-seeded-leak.c in the red check).
+profiles: hosted-amiga-13 hosted-amiga
+expect: output
+contrast: openLibrary("nosuch.library", 0) ==> openLibrary("dos.library", 0)
+contrast-expect: output
+--- output
+true
+true
+--- contrast-output
+true
+false

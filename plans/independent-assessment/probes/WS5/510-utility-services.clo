@@ -1,0 +1,31 @@
+module Probe.Main;
+
+import { println } from std.io;
+import { TagList, DateStamp, newTagList, tagSet, tagGet, tagCount, freeTagList, currentDateStamp, freeDateStamp } from std.amiga.utility;
+import { Semaphore, createSemaphore, obtainSemaphore, releaseSemaphore, attemptSemaphore, freeSemaphore } from std.amiga.semaphore;
+
+func main(): i32 {
+    let tl: TagList? = newTagList(4);
+    if (tl != null) {
+        let t: TagList = tl;
+        tagSet(borrow t, 0x80000001, 7);
+        tagSet(borrow t, 0x80000002, 9);
+        println($"{tagGet(borrow t, 0x80000002)} {tagCount(borrow t)}");
+        freeTagList(take t);
+    }
+    let ds: DateStamp? = currentDateStamp();
+    if (ds != null) {
+        let d: DateStamp = ds;
+        freeDateStamp(take d);
+    }
+    let sm: Semaphore? = createSemaphore();
+    if (sm != null) {
+        let s: Semaphore = sm;
+        obtainSemaphore(borrow s);
+        releaseSemaphore(borrow s);
+        println($"{attemptSemaphore(borrow s)}");
+        releaseSemaphore(borrow s);
+        freeSemaphore(take s);
+    }
+    return 0;
+}

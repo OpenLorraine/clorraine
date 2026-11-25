@@ -1,0 +1,15 @@
+# WS5-04 (failure paths). Sources: dos.library autodocs (Lock, Examine, Info, DeleteFile,
+# Rename, CurrentDir fail with a null lock or DOSFALSE) and spec/appendix-stdlib.md
+# (the wrappers return null or false). Expected: every call reports failure, nothing
+# leaks.
+# Detector: probe.py --vamos-leaks fails an Amiga run whose vamos log reports a
+# library or device left open ("can't expunge … open count") or orphan AllocMem
+# memory (shown to fire on the seeded program 500-seeded-leak.c in the red check).
+profiles: hosted-amiga-13 hosted-amiga
+expect: output
+contrast: let d: bool = deleteFile("build/tmp/assessment/WS5/no/such/file"); ==> let d: bool = true;
+contrast-expect: output
+--- output
+true true true false false false
+--- contrast-output
+true true true true false false

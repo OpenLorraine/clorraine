@@ -1,0 +1,17 @@
+# WS5-02/03/08 (DOS paths under vamos). Sources: spec/appendix-stdlib.md (std.amiga.dos
+# surface), dos.library autodocs (CreateDir returns a lock the caller must UnLock;
+# Lock/UnLock pair; Examine with an allocated FileInfoBlock; CurrentDir returns the old
+# lock, which the program must restore and the new one must be unlocked before exit).
+# Expected: every call succeeds and nothing is left open or allocated at exit,
+# including after setCurrentDir.
+# Detector: probe.py --vamos-leaks fails an Amiga run whose vamos log reports a
+# library or device left open ("can't expunge … open count") or orphan AllocMem
+# memory (shown to fire on the seeded program 500-seeded-leak.c in the red check).
+profiles: hosted-amiga-13 hosted-amiga
+expect: output
+contrast: let moved: bool = setCurrentDir("build"); ==> let moved: bool = true;
+contrast-expect: output
+--- output
+true true true true true true
+--- contrast-output
+true true true true true true

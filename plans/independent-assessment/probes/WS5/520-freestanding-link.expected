@@ -1,0 +1,6 @@
+# WS5-12 expectation. Sources: spec/15-profiles.md §2 (freestanding: no libc, links with
+# the self-contained soft-float runtime `-lg`, `_start` calls main) and the driver's
+# freestanding line (compiler/src/clorraine/toolchain.rs). Expected: the object's only
+# undefined symbols are libgcc soft-float/arithmetic helpers satisfied by -lg (no
+# memcpy, memset, strlen, malloc, printf, or other libc symbol), and the link succeeds.
+expect: script

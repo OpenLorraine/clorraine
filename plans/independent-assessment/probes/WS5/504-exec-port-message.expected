@@ -1,0 +1,15 @@
+# WS5-06 (ports, messages, signals). Sources: spec/appendix-stdlib.md §13.2 and the exec
+# autodocs (CreatePort/CreateMsgPort allocate a signal bit and DeletePort frees it;
+# PutMsg/GetMsg/ReplyMsg; a message must be replied or freed). Expected: payload 41 + 1
+# and nothing left allocated.
+# Detector: probe.py --vamos-leaks fails an Amiga run whose vamos log reports a
+# library or device left open ("can't expunge … open count") or orphan AllocMem
+# memory (shown to fire on the seeded program 500-seeded-leak.c in the red check).
+profiles: hosted-amiga-13 hosted-amiga
+expect: output
+contrast: createMessage(borrow r, 41) ==> createMessage(borrow r, 50)
+contrast-expect: output
+--- output
+42
+--- contrast-output
+51

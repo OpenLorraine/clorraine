@@ -1,0 +1,16 @@
+module Probe.Main;
+
+import { println } from std.io;
+import { Library, openLibrary, closeLibrary, libraryVersion } from std.amiga.exec;
+
+func main(): i32 {
+    let lib: Library? = openLibrary("dos.library", 33);
+    if (lib != null) {
+        let l: Library = lib;
+        println($"{libraryVersion(borrow l) >= 33}");
+        closeLibrary(take l);
+    }
+    let bad: Library? = openLibrary("nosuch.library", 0);
+    println($"{bad == null}");
+    return 0;
+}

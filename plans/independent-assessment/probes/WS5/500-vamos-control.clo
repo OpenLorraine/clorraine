@@ -1,0 +1,8 @@
+module Probe.Main;
+
+import { println } from std.io;
+
+func main(): i32 {
+    println("control");
+    return 0;
+}

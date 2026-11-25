@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-25 22:23
-> **Progress**: 43/95 tasks (45%)
+> **Last Updated**: 2026-11-25 22:27
+> **Progress**: 45/95 tasks (47%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -242,7 +242,7 @@ this plan's folder and the roadmap; 03-01 §Ground rules)
 
 ## Phase 5: WS5 Runtime shims
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill)_
+> **Phase baseline tree**: d5599054563b75ca31e0ebef11b11ce590d3321c
 > **Reasoning**: xhigh — 11.6k lines of C with no sanitizer coverage on the Amiga paths (AR #19)
 
 ### Step 5.1: Probe specification
@@ -250,8 +250,8 @@ this plan's folder and the roadmap; 03-01 §Ground rules)
 **Reference**: 03-03 §WS5 · `spec/appendix-amiga.md`, NDK autodocs · 03-01 §Ground rules (FS-UAE) · AR #6, AR #9
 **Objective**: Kickstart-version and resource expectations written before probes run.
 
-- [ ] 5.1.1 Write WS5a probes and expectations (WS5-01..WS5-10 on `shim_hosted_amiga.c` and `shim_hosted_amiga_20.c`) under `probes/WS5/`, naming the `vamos` or FS-UAE configuration each needs
-- [ ] 5.1.2 Write WS5b probes and expectations (WS5-11..WS5-14, and WS5-01..WS5-10 for the five optional shims and `picasso96.h`) under `probes/WS5/`; commit Step 5.1 probes and expectations, local only
+- [x] 5.1.1 Write WS5a probes and expectations (WS5-01..WS5-10 on `shim_hosted_amiga.c` and `shim_hosted_amiga_20.c`) under `probes/WS5/`, naming the `vamos` or FS-UAE configuration each needs ✅ (completed: 2026-11-25 22:27)
+- [x] 5.1.2 Write WS5b probes and expectations (WS5-11..WS5-14, and WS5-01..WS5-10 for the five optional shims and `picasso96.h`) under `probes/WS5/`; commit Step 5.1 probes and expectations, local only ✅ (completed: 2026-11-25 22:27)
 - [ ] 5.1.3 Red check: each probe discriminates; the host-shim sanitizer probes detect a seeded fault; detectors that cannot fire are marked `limit`; log in `findings/WS5-shims.md`
 
 ### Step 5.2: Analysis

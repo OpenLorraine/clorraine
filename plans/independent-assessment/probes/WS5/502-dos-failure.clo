@@ -1,0 +1,15 @@
+module Probe.Main;
+
+import { println } from std.io;
+import { Lock, PathInfo, VolumeInfo, lockPath, pathInfo, volumeInfo, deleteFile, renameFile, setCurrentDir } from std.amiga.dos;
+
+func main(): i32 {
+    let lock: Lock? = lockPath("build/tmp/assessment/WS5/no/such/path");
+    let info: PathInfo? = pathInfo("build/tmp/assessment/WS5/no/such/path");
+    let vol: VolumeInfo? = volumeInfo("NOSUCHVOLUME:");
+    let d: bool = deleteFile("build/tmp/assessment/WS5/no/such/file");
+    let r: bool = renameFile("build/tmp/assessment/WS5/no/a", "build/tmp/assessment/WS5/no/b");
+    let c: bool = setCurrentDir("build/tmp/assessment/WS5/no/such/dir");
+    println($"{lock == null} {info == null} {vol == null} {d} {r} {c}");
+    return 0;
+}
