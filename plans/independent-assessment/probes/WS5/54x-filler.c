@@ -1,6 +1,7 @@
 /* WS5 memory filler for the FS-UAE probes (54x-fs-uae.sh cases ending in "f").
  *
- * Allocates the free memory block by block, fills every block with the 68000
+ * Allocates the free memory block by block down to 16-byte fragments (keeping
+ * 16 KB of the largest block for Delay and printf), fills every block with the 68000
  * ILLEGAL opcode (0x4AFC), waits half a second so VBlank interrupts run while
  * the memory holds the pattern, frees everything, and prints "filler survived".
  * A VBlank server left installed in an unloaded program's memory then executes
@@ -16,15 +17,17 @@ int main(void)
     void *head = NULL;
     int blocks = 0;
 
-    while (blocks < 256) {
+    while (blocks < 4096) {
         ULONG size = AvailMem(MEMF_ANY | MEMF_LARGEST);
         UWORD *block;
         ULONG i;
 
-        if (size < 4096) {
+        if (size < 16) {
             break;
         }
-        size -= 1024;
+        if (blocks == 0) {
+            size -= 16384; /* keep room for Delay and printf */
+        }
         block = (UWORD *)AllocMem(size, MEMF_ANY);
         if (block == NULL) {
             break;
