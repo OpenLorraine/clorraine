@@ -1,0 +1,272 @@
+[
+  {
+    "probe": "500-vamos-control",
+    "profile": "hosted-amiga",
+    "mode": "debug",
+    "kind": "output",
+    "ok": true,
+    "detail": "rc=0",
+    "contrast": true
+  },
+  {
+    "probe": "500-vamos-control",
+    "profile": "hosted-amiga",
+    "mode": "release",
+    "kind": "output",
+    "ok": true,
+    "detail": "rc=0",
+    "contrast": true
+  },
+  {
+    "probe": "500-vamos-control",
+    "profile": "hosted-amiga-13",
+    "mode": "debug",
+    "kind": "output",
+    "ok": true,
+    "detail": "rc=0",
+    "contrast": true
+  },
+  {
+    "probe": "500-vamos-control",
+    "profile": "hosted-amiga-13",
+    "mode": "release",
+    "kind": "output",
+    "ok": true,
+    "detail": "rc=0",
+    "contrast": true
+  },
+  {
+    "probe": "501-dos-roundtrip",
+    "profile": "hosted-amiga",
+    "mode": "debug",
+    "kind": "output",
+    "ok": true,
+    "detail": "rc=0",
+    "contrast": true
+  },
+  {
+    "probe": "501-dos-roundtrip",
+    "profile": "hosted-amiga",
+    "mode": "release",
+    "kind": "output",
+    "ok": true,
+    "detail": "rc=0",
+    "contrast": true
+  },
+  {
+    "probe": "501-dos-roundtrip",
+    "profile": "hosted-amiga-13",
+    "mode": "debug",
+    "kind": "output",
+    "ok": true,
+    "detail": "rc=0",
+    "contrast": true
+  },
+  {
+    "probe": "501-dos-roundtrip",
+    "profile": "hosted-amiga-13",
+    "mode": "release",
+    "kind": "output",
+    "ok": true,
+    "detail": "rc=0",
+    "contrast": true
+  },
+  {
+    "probe": "502-dos-failure",
+    "profile": "hosted-amiga",
+    "mode": "debug",
+    "kind": "output",
+    "ok": true,
+    "detail": "rc=0",
+    "contrast": true
+  },
+  {
+    "probe": "502-dos-failure",
+    "profile": "hosted-amiga",
+    "mode": "release",
+    "kind": "output",
+    "ok": true,
+    "detail": "rc=0",
+    "contrast": true
+  },
+  {
+    "probe": "502-dos-failure",
+    "profile": "hosted-amiga-13",
+    "mode": "debug",
+    "kind": "output",
+    "ok": true,
+    "detail": "rc=0",
+    "contrast": true
+  },
+  {
+    "probe": "502-dos-failure",
+    "profile": "hosted-amiga-13",
+    "mode": "release",
+    "kind": "output",
+    "ok": true,
+    "detail": "rc=0",
+    "contrast": true
+  },
+  {
+    "probe": "503-fault-after-acquire",
+    "profile": "hosted-amiga",
+    "mode": "debug",
+    "kind": "output",
+    "ok": true,
+    "detail": "rc=0",
+    "contrast": true
+  },
+  {
+    "probe": "503-fault-after-acquire",
+    "profile": "hosted-amiga",
+    "mode": "release",
+    "kind": "output",
+    "ok": true,
+    "detail": "rc=0",
+    "contrast": true
+  },
+  {
+    "probe": "503-fault-after-acquire",
+    "profile": "hosted-amiga-13",
+    "mode": "debug",
+    "kind": "output",
+    "ok": true,
+    "detail": "rc=0",
+    "contrast": true
+  },
+  {
+    "probe": "503-fault-after-acquire",
+    "profile": "hosted-amiga-13",
+    "mode": "release",
+    "kind": "output",
+    "ok": true,
+    "detail": "rc=0",
+    "contrast": true
+  },
+  {
+    "probe": "504-exec-port-message",
+    "profile": "hosted-amiga",
+    "mode": "debug",
+    "kind": "output",
+    "ok": false,
+    "detail": "VAMOS LEAK: 21:27:40.412  mem_alloc:WARNING:  orphan: [@0231b0 +000018 0231c8]",
+    "contrast": true
+  },
+  {
+    "probe": "504-exec-port-message",
+    "profile": "hosted-amiga",
+    "mode": "release",
+    "kind": "output",
+    "ok": false,
+    "detail": "VAMOS LEAK: 21:27:47.495  mem_alloc:WARNING:  orphan: [@00ebe0 +000018 00ebf8]",
+    "contrast": true
+  },
+  {
+    "probe": "504-exec-port-message",
+    "profile": "hosted-amiga-13",
+    "mode": "debug",
+    "kind": "output",
+    "ok": false,
+    "detail": "VAMOS LEAK: 21:27:35.762  mem_alloc:WARNING:  orphan: [@01a6c8 +000018 01a6e0]",
+    "contrast": true
+  },
+  {
+    "probe": "504-exec-port-message",
+    "profile": "hosted-amiga-13",
+    "mode": "release",
+    "kind": "output",
+    "ok": false,
+    "detail": "VAMOS LEAK: 21:27:40.864  mem_alloc:WARNING:  orphan: [@00e830 +000018 00e848]",
+    "contrast": true
+  },
+  {
+    "probe": "505-timer",
+    "profile": "hosted-amiga",
+    "mode": "debug",
+    "kind": "output",
+    "ok": true,
+    "detail": "rc=0",
+    "contrast": true
+  },
+  {
+    "probe": "505-timer",
+    "profile": "hosted-amiga",
+    "mode": "release",
+    "kind": "output",
+    "ok": true,
+    "detail": "rc=0",
+    "contrast": true
+  },
+  {
+    "probe": "505-timer",
+    "profile": "hosted-amiga-13",
+    "mode": "debug",
+    "kind": "output",
+    "ok": true,
+    "detail": "rc=0",
+    "contrast": true
+  },
+  {
+    "probe": "505-timer",
+    "profile": "hosted-amiga-13",
+    "mode": "release",
+    "kind": "output",
+    "ok": true,
+    "detail": "rc=0",
+    "contrast": true
+  },
+  {
+    "probe": "506-library-open-close",
+    "profile": "hosted-amiga",
+    "mode": "debug",
+    "kind": "output",
+    "ok": true,
+    "detail": "rc=0",
+    "contrast": true
+  },
+  {
+    "probe": "506-library-open-close",
+    "profile": "hosted-amiga",
+    "mode": "release",
+    "kind": "output",
+    "ok": true,
+    "detail": "rc=0",
+    "contrast": true
+  },
+  {
+    "probe": "506-library-open-close",
+    "profile": "hosted-amiga-13",
+    "mode": "debug",
+    "kind": "output",
+    "ok": true,
+    "detail": "rc=0",
+    "contrast": true
+  },
+  {
+    "probe": "506-library-open-close",
+    "profile": "hosted-amiga-13",
+    "mode": "release",
+    "kind": "output",
+    "ok": true,
+    "detail": "rc=0",
+    "contrast": true
+  },
+  {
+    "probe": "510-utility-services",
+    "profile": "hosted-amiga",
+    "mode": "debug",
+    "kind": "output",
+    "ok": true,
+    "detail": "rc=0",
+    "contrast": true
+  },
+  {
+    "probe": "510-utility-services",
+    "profile": "hosted-amiga",
+    "mode": "release",
+    "kind": "output",
+    "ok": true,
+    "detail": "rc=0",
+    "contrast": true
+  }
+]

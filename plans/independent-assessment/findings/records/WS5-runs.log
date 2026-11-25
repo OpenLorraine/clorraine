@@ -1,0 +1,144 @@
+# WS5 runs 2026-11-25. vamos: main.log, red.log, c507.log, fs.log, patch.log. FS-UAE A1200/KS3.1: 54x-fs-uae.sh (run-<case>/out.txt; 541f/541cf with the second filler revision).
+=== red.log
+21:27:25.319     libmgr:WARNING:  can't expunge: '@(0000b4fc):'utility.library'(15)' with open count 1
+21:27:25.319     libmgr:WARNING:  shutdown: can't expunge 1 vamos libs/devs!
+21:27:25.320  mem_alloc:WARNING:  orphan: [@00ae34 +00082c 00b660]
+PASS 500-vamos-control hosted-amiga debug: [output] rc=0
+PASS 500-vamos-control hosted-amiga release: [output] rc=0
+PASS 500-vamos-control hosted-amiga-13 debug: [output] rc=0
+PASS 500-vamos-control hosted-amiga-13 release: [output] rc=0
+PASS 501-dos-roundtrip hosted-amiga debug: [output] rc=0
+PASS 501-dos-roundtrip hosted-amiga release: [output] rc=0
+PASS 501-dos-roundtrip hosted-amiga-13 debug: [output] rc=0
+PASS 501-dos-roundtrip hosted-amiga-13 release: [output] rc=0
+PASS 502-dos-failure hosted-amiga debug: [output] rc=0
+PASS 502-dos-failure hosted-amiga release: [output] rc=0
+PASS 502-dos-failure hosted-amiga-13 debug: [output] rc=0
+PASS 502-dos-failure hosted-amiga-13 release: [output] rc=0
+PASS 503-fault-after-acquire hosted-amiga debug: [output] rc=0
+PASS 503-fault-after-acquire hosted-amiga release: [output] rc=0
+PASS 503-fault-after-acquire hosted-amiga-13 debug: [output] rc=0
+PASS 503-fault-after-acquire hosted-amiga-13 release: [output] rc=0
+FAIL 504-exec-port-message hosted-amiga debug: [output] VAMOS LEAK: 21:27:40.412  mem_alloc:WARNING:  orphan: [@0231b0 +000018 0231c8]
+FAIL 504-exec-port-message hosted-amiga release: [output] VAMOS LEAK: 21:27:47.495  mem_alloc:WARNING:  orphan: [@00ebe0 +000018 00ebf8]
+FAIL 504-exec-port-message hosted-amiga-13 debug: [output] VAMOS LEAK: 21:27:35.762  mem_alloc:WARNING:  orphan: [@01a6c8 +000018 01a6e0]
+FAIL 504-exec-port-message hosted-amiga-13 release: [output] VAMOS LEAK: 21:27:40.864  mem_alloc:WARNING:  orphan: [@00e830 +000018 00e848]
+PASS 505-timer hosted-amiga debug: [output] rc=0
+PASS 505-timer hosted-amiga release: [output] rc=0
+PASS 505-timer hosted-amiga-13 debug: [output] rc=0
+PASS 505-timer hosted-amiga-13 release: [output] rc=0
+PASS 506-library-open-close hosted-amiga debug: [output] rc=0
+PASS 506-library-open-close hosted-amiga release: [output] rc=0
+PASS 506-library-open-close hosted-amiga-13 debug: [output] rc=0
+PASS 506-library-open-close hosted-amiga-13 release: [output] rc=0
+PASS 510-utility-services hosted-amiga debug: [output] rc=0
+PASS 510-utility-services hosted-amiga release: [output] rc=0
+probe: 26 pass, 4 fail; wrote /work/build/tmp/assessment/WS5/probes/contrast.json
+
+make: *** [Makefile:74: exec] Error 1
+=== main.log
+PASS 500-vamos-control hosted-amiga debug: [output] rc=0
+PASS 500-vamos-control hosted-amiga release: [output] rc=0
+PASS 500-vamos-control hosted-amiga-13 debug: [output] rc=0
+PASS 500-vamos-control hosted-amiga-13 release: [output] rc=0
+FAIL 501-dos-roundtrip hosted-amiga debug: [output] rc=1 got='true true true true true true\n' want='true true true true true true\n'
+FAIL 501-dos-roundtrip hosted-amiga release: [output] rc=1 got='true true true true true true\n' want='true true true true true true\n'
+FAIL 501-dos-roundtrip hosted-amiga-13 debug: [output] rc=1 got='true true true true true true\n' want='true true true true true true\n'
+FAIL 501-dos-roundtrip hosted-amiga-13 release: [output] rc=1 got='true true true true true true\n' want='true true true true true true\n'
+PASS 502-dos-failure hosted-amiga debug: [output] rc=0
+PASS 502-dos-failure hosted-amiga release: [output] rc=0
+PASS 502-dos-failure hosted-amiga-13 debug: [output] rc=0
+PASS 502-dos-failure hosted-amiga-13 release: [output] rc=0
+FAIL 503-fault-after-acquire hosted-amiga debug: [fault E11211] VAMOS LEAK: 21:28:31.378  mem_alloc:WARNING:  orphan: [@0228e4 +000014 0228f8]
+FAIL 503-fault-after-acquire hosted-amiga release: [fault E11211] VAMOS LEAK: 21:28:42.401  mem_alloc:WARNING:  orphan: [@00e84c +000014 00e860]
+FAIL 503-fault-after-acquire hosted-amiga-13 debug: [fault E11211] VAMOS LEAK: 21:28:29.268  mem_alloc:WARNING:  orphan: [@019e00 +000014 019e14]
+FAIL 503-fault-after-acquire hosted-amiga-13 release: [fault E11211] VAMOS LEAK: 21:28:37.571  mem_alloc:WARNING:  orphan: [@00e498 +000014 00e4ac]
+FAIL 504-exec-port-message hosted-amiga debug: [output] VAMOS LEAK: 21:28:38.288  mem_alloc:WARNING:  orphan: [@0231b0 +000018 0231c8]
+FAIL 504-exec-port-message hosted-amiga release: [output] VAMOS LEAK: 21:28:47.808  mem_alloc:WARNING:  orphan: [@00ebe0 +000018 00ebf8]
+FAIL 504-exec-port-message hosted-amiga-13 debug: [output] VAMOS LEAK: 21:28:29.579  mem_alloc:WARNING:  orphan: [@01a6c8 +000018 01a6e0]
+FAIL 504-exec-port-message hosted-amiga-13 release: [output] VAMOS LEAK: 21:28:38.451  mem_alloc:WARNING:  orphan: [@00e830 +000018 00e848]
+PASS 505-timer hosted-amiga debug: [output] rc=0
+PASS 505-timer hosted-amiga release: [output] rc=0
+PASS 505-timer hosted-amiga-13 debug: [output] rc=0
+PASS 505-timer hosted-amiga-13 release: [output] rc=0
+PASS 506-library-open-close hosted-amiga debug: [output] rc=0
+PASS 506-library-open-close hosted-amiga release: [output] rc=0
+PASS 506-library-open-close hosted-amiga-13 debug: [output] rc=0
+PASS 506-library-open-close hosted-amiga-13 release: [output] rc=0
+PASS 507-exec-port-message-drained hosted-amiga debug: [output] rc=0
+PASS 507-exec-port-message-drained hosted-amiga release: [output] rc=0
+PASS 507-exec-port-message-drained hosted-amiga-13 debug: [output] rc=0
+PASS 507-exec-port-message-drained hosted-amiga-13 release: [output] rc=0
+PASS 510-utility-services hosted-amiga debug: [output] rc=0
+PASS 510-utility-services hosted-amiga release: [output] rc=0
+probe: 22 pass, 12 fail; wrote /work/build/tmp/assessment/WS5/probes/results.json
+=== c507.log
+PASS 507-exec-port-message-drained hosted-amiga debug: [output] rc=0
+PASS 507-exec-port-message-drained hosted-amiga release: [output] rc=0
+PASS 507-exec-port-message-drained hosted-amiga-13 debug: [output] rc=0
+PASS 507-exec-port-message-drained hosted-amiga-13 release: [output] rc=0
+probe: 4 pass, 0 fail; wrote /work/build/tmp/assessment/WS5/probes-507c/contrast.json
+=== fs.log
+undefined symbols in the object:
+link rc=0
+=== patch.log
+PASS 530-format-u32-16bit (strings): output base=True patched=True; instr 1688727 -> 998843 (delta -689884, -40.9% of net 1685808); .text 23920 -> 23988 (+68); .data 280 -> 280 (+0); .bss 120 -> 120 (+0)
+patch-measure: 0 failure(s)
+=== fs-uae seeded
+before vertb 4 port 0 card 1
+seeded
+rc 0
+after vertb 5 port 0 card 0
+END
+=== fs-uae 540
+before vertb 4 port 0 card 1
+card true false
+rc 0
+after vertb 4 port 0 card 0
+END
+=== fs-uae 540c
+before vertb 4 port 0 card 1
+card true true
+rc 0
+after vertb 4 port 0 card 1
+END
+=== fs-uae 541
+before vertb 4 port 0 card 1
+armed
+error E11211: index out of range
+rc 20
+after vertb 5 port 0 card 1
+END
+=== fs-uae 541c
+before vertb 4 port 0 card 1
+armed
+2
+rc 0
+after vertb 4 port 0 card 1
+END
+=== fs-uae 541f
+before vertb 4 port 0 card 1
+armed
+error E11211: index out of range
+rc 20
+after vertb 5 port 0 card 1
+filler survived 4
+END
+=== fs-uae 541cf
+before vertb 4 port 0 card 1
+armed
+2
+rc 0
+after vertb 4 port 0 card 1
+filler survived 3
+END
+=== fs-uae 542
+before vertb 4 port 0 card 1
+no END within 180 s (hung or crashed)
+=== fs-uae 542c
+before vertb 4 port 0 card 1
+calling
+saved false
+rc 0
+after vertb 4 port 0 card 1
+END

@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-25 22:27
-> **Progress**: 45/95 tasks (47%)
+> **Last Updated**: 2026-11-25 22:56
+> **Progress**: 53/95 tasks (55%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -252,20 +252,20 @@ this plan's folder and the roadmap; 03-01 §Ground rules)
 
 - [x] 5.1.1 Write WS5a probes and expectations (WS5-01..WS5-10 on `shim_hosted_amiga.c` and `shim_hosted_amiga_20.c`) under `probes/WS5/`, naming the `vamos` or FS-UAE configuration each needs ✅ (completed: 2026-11-25 22:27)
 - [x] 5.1.2 Write WS5b probes and expectations (WS5-11..WS5-14, and WS5-01..WS5-10 for the five optional shims and `picasso96.h`) under `probes/WS5/`; commit Step 5.1 probes and expectations, local only ✅ (completed: 2026-11-25 22:27)
-- [ ] 5.1.3 Red check: each probe discriminates; the host-shim sanitizer probes detect a seeded fault; detectors that cannot fire are marked `limit`; log in `findings/WS5-shims.md`
+- [x] 5.1.3 Red check: each probe discriminates; the host-shim sanitizer probes detect a seeded fault; detectors that cannot fire are marked `limit`; log in `findings/WS5-shims.md` ✅ (completed: 2026-11-25 22:56)
 
 ### Step 5.2: Analysis
 
-- [ ] 5.2.1 WS5a: WS5-01..WS5-03 (availability, library lifecycle, memory and chip placement), function by function, tracked in the coverage table
-- [ ] 5.2.2 WS5a: WS5-04..WS5-08 (failure paths, stack and `Forbid`, signals/ports/IORequests, Ctrl-C, exit and cleanup)
-- [ ] 5.2.3 WS5a: WS5-09, WS5-10 (hardware access including the `cl_video_display_flip` DMA write, data-model crossings), with FS-UAE A500/KS1.3 and A1200/KS3.1 probes where `vamos` cannot model them
-- [ ] 5.2.4 WS5b: the five optional shims and `picasso96.h` against WS5-01..WS5-10
-- [ ] 5.2.5 WS5b: WS5-11..WS5-14 (host shim under ASan/UBSan, freestanding shim, hot paths on 68000 and the 68020 probe, duplication and drift)
+- [x] 5.2.1 WS5a: WS5-01..WS5-03 (availability, library lifecycle, memory and chip placement), function by function, tracked in the coverage table ✅ (completed: 2026-11-25 22:56)
+- [x] 5.2.2 WS5a: WS5-04..WS5-08 (failure paths, stack and `Forbid`, signals/ports/IORequests, Ctrl-C, exit and cleanup) ✅ (completed: 2026-11-25 22:56)
+- [x] 5.2.3 WS5a: WS5-09, WS5-10 (hardware access including the `cl_video_display_flip` DMA write, data-model crossings), with FS-UAE A500/KS1.3 and A1200/KS3.1 probes where `vamos` cannot model them ✅ (completed: 2026-11-25 22:56)
+- [x] 5.2.4 WS5b: the five optional shims and `picasso96.h` against WS5-01..WS5-10 ✅ (completed: 2026-11-25 22:56)
+- [x] 5.2.5 WS5b: WS5-11..WS5-14 (host shim under ASan/UBSan, freestanding shim, hot paths on 68000 and the 68020 probe, duplication and drift) ✅ (completed: 2026-11-25 22:56)
 
 ### Step 5.3: Hardening and gate
 
-- [ ] 5.3.1 Self-refutation with `codeops/specialists/amiga-platform-reviewer.md` as the checklist; escalate any Critical
-- [ ] 5.3.2 Phase gate: Task verify, the Phases 1–8 row of `07` §Check points (every coverage-table row complete for every WS5 file); commit, local only
+- [x] 5.3.1 Self-refutation with `codeops/specialists/amiga-platform-reviewer.md` as the checklist; escalate any Critical ✅ (completed: 2026-11-25 22:56)
+- [x] 5.3.2 Phase gate: Task verify, the Phases 1–8 row of `07` §Check points (every coverage-table row complete for every WS5 file); commit, local only ✅ (completed: 2026-11-25 22:56)
 
 **Test slices**: N/A — no test map
 **Verify (gate)**: `bash plans/independent-assessment/probes/WS0/drift-check.sh plans/independent-assessment`, then the Phases 1–8 row of `07` §Check points (AR #20)

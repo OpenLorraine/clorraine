@@ -1,0 +1,308 @@
+[
+  {
+    "probe": "500-vamos-control",
+    "profile": "hosted-amiga",
+    "mode": "debug",
+    "kind": "output",
+    "ok": true,
+    "detail": "rc=0",
+    "contrast": false
+  },
+  {
+    "probe": "500-vamos-control",
+    "profile": "hosted-amiga",
+    "mode": "release",
+    "kind": "output",
+    "ok": true,
+    "detail": "rc=0",
+    "contrast": false
+  },
+  {
+    "probe": "500-vamos-control",
+    "profile": "hosted-amiga-13",
+    "mode": "debug",
+    "kind": "output",
+    "ok": true,
+    "detail": "rc=0",
+    "contrast": false
+  },
+  {
+    "probe": "500-vamos-control",
+    "profile": "hosted-amiga-13",
+    "mode": "release",
+    "kind": "output",
+    "ok": true,
+    "detail": "rc=0",
+    "contrast": false
+  },
+  {
+    "probe": "501-dos-roundtrip",
+    "profile": "hosted-amiga",
+    "mode": "debug",
+    "kind": "output",
+    "ok": false,
+    "detail": "rc=1 got='true true true true true true\\n' want='true true true true true true\\n'",
+    "contrast": false
+  },
+  {
+    "probe": "501-dos-roundtrip",
+    "profile": "hosted-amiga",
+    "mode": "release",
+    "kind": "output",
+    "ok": false,
+    "detail": "rc=1 got='true true true true true true\\n' want='true true true true true true\\n'",
+    "contrast": false
+  },
+  {
+    "probe": "501-dos-roundtrip",
+    "profile": "hosted-amiga-13",
+    "mode": "debug",
+    "kind": "output",
+    "ok": false,
+    "detail": "rc=1 got='true true true true true true\\n' want='true true true true true true\\n'",
+    "contrast": false
+  },
+  {
+    "probe": "501-dos-roundtrip",
+    "profile": "hosted-amiga-13",
+    "mode": "release",
+    "kind": "output",
+    "ok": false,
+    "detail": "rc=1 got='true true true true true true\\n' want='true true true true true true\\n'",
+    "contrast": false
+  },
+  {
+    "probe": "502-dos-failure",
+    "profile": "hosted-amiga",
+    "mode": "debug",
+    "kind": "output",
+    "ok": true,
+    "detail": "rc=0",
+    "contrast": false
+  },
+  {
+    "probe": "502-dos-failure",
+    "profile": "hosted-amiga",
+    "mode": "release",
+    "kind": "output",
+    "ok": true,
+    "detail": "rc=0",
+    "contrast": false
+  },
+  {
+    "probe": "502-dos-failure",
+    "profile": "hosted-amiga-13",
+    "mode": "debug",
+    "kind": "output",
+    "ok": true,
+    "detail": "rc=0",
+    "contrast": false
+  },
+  {
+    "probe": "502-dos-failure",
+    "profile": "hosted-amiga-13",
+    "mode": "release",
+    "kind": "output",
+    "ok": true,
+    "detail": "rc=0",
+    "contrast": false
+  },
+  {
+    "probe": "503-fault-after-acquire",
+    "profile": "hosted-amiga",
+    "mode": "debug",
+    "kind": "fault E11211",
+    "ok": false,
+    "detail": "VAMOS LEAK: 21:28:31.378  mem_alloc:WARNING:  orphan: [@0228e4 +000014 0228f8]",
+    "contrast": false
+  },
+  {
+    "probe": "503-fault-after-acquire",
+    "profile": "hosted-amiga",
+    "mode": "release",
+    "kind": "fault E11211",
+    "ok": false,
+    "detail": "VAMOS LEAK: 21:28:42.401  mem_alloc:WARNING:  orphan: [@00e84c +000014 00e860]",
+    "contrast": false
+  },
+  {
+    "probe": "503-fault-after-acquire",
+    "profile": "hosted-amiga-13",
+    "mode": "debug",
+    "kind": "fault E11211",
+    "ok": false,
+    "detail": "VAMOS LEAK: 21:28:29.268  mem_alloc:WARNING:  orphan: [@019e00 +000014 019e14]",
+    "contrast": false
+  },
+  {
+    "probe": "503-fault-after-acquire",
+    "profile": "hosted-amiga-13",
+    "mode": "release",
+    "kind": "fault E11211",
+    "ok": false,
+    "detail": "VAMOS LEAK: 21:28:37.571  mem_alloc:WARNING:  orphan: [@00e498 +000014 00e4ac]",
+    "contrast": false
+  },
+  {
+    "probe": "504-exec-port-message",
+    "profile": "hosted-amiga",
+    "mode": "debug",
+    "kind": "output",
+    "ok": false,
+    "detail": "VAMOS LEAK: 21:28:38.288  mem_alloc:WARNING:  orphan: [@0231b0 +000018 0231c8]",
+    "contrast": false
+  },
+  {
+    "probe": "504-exec-port-message",
+    "profile": "hosted-amiga",
+    "mode": "release",
+    "kind": "output",
+    "ok": false,
+    "detail": "VAMOS LEAK: 21:28:47.808  mem_alloc:WARNING:  orphan: [@00ebe0 +000018 00ebf8]",
+    "contrast": false
+  },
+  {
+    "probe": "504-exec-port-message",
+    "profile": "hosted-amiga-13",
+    "mode": "debug",
+    "kind": "output",
+    "ok": false,
+    "detail": "VAMOS LEAK: 21:28:29.579  mem_alloc:WARNING:  orphan: [@01a6c8 +000018 01a6e0]",
+    "contrast": false
+  },
+  {
+    "probe": "504-exec-port-message",
+    "profile": "hosted-amiga-13",
+    "mode": "release",
+    "kind": "output",
+    "ok": false,
+    "detail": "VAMOS LEAK: 21:28:38.451  mem_alloc:WARNING:  orphan: [@00e830 +000018 00e848]",
+    "contrast": false
+  },
+  {
+    "probe": "505-timer",
+    "profile": "hosted-amiga",
+    "mode": "debug",
+    "kind": "output",
+    "ok": true,
+    "detail": "rc=0",
+    "contrast": false
+  },
+  {
+    "probe": "505-timer",
+    "profile": "hosted-amiga",
+    "mode": "release",
+    "kind": "output",
+    "ok": true,
+    "detail": "rc=0",
+    "contrast": false
+  },
+  {
+    "probe": "505-timer",
+    "profile": "hosted-amiga-13",
+    "mode": "debug",
+    "kind": "output",
+    "ok": true,
+    "detail": "rc=0",
+    "contrast": false
+  },
+  {
+    "probe": "505-timer",
+    "profile": "hosted-amiga-13",
+    "mode": "release",
+    "kind": "output",
+    "ok": true,
+    "detail": "rc=0",
+    "contrast": false
+  },
+  {
+    "probe": "506-library-open-close",
+    "profile": "hosted-amiga",
+    "mode": "debug",
+    "kind": "output",
+    "ok": true,
+    "detail": "rc=0",
+    "contrast": false
+  },
+  {
+    "probe": "506-library-open-close",
+    "profile": "hosted-amiga",
+    "mode": "release",
+    "kind": "output",
+    "ok": true,
+    "detail": "rc=0",
+    "contrast": false
+  },
+  {
+    "probe": "506-library-open-close",
+    "profile": "hosted-amiga-13",
+    "mode": "debug",
+    "kind": "output",
+    "ok": true,
+    "detail": "rc=0",
+    "contrast": false
+  },
+  {
+    "probe": "506-library-open-close",
+    "profile": "hosted-amiga-13",
+    "mode": "release",
+    "kind": "output",
+    "ok": true,
+    "detail": "rc=0",
+    "contrast": false
+  },
+  {
+    "probe": "507-exec-port-message-drained",
+    "profile": "hosted-amiga",
+    "mode": "debug",
+    "kind": "output",
+    "ok": true,
+    "detail": "rc=0",
+    "contrast": false
+  },
+  {
+    "probe": "507-exec-port-message-drained",
+    "profile": "hosted-amiga",
+    "mode": "release",
+    "kind": "output",
+    "ok": true,
+    "detail": "rc=0",
+    "contrast": false
+  },
+  {
+    "probe": "507-exec-port-message-drained",
+    "profile": "hosted-amiga-13",
+    "mode": "debug",
+    "kind": "output",
+    "ok": true,
+    "detail": "rc=0",
+    "contrast": false
+  },
+  {
+    "probe": "507-exec-port-message-drained",
+    "profile": "hosted-amiga-13",
+    "mode": "release",
+    "kind": "output",
+    "ok": true,
+    "detail": "rc=0",
+    "contrast": false
+  },
+  {
+    "probe": "510-utility-services",
+    "profile": "hosted-amiga",
+    "mode": "debug",
+    "kind": "output",
+    "ok": true,
+    "detail": "rc=0",
+    "contrast": false
+  },
+  {
+    "probe": "510-utility-services",
+    "profile": "hosted-amiga",
+    "mode": "release",
+    "kind": "output",
+    "ok": true,
+    "detail": "rc=0",
+    "contrast": false
+  }
+]
