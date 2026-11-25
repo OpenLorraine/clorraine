@@ -54,21 +54,15 @@ every A500 gate.
 
 ## Emulator workflow
 
-| Tool | Use it for | Needs a ROM? |
-|---|---|---|
-| `vamos` | Console programs, fast iteration, CI | No |
-| FS-UAE | Graphics, audio, Intuition, timers | Manual AROS only; a licensed KS3.1 A1200 ROM for verified Linux CLI runs |
-| FS-UAE with licensed media | Original Kickstart/Workbench behavior | Yes, user-supplied |
-
-Inside the repository:
+The [Linux installer](/guide/quick-start) sets up an emulated Amiga 1200 with
+Kickstart 3.1 in FS-UAE. Build a program and boot it there with:
 
 ```sh
-make run FILE=examples/hello/hello.clo PROFILE=hosted-amiga
-make run FILE=examples/amiga/boing.clo PROFILE=hosted-amiga-13 EMULATOR=1
+clorraine run -p hosted-amiga --emulator hello.clo
 ```
 
-The first command runs under `vamos`. The second builds and boots FS-UAE. See
-the [emulator workflow](/amiga/emulator) for the exact prerequisites.
+FS-UAE needs your licensed Kickstart 3.1 A1200 ROM; the installer finds and
+remembers it. See the [emulator workflow](/amiga/emulator) for the details.
 
 ## Profiles
 

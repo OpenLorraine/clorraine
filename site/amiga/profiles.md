@@ -60,11 +60,11 @@ clorraine build program.clo -p hosted-amiga-13
 clorraine build program.clo -p freestanding
 ```
 
-Inside the repository, use the SDK and emulator wrappers:
+Run a `hosted-amiga` program on the emulated Amiga 1200 that the
+[installer](/guide/quick-start) sets up:
 
 ```sh
-make run FILE=program.clo PROFILE=hosted-amiga
-make run FILE=program.clo PROFILE=hosted-amiga-13 EMULATOR=1
+clorraine run program.clo -p hosted-amiga --emulator
 ```
 
 ## Module boundary

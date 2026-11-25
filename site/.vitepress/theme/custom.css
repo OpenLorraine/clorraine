@@ -664,6 +664,12 @@ button:focus-visible,
   white-space: pre;
 }
 
+/* A long shell command wraps instead of scrolling; the text copies unchanged. */
+.cl-code--wrap code {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .cl-code--compact {
   padding: 18px 20px;
   font-size: 12.5px;

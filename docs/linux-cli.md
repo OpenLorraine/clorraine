@@ -1,178 +1,147 @@
-# Linux CLI (v1.2.0 candidate)
+# Linux CLI (v1.2.0 developer preview)
 
-Clorraine's Linux CLI is the product path for writing, building, and running
-Clorraine programs without Docker. The v1.2.0 candidate is still in progress:
+Clorraine v1.2.0 is a public **developer preview** for **Linux x86_64**. One
+command installs the CLI, the Amiga toolchain, the VS Code extension, and a
+starter project. Windows and macOS are on the way.
 
-| Area | State |
+## Install
+
+```sh
+curl -fsSL https://github.com/OpenLorraine/clorraine/releases/download/v1.2.0/install.sh -o clorraine-install.sh && sh clorraine-install.sh
+```
+
+The installer walks through five steps:
+
+1. **Install the CLI.** It verifies the release archive against its pinned
+   SHA-256 and installs `clc`, `clorraine`, and `clorraine-lsp` under
+   `~/.local` (or another prefix), with an optional `PATH` entry in
+   `~/.profile`.
+2. **Amiga toolchain.** It uses an existing AmigaPorts rc24 root or downloads
+   the pinned upstream archive, checks its size and SHA-256, and extracts it.
+3. **Amiga emulator.** It finds FS-UAE and a licensed Kickstart 3.1 A1200 ROM,
+   then runs `clorraine setup` once to validate the toolchain and remember all
+   three paths.
+4. **Say hello.** On request, it runs the hello program on the PC and plays the
+   demo-scene hello on an emulated Amiga 1200 in FS-UAE.
+5. **Your first Amiga project.** It installs the VS Code extension from the same
+   release and offers a starter project in the current folder, which it can
+   open in VS Code.
+
+To check the installer before running it, download `install.sh` and
+`SHA256SUMS` from the
+[v1.2.0 release](https://github.com/OpenLorraine/clorraine/releases/tag/v1.2.0)
+and run `sha256sum -c SHA256SUMS --ignore-missing` first. A literal
+`curl … | sh` is not supported, because the installer asks questions on the
+terminal.
+
+## Requirements
+
+| | Required | Notes |
+|---|---|---|
+| Linux x86_64, glibc 2.38+ | Yes | Ubuntu 24.04 is the minimum baseline; Ubuntu 22.04 cannot run the rc24 host tools |
+| A C compiler (`cc`) | Yes | For the hello program on the PC |
+| FS-UAE 3.2.0+ | For Amiga runs | Ubuntu 24.04's `fs-uae` package is 3.1.66, which is too old |
+| A licensed 512 KB Kickstart 3.1 A1200 ROM | For Amiga runs | Never bundled or downloaded; KS3.0 is untested |
+| VS Code | Optional | The extension is installed when VS Code is detected |
+
+The toolchain pin is AmigaPorts `m68k-amigaos-gcc` v16.2-rc24
+(`m68k-amigaos-gcc-16.2-rc24-x86_64-linux.tar.xz`, 69,868,548 bytes, SHA-256
+`b93b070ac47d2f01d126f57c03a8405f71fb470c8397b0bda51041217d25c100`). The
+installer downloads it from AmigaPorts; Clorraine does not mirror or
+redistribute it. `setup` rejects other versions.
+
+## What goes where
+
+| Path | Contents |
 |---|---|
-| `clorraine setup --toolchain` and config | Implemented in the candidate |
-| `--toolchain` selection and builds | Implemented in the candidate |
-| Linux installer, archive, and VSIX | Local candidate in `build/dist`; no publication |
-| Verified FS-UAE runner | Implemented; needs FS-UAE 3.2.0+, a licensed KS3.1 A1200 ROM, and a native toolchain |
-| macOS, Windows, WSL | Outside v1.2.0 |
+| `~/.local/bin/` | `clc`, `clorraine`, `clorraine-lsp` (links into the active version) |
+| `~/.local/share/clorraine/versions/` | Installed versions; `current` points at the active one |
+| `~/.local/share/clorraine/examples/` | `hello.clo` and the Amiga intro `hello-amiga.clo` |
+| `~/.local/share/clorraine/toolchains/rc24/` | The downloaded toolchain (`$XDG_DATA_HOME` when set) |
+| `~/.config/clorraine/config` | The remembered toolchain, Kickstart, and FS-UAE paths (`$XDG_CONFIG_HOME` when set) |
 
-No release is published from the candidate branch. Build from source for now.
+## Everyday commands
 
-## Host requirements
+```sh
+clorraine new my-game                              # a starter project with VS Code tasks
+clorraine run hello.clo                            # build and run on the PC
+clorraine run -p hosted-amiga --emulator hello.clo # build and run on the emulated A1200
+clorraine build -p hosted-amiga hello.clo          # build an Amiga executable
+```
 
-- Linux x86_64 with glibc 2.38 or newer (Ubuntu 24.04 is the minimum baseline).
-- The upstream AmigaPorts toolchain:
-  `m68k-amigaos-gcc` v16.2-rc24.
-- FS-UAE 3.2.0 or newer for the FS-UAE path. Ubuntu 24.04's `fs-uae`
-  package is 3.1.66, which is below the requirement; install the official
-  3.2.35 build.
-- A licensed 512 KB Kickstart 3.1 A1200 ROM for emulator runs. KS3.0 is not
-  tested. The CLI does not treat FS-UAE's built-in AROS as a verified run.
+`clorraine new [DIR]` writes `main.clo`, a `README.md`, a `.gitignore`, and a
+`.vscode` folder (the Amiga profile, the extension recommendation, and a
+**Run in FS-UAE** default build task). It never writes into a folder that is not
+empty; the default folder is `amiga-starter`.
 
-The installer is a local candidate, not a published download. Building from
-source needs Rust stable; the pinned Docker SDK remains the development image.
+## Configuration
 
-## Toolchain pin
+`setup` validates and stores the toolchain, and optionally the emulator:
 
-Download and extract the upstream Linux asset yourself. Clorraine does not
-mirror or redistribute it.
+```sh
+clorraine setup --toolchain ~/.local/share/clorraine/toolchains/rc24 \
+  --kickstart ~/amiga/roms/amiga-os-310-a1200.rom --fs-uae /usr/bin/fs-uae
+```
 
-| Field | Value |
+Each value is checked before the config is replaced. A later `setup` that does
+not name the Kickstart or FS-UAE keeps the remembered values. The values are
+resolved in this order:
+
+| Input | Order |
 |---|---|
-| URL | `https://github.com/AmigaPorts/m68k-amigaos-gcc/releases/download/v16.2-rc24/m68k-amigaos-gcc-16.2-rc24-x86_64-linux.tar.xz` |
-| Bytes | `69,868,548` |
-| SHA-256 | `b93b070ac47d2f01d126f57c03a8405f71fb470c8397b0bda51041217d25c100` |
+| Toolchain | `--toolchain`, `CLORRAINE_TOOLCHAIN`, the config |
+| Kickstart ROM | `--kickstart`, `CLORRAINE_KICKSTART`, the config |
+| FS-UAE | `--fs-uae`, `CLORRAINE_FS_UAE`, the config, then `PATH` |
 
-The extracted directory is the `--toolchain` root; it contains
-`bin/m68k-amigaos-gcc` and `m68k-amigaos/`.
+A remembered path that no longer works is reported with the config file and the
+`setup` command that changes it.
 
-## Build from source and select it
+## Emulator runs
 
-```sh
-git clone https://github.com/OpenLorraine/clorraine.git
-cd clorraine
-cargo build --workspace
+`run --emulator` boots an Amiga 1200 with Kickstart 3.1 in FS-UAE from a private
+directory drive and runs the program through a compiled wrapper. The wrapper
+records the return code and writes a status marker only for zero; the CLI reads
+both before cleaning up. `--capture` writes a successful program's output to
+`out.txt`. A failed or timed-out run prints its output and keeps its private
+directory.
 
-# Point at the extracted rc24 root, not sdk/amiga.
-./target/debug/clorraine setup --toolchain "$HOME/toolchains/m68k-amigaos-gcc-16.2"
+- A run ends after 90 seconds, Amiga boot included
+  (`CLORRAINE_EMULATOR_TIMEOUT_SECONDS`, 1–3600).
+- The run boots straight into the program, without Workbench.
+- The A500 (`hosted-amiga-13`) profile builds run on the A1200, but that is not
+  a Kickstart 1.3 test.
+- FS-UAE's built-in AROS can boot manually, but it is not a supported path and
+  the CLI does not launch it.
 
-./target/debug/clorraine build --profile hosted-amiga examples/hello/hello.clo
-./target/debug/clorraine build --profile freestanding \
-  spec/tests/corpus/freestanding/program.clo
-```
+## VS Code
 
-`setup` validates the compiler's layout, its `16.2-rc24` version, the NDK
-headers, and a two-runtime link probe (`nix20` and `nix13`). It stores the
-canonical root only after all checks pass.
+The installer installs the `openlorraine.clorraine` extension from the release
+when VS Code (`code`, `codium`, or `code-insiders`) is found. It adds
+diagnostics, hover, go to definition, completion, document symbols, and
+**Run in FS-UAE** and **Run** buttons in the editor title bar for `.clo` files.
+It finds the CLI and the language server in `~/.local/bin`.
 
-The config file is `$XDG_CONFIG_HOME/clorraine/config` when
-`XDG_CONFIG_HOME` is absolute, otherwise `~/.config/clorraine/config`. Selection
-order is:
+## Scripted installs and removal
 
-1. `--toolchain PATH`
-2. `CLORRAINE_TOOLCHAIN`
-3. the stored config
-4. the marker-gated `PATH` fallback inside the pinned SDK container only
+Without a terminal the installer asks nothing and keeps its defaults. The
+options are listed by `sh clorraine-install.sh --help`, among them `--prefix`,
+`--modify-path`, `--toolchain`, `--no-toolchain`, `--fs-uae`, `--kickstart`,
+`--no-emulator`, `--no-hello`, `--starter DIR`, `--no-starter`, `--vscode`, and
+`--no-vscode`.
 
-A user host with a compiler on `PATH` but no selection is told to run `setup`;
-it does not silently use that compiler. `--sdk-root` and `CLORRAINE_SDK` are
-removed.
+`sh clorraine-install.sh --uninstall` removes the active version's links,
+`current`, and the `PATH` block; `--purge` also removes the installed versions
+and the CLI config.
 
-To check a toolchain without running a guest:
+## Limits
 
-```sh
-make toolchain-check TOOLCHAIN="$HOME/toolchains/m68k-amigaos-gcc-16.2"
-```
-
-## Local candidate and installer
-
-`make dist` builds the release binaries in the pinned container, packages the
-VSIX, writes the release documents, and creates the local candidate under
-`build/dist`:
-
-```sh
-make dist
-make dist-verify
-```
-
-The assets are the versioned archive, `install.sh`, the VSIX, and `SHA256SUMS`.
-`make dist-check` runs the hermetic installer and producer tests. Nothing is
-tagged, published, or uploaded.
-
-The local acceptance run uses a fresh HOME and the pinned inputs:
-
-```sh
-make acceptance CANDIDATE=build/dist \
-  TOOLCHAIN_ARCHIVE="$HOME/toolchains/m68k-amigaos-gcc-16.2-rc24-x86_64-linux.tar.xz" \
-  KICKSTART="$HOME/amiga/roms/amiga-os-310-a1200.rom"
-make acceptance-check EVIDENCE=build/acceptance/<stamp>/evidence.json \
-  CANDIDATE=build/dist
-```
-
-Acceptance executes the self-built candidate installer with your privileges; do
-not point it at an untrusted candidate. The checker proves the record's format
-and the candidate/corpus bytes, not that the run happened; keep the raw
-acceptance directory. Publication remains a separate approval.
-
-Install the exact local bytes:
-
-```sh
-build/dist/install.sh --archive build/dist/clorraine-1.2.0-x86_64-linux.tar.gz \
-  --checksums build/dist/SHA256SUMS --modify-path
-```
-
-The default prefix is `~/.local`, so the driver lands at
-`~/.local/bin/clorraine`. The installer checks Linux x86_64, glibc 2.38+, and
-the archive hash before extraction; it activates side by side with an atomic
-`current` switch. `--uninstall` removes the active version and PATH block;
-`--purge` also removes the retained versions and the CLI config. A network
-install verifies the pinned archive size and SHA-256 before extraction and is
-only meaningful after a release is published.
-
-## FS-UAE
-
-With a native toolchain selected, `run --emulator` boots an A1200 with your
-licensed Kickstart 3.1 A1200 ROM and runs the program through a small compiled
-wrapper. The wrapper records the return code in `clorraine-rc.txt` and writes
-`clorraine-status.txt` only for a zero exit. The CLI accepts the run only for
-rc 0 plus status `ok`, reads the guest output, then removes the private run. A
-failed, unreadable, or timed-out run retains the private directory and prints
-its path.
-
-```sh
-./target/debug/clorraine run -p hosted-amiga --emulator \
-  --kickstart "$HOME/amiga/roms/amiga-os-310-a1200.rom" \
-  examples/hello/hello.clo
-```
-
-FS-UAE is selected by `--fs-uae`, `CLORRAINE_FS_UAE`, then `PATH`; the ROM by
-`--kickstart` then `CLORRAINE_KICKSTART`. The timeout defaults to 90 seconds and
-is set with `CLORRAINE_EMULATOR_TIMEOUT_SECONDS` (1–3600). `--capture` writes a
-successful guest's output to `out.txt` and prints its path; a failed guest
-prints its output and retains the run, so no `out.txt` is written.
-
-The local guest check runs hello, the four corpus programs, one A500-profile
-corpus program, and a return-1 negative:
-
-```sh
-make fs-uae-check KICKSTART="$HOME/amiga/roms/amiga-os-310-a1200.rom" \
-  TOOLCHAIN="$HOME/toolchains/m68k-amigaos-gcc-16.2"
-```
-
-`TOOLCHAIN` may be omitted when the CLI has a stored selection. The A500 profile
-binary runs on the A1200 recipe; this is not a Kickstart 1.3 proof. The
-A500/KS1.3 gates remain the SDK development gates.
-
-## Editor
-
-The VS Code extension is built separately:
-
-```sh
-make vscode-package
-code --install-extension build/vscode/clorraine-1.2.0.vsix
-```
-
-The installer does not bundle or place the VSIX, and no marketplace release is
-published. The extension discovers `~/.local/bin/clorraine` and uses
-`clorraine.toolchain.path` for the upstream root. The removed
-`clorraine.sdk.path` is read once with a warning when the new key is empty.
+- Linux x86_64 only. Windows and macOS are on the way; WSL2, Remote-WSL, and
+  ARM hosts are not claimed.
+- The VS Code extension is not in a marketplace yet.
+- The full list is in [known limitations](known-limitations.md).
 
 ## Related
 
+- [Quick start on the website](https://openlorraine.github.io/clorraine/guide/quick-start)
 - [Known limitations](known-limitations.md)
-- [Docker SDK](../docker/README.md) for the development toolchain and Amiga gates
+- [v1.2.0 release](https://github.com/OpenLorraine/clorraine/releases/tag/v1.2.0)

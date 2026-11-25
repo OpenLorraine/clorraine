@@ -1,6 +1,6 @@
 ---
 title: Contributing
-description: "How to build Clorraine, run the gates, report a useful bug, and help with platform support."
+description: "How to report a useful bug, what the test discipline is, and where help is most welcome."
 ---
 
 # Contributing
@@ -23,29 +23,15 @@ A useful report includes:
 Open issues at
 [github.com/OpenLorraine/clorraine/issues](https://github.com/OpenLorraine/clorraine/issues).
 
-## Build and test
+## Developer setup
 
-Build the workspace:
+To use Clorraine, install the developer preview with the
+[Linux installer](/guide/quick-start).
 
-```sh
-cargo build --workspace
-```
-
-Run the fast gate:
-
-```sh
-make check
-```
-
-Run the full acceptance gate on a machine with the SDK, X display, and licensed
-media:
-
-```sh
-make verify
-```
-
-The repository's [AGENTS.md](https://github.com/OpenLorraine/clorraine/blob/main/AGENTS.md)
-lists every command and its purpose.
+Instructions for building Clorraine itself and for the full Amiga test setup are
+being reworked and will return here. Until then, start from the
+[repository](https://github.com/OpenLorraine/clorraine) and ask in
+[GitHub Issues](https://github.com/OpenLorraine/clorraine/issues).
 
 ## Test discipline
 
@@ -66,8 +52,8 @@ Good places to help:
 
 - **Platform testing.** macOS and Windows hosts, different Linux distributions,
   and real Amiga hardware.
-- **Installer and packaging.** The Linux tarball exists; Windows, macOS, and
-  editor distribution do not.
+- **Installers.** The Linux installer is a developer preview; Windows and macOS
+  installers and a marketplace extension are next.
 - **Documentation.** Correct a confusing page, add a tested example, or improve
   an error message.
 - **Amiga coverage.** Pick a tracked capability, add a gate, and prove it on the

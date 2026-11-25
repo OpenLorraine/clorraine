@@ -4,7 +4,7 @@
 > **Status**: Active
 > **Created**: 2026-09-17
 > **Last Updated**: 2026-11-25
-> **Progress**: 598/602 rows done; 0 active; 1 planned; 0 blocked; 1 deferred; 2 Parked
+> **Progress**: 598/603 rows done; 1 active; 1 planned; 0 blocked; 1 deferred; 2 Parked
 > **CodeOps Artifact Schema**: 1
 
 ## Legend
@@ -634,6 +634,7 @@
 | ↳ DEF-560 | libamiga legal review — user-owned | — | [Evidence](../tools/distribution/inputs/licence-review.md) | Deferred | ⏸️ | 2026-11-17 | user owns legalities; nonblocking local implementation; no licence-clearance claim or public promotion |
 
 | T-01 | Publish the v1.2.0 developer preview | — | [public-preview-v1.2.0](public-preview-v1.2.0/99-execution-plan.md) | Done | ✅ | 2026-11-25 | 27/27; exciting first run: banner, demo-scene Amiga hello, `clorraine new` starter with VS Code run button, KS2+ display fix; v1.2.0 prerelease recreated; docs/site frozen |
+| T-02 | Document the Linux installer on the website and in docs/ | — | [site-linux-installer-docs](site-linux-installer-docs/99-execution-plan.md) | Executing | 🔄 | 2026-11-25 | 9/10; site and docs/ rewritten around the one-line installer; pushing and verifying the live site |
 
 ## Batch N accounting (2026-10-19)
 

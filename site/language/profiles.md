@@ -38,19 +38,14 @@ that a program runs on AmigaOS.
 
 ```sh
 clorraine run hello.clo
-clorraine run hello.clo -p hosted-amiga
+clorraine run hello.clo -p hosted-amiga --emulator
 clorraine build hello.clo -p hosted-amiga-13
 clorraine emit hello.clo -p host -o build/hello.c
 clorraine build hello.clo -p freestanding
 ```
 
-Inside the repository, the Makefile wrappers set up the SDK and the emulator:
-
-```sh
-make run FILE=examples/hello/hello.clo
-make run FILE=examples/hello/hello.clo PROFILE=hosted-amiga
-make run FILE=examples/amiga/boing.clo PROFILE=hosted-amiga-13 EMULATOR=1
-```
+`--emulator` boots the program on the emulated Amiga 1200 that the
+[installer](/guide/quick-start) sets up.
 
 ## The 1.3 subset
 

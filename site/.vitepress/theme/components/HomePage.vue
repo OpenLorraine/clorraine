@@ -10,7 +10,7 @@ import { withBase } from "vitepress";
         <div class="cl-hero__copy">
           <p class="cl-kicker">
             <span class="cl-kicker__dot" aria-hidden="true"></span>
-            Developer preview · v1.1.2
+            Developer preview · v1.2.0 · Linux
           </p>
           <h1>
             A safe systems language
@@ -22,17 +22,20 @@ import { withBase } from "vitepress";
             toolchains and emulators you already use.
           </p>
           <div class="cl-actions">
-            <a class="cl-btn cl-btn--primary" :href="withBase('/examples/first-light')">
-              Run the demo
+            <a class="cl-btn cl-btn--primary" :href="withBase('/guide/quick-start')">
+              Install on Linux
               <span aria-hidden="true">→</span>
+            </a>
+            <a class="cl-btn cl-btn--ghost" :href="withBase('/examples/first-light')">
+              Run the demo
             </a>
             <a class="cl-btn cl-btn--ghost" :href="withBase('/language/')">
               Explore the language
             </a>
           </div>
           <p class="cl-hero__note">
-            Apache 2.0 · No ROMs or Workbench media · Linux x86_64 release
-            today; installers in progress.
+            Apache 2.0 · No ROMs or Workbench media · Linux x86_64 today;
+            Windows and macOS are on the way.
           </p>
         </div>
 
@@ -74,6 +77,44 @@ import { withBase } from "vitepress";
         <div class="cl-stat">
           <span class="cl-stat__value">0</span>
           <span class="cl-stat__label">external Rust crates</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="cl-section" id="install">
+      <div class="cl-wrap cl-split">
+        <div class="cl-split__copy">
+          <p class="cl-eyebrow">Install on Linux · developer preview</p>
+          <h2>From one command to your own Amiga program.</h2>
+          <p>
+            The installer sets up the CLI and the Amiga toolchain, finds FS-UAE
+            and your Kickstart ROM, plays a demo-scene hello on an emulated
+            Amiga 1200, and creates a starter project that runs from VS Code
+            with one click.
+          </p>
+          <ul class="cl-checks">
+            <li>Linux x86_64 with glibc 2.38 or newer.</li>
+            <li>FS-UAE 3.2+ and your licensed Kickstart 3.1 ROM for the Amiga run.</li>
+            <li>Windows and macOS are on the way.</li>
+          </ul>
+          <a class="cl-text-link" :href="withBase('/guide/quick-start')">
+            Install guide and requirements
+            <span aria-hidden="true">→</span>
+          </a>
+        </div>
+
+        <div class="cl-terminal">
+          <div class="cl-terminal__bar">
+            <span class="cl-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+            <span class="cl-terminal__file">Linux x86_64</span>
+            <span class="cl-terminal__tag">v1.2.0 preview</span>
+          </div>
+          <pre class="cl-code cl-code--wrap"><code><span class="tok-comment"># install Clorraine</span>
+curl -fsSL https://github.com/OpenLorraine/clorraine/releases/download/v1.2.0/install.sh -o clorraine-install.sh &amp;&amp; sh clorraine-install.sh
+
+<span class="tok-comment"># then, any time</span>
+clorraine new my-game
+cd my-game &amp;&amp; code .</code></pre>
         </div>
       </div>
     </section>

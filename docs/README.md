@@ -3,7 +3,7 @@
 | Document | Contents |
 | -------- | -------- |
 | [C to Clorraine](c-to-clorraine.md) | Rosetta guide and wrapper cookbook for Amiga C programmers |
-| [Linux CLI](linux-cli.md) | v1.2.0 CLI toolchain, setup, build, and current emulator limits |
+| [Linux CLI](linux-cli.md) | Installing and using the v1.2.0 developer preview on Linux |
 | [Known limitations](known-limitations.md) | Accepted v1.0 through v1.2 limitations |
 | [Amiga SDK](amiga-sdk/coverage.md) | Registry coverage per bundle |
 | [Ergonomics findings](findings-ergonomics.md) | Language ergonomics review |

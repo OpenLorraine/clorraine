@@ -67,16 +67,17 @@ These pages walk through the smallest programs and the language surface:
 
 ## Running an example
 
-From a checkout with the SDK:
+Install Clorraine with the [Linux installer](/guide/quick-start), save an
+example's source as a `.clo` file, and run it:
 
 ```sh
-make run FILE=examples/hello/hello.clo
-make run FILE=examples/amiga/prism.clo \
-  PROFILE=hosted-amiga-13 EMULATOR=1
+clorraine run hello.clo
+clorraine run -p hosted-amiga --emulator hello.clo
 ```
 
-The first runs on the host profile. The second builds for A500/Kickstart 1.3 and
-boots FS-UAE. See the [quick start](/guide/quick-start) for the prerequisites.
+The first runs on your PC. The second boots the emulated Amiga 1200 in FS-UAE.
+The showcase demos (First Light, Prism, and Boing) run until the machine is
+reset, so play them in the browser on their pages.
 
 ## A note on the screenshots
 

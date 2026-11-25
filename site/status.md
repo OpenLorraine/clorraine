@@ -7,9 +7,10 @@ description: "What works in Clorraine today, what is still in progress, and how 
 
 <StatusBadge state="preview" />
 
-Clorraine is a **developer preview**. The compiler core is usable for the
-supported language and the tracked Amiga SDK surface. Installation, packaging,
-editor distribution, and some platform support are still in progress.
+Clorraine is a **developer preview**. The v1.2.0 developer preview installs on
+**Linux x86_64** with [one command](/guide/quick-start). The compiler core is
+usable for the supported language and the tracked Amiga SDK surface. Windows and
+macOS are on the way.
 
 This page records the state of each area and the evidence behind it. If a
 statement here disagrees with a release note, the release note wins.
@@ -25,10 +26,10 @@ statement here disagrees with a release note, the release note wins.
 | `hosted-amiga` profile | <StatusBadge state="ready" label="Usable" /> | m68k GCC builds, `vamos` runs, FS-UAE gates |
 | `hosted-amiga-13` profile | <StatusBadge state="ready" label="Usable" /> | A500/Kickstart 1.3 builds and FS-UAE runs |
 | `freestanding` profile | <StatusBadge state="ready" label="Provisional" /> | Freestanding build and run legs |
-| Linux x86_64 CLI | <StatusBadge state="progress" label="Not published" /> | Toolchain setup, native builds, verified FS-UAE runner, local installer/archive, and local VSIX implemented; no publication |
-| Language server | <StatusBadge state="ready" label="From source" /> | `clorraine-lsp`, built with `cargo build --workspace` |
-| VS Code extension | <StatusBadge state="progress" label="Not published" /> | `make vscode-check` builds and audits a VSIX |
-| WSL2/Remote-WSL and Windows/macOS | <StatusBadge state="progress" label="Not in v1.2.0" /> | Linux x86_64 is the only release target |
+| Linux x86_64 installer | <StatusBadge state="preview" label="Developer preview" /> | [One-line install](/guide/quick-start): CLI, rc24 toolchain, FS-UAE run, and a starter project; `v1.2.0` prerelease |
+| Language server | <StatusBadge state="ready" label="Installed" /> | `clorraine-lsp`, installed by the Linux installer |
+| VS Code extension | <StatusBadge state="preview" label="Developer preview" /> | Installed by the Linux installer from the release; Run in FS-UAE button; not in a marketplace yet |
+| Windows and macOS | <StatusBadge state="planned" label="On the way" /> | Linux x86_64 is the only supported platform in v1.2.0 |
 | Documentation site | <StatusBadge state="ready" label="Published" /> | [openlorraine.github.io/clorraine](https://openlorraine.github.io/clorraine/) |
 | First Light demo | <StatusBadge state="ready" label="Live" /> | [Runs in Copperline](/examples/first-light) |
 | Prism demo | <StatusBadge state="ready" label="Live" /> | [Runs in Copperline](/examples/prism) |
@@ -39,15 +40,15 @@ statement here disagrees with a release note, the release note wins.
 ::: warning Developer preview
 
 Clorraine is suitable for early adopters, experiments, and feedback. It is not
-yet a production toolchain. Expect changes to installation, packaging, and
+yet a production toolchain. Expect changes to the installer, packaging, and
 platform support.
 
 :::
 
 The compiler is not a toy: the language specification is frozen, the
 implementation runs a large acceptance suite, and every Amiga gate boots a real
-emulator. The unfinished parts are around distribution and convenience, not
-around whether the compiler can build and run the supported programs.
+emulator. The unfinished parts are around platforms and distribution, not around
+whether the compiler can build and run the supported programs.
 
 ## How the claims are checked
 
@@ -65,10 +66,10 @@ The detailed list is on the [verification page](/project/verification).
 
 ## What is not ready
 
-- **Platform scope.** v1.2.0 supports Linux x86_64 only. WSL2, Remote-WSL and
-  native Windows/macOS access are outside this release and are not claimed.
-- **A published editor extension.** The VS Code client builds, packages, and
-  passes a packaged-client smoke test, but it is not in a marketplace.
+- **Platform scope.** v1.2.0 supports Linux x86_64 only. Windows and macOS are on
+  the way; WSL2 and Remote-WSL are not claimed.
+- **A marketplace editor extension.** The Linux installer installs the VS Code
+  extension from the release; it is not in a marketplace yet.
 - **Broad platform testing.** The host CI runner is Linux. Amiga legs need the
   pinned SDK image, the emulators, and the licensed media described below.
 - **The full AmigaOS API.** The SDK covers 81 tracked capabilities. That is a
@@ -89,12 +90,11 @@ NDK policy.
 
 ## Release and license state
 
-The current release record is **v1.2.0**, a native Linux delivery candidate. Its
-artifacts remain drafts until the explicit publication approval recorded in the
-repository runbook. The latest published release is **v1.1.2**, published under
-the MIT License. The repository now uses the **Apache License 2.0** with the
-[Clorraine Output Exception](/project/licensing) for future releases. Published
-v1.1.2 artifacts are unchanged.
+**v1.2.0** is published as a **developer preview** (a GitHub prerelease) for
+Linux x86_64, under the **Apache License 2.0** with the
+[Clorraine Output Exception](/project/licensing). The latest stable release
+remains **v1.1.2**, published under the MIT License; its artifacts are
+unchanged.
 
 ## Next
 

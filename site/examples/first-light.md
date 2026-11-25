@@ -83,15 +83,9 @@ The bootable ADF is available from the player caption and here:
 - [Download `first-light.adf`](/demos/first-light.adf) — A500, Kickstart 1.3 or
   AROS, 880 KB.
 
-From a checkout with the SDK, build and run the source directly:
-
-```sh
-make run FILE=examples/amiga/first-light.clo \
-  PROFILE=hosted-amiga-13 EMULATOR=1
-```
-
-The program needs an Amiga display, so use FS-UAE or Copperline rather than
-`vamos`. The build is a single `.clo` file with no external assets.
+The demo runs until the machine is reset. `clorraine run --emulator` ends a run
+after 90 seconds, so watch it in the player above or boot the ADF.
+The build is a single `.clo` file with no external assets.
 
 ## Read the source
 

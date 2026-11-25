@@ -5,7 +5,8 @@ description: "The clc, clorraine, and clorraine-lsp command-line surface."
 
 # Command line
 
-The workspace builds three binaries:
+The Linux installer installs three binaries into `~/.local/bin` (or the prefix
+you choose):
 
 | Binary | Purpose |
 |---|---|
@@ -25,7 +26,8 @@ Commands:
   run     Build and run a program
   build   Build a program without running it
   emit    Print the generated C (or write it with -o)
-  setup   Validate and store an Amiga toolchain
+  setup   Validate and store an Amiga toolchain (and the FS-UAE and Kickstart paths)
+  new     Create a starter Amiga project with VS Code tasks (default folder: amiga-starter)
 ```
 
 | Option | Meaning |
@@ -35,8 +37,8 @@ Commands:
 | `--size` | Optimize for size with `-Os`; same release processing; cannot combine with `--release` |
 | `--emit-c` | Print the generated C after building |
 | `--emulator` | Amiga run: verified FS-UAE guest run with a native toolchain; the marked SDK container keeps its legacy handoff |
-| `--fs-uae PATH` | FS-UAE executable for a native emulator run (`CLORRAINE_FS_UAE`, then `PATH`) |
-| `--kickstart PATH` | Kickstart 3.1 A1200 ROM for a native emulator run (`CLORRAINE_KICKSTART`) |
+| `--fs-uae PATH` | FS-UAE executable for an emulator run or `setup` (then `CLORRAINE_FS_UAE`, the path stored by `setup`, then `PATH`) |
+| `--kickstart PATH` | Kickstart 3.1 A1200 ROM for an emulator run or `setup` (then `CLORRAINE_KICKSTART`, then the path stored by `setup`) |
 | `--toolchain PATH` | Toolchain root for `setup`, non-host `build`, and non-host `run` |
 | `--capture` | Write program stdout to `out.txt` and print its path (verified guest: success only) |
 | `-o FILE` | `emit` only: write C to `FILE` (default stdout) |
@@ -50,14 +52,23 @@ Options that take a value accept both `--profile host` and `--profile=host`.
 For `--diagnostics=json`, place the option after the command:
 `clorraine build --diagnostics=json -p host file.clo`.
 
-`setup --toolchain PATH` validates the upstream rc24 root and stores its
-canonical path. `build` and `run` resolve a toolchain in this order:
-`--toolchain`, `CLORRAINE_TOOLCHAIN`, the stored config, then the marker-gated
-`PATH` fallback inside the pinned SDK container. `--sdk-root` and
-`CLORRAINE_SDK` are removed. Host builds do not need a toolchain.
+The installer runs `setup` for you. `setup --toolchain PATH` validates the
+upstream rc24 root and stores its canonical path; with `--kickstart PATH` and
+`--fs-uae PATH` it also checks and remembers the emulator inputs, so a later
+`run --emulator` needs no extra options. A later `setup` that does not name them
+keeps the remembered values. `build` and `run` resolve a toolchain in this
+order: `--toolchain`, `CLORRAINE_TOOLCHAIN`, then the stored config. Host builds
+do not need a toolchain. The config is `$XDG_CONFIG_HOME/clorraine/config` when
+that is absolute, otherwise `~/.config/clorraine/config`.
 
-A native `run --emulator` requires FS-UAE 3.2.0 or newer and a 512 KB Kickstart
-3.1 A1200 ROM. The timeout defaults to 90 seconds
+`new [DIR]` creates a starter Amiga project in `DIR` (default `amiga-starter`):
+`main.clo`, a `README.md`, and a `.vscode` folder with the Amiga profile, the
+extension recommendation, and a **Run in FS-UAE** default build task. It never
+writes into a folder that is not empty.
+
+An Amiga `run` on your machine uses `--emulator`: it requires FS-UAE 3.2.0 or
+newer and a 512 KB Kickstart 3.1 A1200 ROM. Without `--emulator`, a
+`hosted-amiga` run uses `vamos`, which the installer does not provide. The timeout defaults to 90 seconds
 (`CLORRAINE_EMULATOR_TIMEOUT_SECONDS`, 1–3600). The guest success oracle is the
 compiled wrapper: rc 0 plus status `ok`. For a verified guest, `--capture`
 writes `out.txt` only on success; a failed guest prints its output and retains
@@ -68,11 +79,11 @@ exit code.
 
 ```sh
 clorraine run hello.clo
-clorraine setup --toolchain ~/toolchains/m68k-amigaos-gcc-16.2
-clorraine run hello.clo -p hosted-amiga
+clorraine new my-game
+clorraine run hello.clo -p hosted-amiga --emulator
 clorraine build hello.clo -p hosted-amiga-13 --release
-clorraine run hello.clo -p hosted-amiga --emulator \
-  --kickstart ~/amiga/roms/amiga-os-310-a1200.rom
+clorraine setup --toolchain ~/.local/share/clorraine/toolchains/rc24 \
+  --kickstart ~/amiga/roms/amiga-os-310-a1200.rom --fs-uae /usr/bin/fs-uae
 clorraine emit hello.clo -p host -o build/hello.c
 clorraine --explain E10020
 clorraine --doc -o build/api examples/hello/hello.clo
@@ -118,14 +129,10 @@ user-facing driver.
 ## `clorraine-lsp`
 
 The language server speaks LSP over stdio. It provides diagnostics, hover, go to
-definition, completion, and document symbols. Build it with:
-
-```sh
-cargo build --workspace
-```
-
-Then point an LSP client at `target/debug/clorraine-lsp`. The VS Code extension
-in `tools/vscode/` is the reference client.
+definition, completion, and document symbols. The Linux installer installs it as
+`~/.local/bin/clorraine-lsp`; point an LSP client at that path. The VS Code
+extension, which the installer also installs, is the reference client and finds
+it automatically.
 
 ## Documentation generation
 

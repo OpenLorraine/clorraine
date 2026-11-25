@@ -219,10 +219,9 @@ C-hook trampoline surfaces.
 | LSP navigation | Rename, formatting, references, and workspace symbols are not implemented. | Use the implemented hover, definition, completion, and document-symbol features. |
 | LSP workspace | The index reads at most 2000 `*.clo` files, and one request analyzes at most 256 files. | Open the file directly or keep unrelated programs in separate roots. |
 | LSP analysis | A file is parsed and type-checked on each request; there is no incremental cache. | Small workspaces are the intended scope. |
-| Installer integrity | The installer downloads nothing itself. The pinned image build verifies upstream archives where upstream publishes SHA-256 values; the installer's own gate is provenance, NDK presence, and tool versions. | Inspect `docker/versions.env` and `/opt/amiga/BUILD-PROVENANCE.txt`; rebuild with `make setup FETCH=1 YES=1`. |
+| Installer integrity | The Linux installer verifies the CLI archive and the VS Code extension against pinned SHA-256 values, and the rc24 toolchain download against its pinned size and SHA-256. The installer script itself is checked only if you check it. | Verify `install.sh` against the release `SHA256SUMS` before running it. |
 | VS Code tests | The extension tests need Node.js 22+ on the host and are not part of `make check` or the host CI job. | Run `make vscode-check`. |
 | `--doc` | It documents top-level declarations only; struct fields, enum members, and nested items have no separate entries. Related links resolve a type through the referring module’s imports, then the first input module that declares it; an aliased or qualified reference to a same-named type in another module can point to the wrong page. | Read the source for member-level detail; use unambiguous type names across input modules. |
-| Release packaging | The Linux x86_64 binary tarball contains `clc` and `clorraine`, not `clorraine-lsp`; it also includes `THIRD_PARTY_NOTICES.md` and `docs/known-limitations.md`. | Build the language server from source with `cargo build --workspace`. |
 
 ## 13. Constant-array data templates
 
@@ -245,38 +244,28 @@ C-hook trampoline surfaces.
 | Host attribution | The host release-binary reduction includes symbol removal; scored host `.text` falls 19.7–59.9% (calibration falls 80.2%), while the file size falls 20.6–36.5%. | Compare `.text` for code size and the stripped file for the shipped artifact. |
 | Non-GNU Linux | The host predicate selects Linux, not the linker family; a non-GNU linker on Linux would receive GNU-only flags. The tested and shipped host is the pinned GNU toolchain. | Use a GNU-compatible linker or extend the predicate with a linker probe. |
 
-## 9. Linux CLI v1.2.0 candidate
+## 15. Linux installer (v1.2.0 developer preview)
 
-The Linux CLI candidate has a local installer/archive and a locally built VSIX.
-The old native installer/support pipeline is removed; retained licence inputs,
-notices, and the Docker SDK setup remain. No release asset is published. Build
-from source or run `make dist` and install the exact local bytes with the
-printed `install.sh`; download the upstream toolchain yourself.
+v1.2.0 is a developer preview, published as a GitHub prerelease for Linux
+x86_64. One command installs the CLI, the rc24 toolchain, the VS Code extension,
+and a starter project; see [Linux CLI](linux-cli.md).
 
 - **Host floor.** Linux x86_64 with glibc 2.38 or newer. Ubuntu 24.04 is the
-  minimum baseline; the full spike path ran on Ubuntu 26.04. Ubuntu 22.04 cannot
-  run the rc24 host tools.
+  minimum baseline; Ubuntu 22.04 cannot run the rc24 host tools.
 - **Toolchain.** The supported pin is AmigaPorts `m68k-amigaos-gcc` v16.2-rc24.
-  Clorraine validates the extracted root but does not bundle, mirror, or
-  redistribute it. Other versions are rejected by `setup`.
+  The installer downloads it from AmigaPorts; Clorraine does not bundle, mirror,
+  or redistribute it. Other versions are rejected by `setup`.
 - **Emulator host.** FS-UAE 3.2.0 or newer. Ubuntu 24.04's `fs-uae` package is
-  3.1.66, below the requirement; install the official 3.2.35 build.
-- **Guest media.** The tested format is a licensed 512 KB Kickstart 3.1 A1200
-  ROM. KS3.0 is untested. FS-UAE's built-in AROS can boot manually, but it is
-  not a supported or acceptance path and the CLI does not launch it silently.
-- **Guest result.** A native `run --emulator` uses the verified runner: a
-  compiled wrapper writes the return code and a status marker only for zero,
-  and the CLI reads both before cleanup. FS-UAE must be 3.2.0 or newer. The
-  marked SDK container keeps its legacy handoff. The A500/Kickstart 1.3 profile
-  remains covered by the SDK development gates, not by the A1200/KS3.1 Linux CLI
-  recipe. `make fs-uae-check` runs the real guest matrix locally.
-- **Editor.** The extension is a separate local artifact built with
-  `make vscode-package`. The installer does not place it, and no marketplace
-  release is published.
-- **Platforms.** macOS, Windows, WSL, and ARM hosts are outside v1.2.0.
-
-The candidate toolchain/build check is:
-
-```sh
-make toolchain-check TOOLCHAIN=/path/to/m68k-amigaos-gcc-16.2
-```
+  3.1.66, below the requirement.
+- **Guest media.** A licensed 512 KB Kickstart 3.1 A1200 ROM. KS3.0 is
+  untested. FS-UAE's built-in AROS can boot manually, but it is not a supported
+  path and the CLI does not launch it.
+- **Emulator runs.** `run --emulator` ends a run after 90 seconds, Amiga boot
+  included, and boots straight into the program without Workbench. Programs
+  that run until reset, such as the showcase demos, are watched in the browser
+  player instead. The A500/Kickstart 1.3 profile builds run on the A1200, which
+  is not a Kickstart 1.3 test.
+- **Editor.** The installer installs the VS Code extension from the release; it
+  is not in a marketplace yet.
+- **Platforms.** Windows and macOS are on the way; WSL, Remote-WSL, and ARM
+  hosts are not claimed.

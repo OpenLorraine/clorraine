@@ -27,10 +27,10 @@ The file is
 
 ## Run it
 
-On the host profile:
+Save the source as `hello.clo` and run it on your PC:
 
 ```sh
-clorraine run examples/hello/hello.clo
+clorraine run hello.clo
 ```
 
 Output:
@@ -39,28 +39,14 @@ Output:
 Hello, Amiga, from Clorraine!
 ```
 
-On AmigaOS through `vamos`, from a checkout with the SDK:
+On an Amiga 1200 with Kickstart 3.1 in FS-UAE:
 
 ```sh
-make run FILE=examples/hello/hello.clo PROFILE=hosted-amiga
+clorraine run -p hosted-amiga --emulator hello.clo
 ```
 
-On an A1200 with Kickstart 3.1 in FS-UAE:
-
-```sh
-make run FILE=examples/hello/hello.clo \
-  PROFILE=hosted-amiga EMULATOR=1
-```
-
-On an A500 with Kickstart 1.3:
-
-```sh
-make run FILE=examples/hello/hello.clo \
-  PROFILE=hosted-amiga-13 EMULATOR=1
-```
-
-The emulator paths need a licensed Kickstart ROM. The `vamos` path needs no
-ROM.
+The Amiga run needs FS-UAE and your licensed Kickstart 3.1 A1200 ROM; the
+[installer](/guide/quick-start) sets both up.
 
 ## What Kickstart 3.1 sees
 

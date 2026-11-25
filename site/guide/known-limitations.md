@@ -14,15 +14,15 @@ edge cases and their workarounds, is
 
 | Limitation | Impact | Guidance |
 |---|---|---|
-| Developer preview | Interfaces, packaging, and platform support may change | Use it for experiments and feedback, not production work |
-| Linux x86_64 only | WSL2/Remote-WSL, native Windows and macOS are outside v1.2.0 and are not supported claims | Build from source on another platform at your own risk; no WSL/Windows acceptance is provided |
-| Linux CLI candidate | The installer/archive and VSIX are local candidates; the verified FS-UAE runner is implemented; no binary release is published | Run `make dist` and the printed `install.sh`, download the rc24 toolchain, and run `clorraine setup --toolchain PATH` |
+| Developer preview | Interfaces, the installer, and platform support may change | Use it for experiments and feedback, not production work |
+| Linux x86_64 only | v1.2.0 installs on Linux x86_64 only; WSL2 and Remote-WSL are not claimed | Windows and macOS are on the way |
 | Host floor | glibc 2.38+; Ubuntu 24.04 is the minimum baseline | Ubuntu 22.04 cannot run the rc24 host tools |
-| Toolchain and emulator | rc24 only; FS-UAE 3.2.0+; licensed Kickstart 3.1 A1200 ROM for verified runs | KS3.0 is untested; AROS is manual-only and not an acceptance path |
+| Toolchain and emulator | rc24 only; FS-UAE 3.2.0+; a licensed Kickstart 3.1 A1200 ROM for Amiga runs | KS3.0 is untested; AROS is manual-only and not an acceptance path |
+| Emulator runs end after 90 seconds | `clorraine run --emulator` stops a program that has not finished, Amiga boot included | Programs that run forever, such as the showcase demos, play [in the browser](/examples/) |
+| No Workbench in the emulator run | The FS-UAE run boots straight into your program, without a Workbench screen | Programs that open windows on Workbench need a Workbench setup of your own |
+| VS Code extension is not in a marketplace | The extension comes from the release | The Linux installer installs it when VS Code is detected |
 | Host-only CI | The GitHub Actions runner does not execute the Amiga legs | Run `make verify` locally for full acceptance |
 | Amiga gates need licensed media | Advanced Workbench gates cannot run on a bare machine | Supply your own media; no ROM or Workbench image is distributed |
-| No binary release is published | The CLI is built from source in the candidate phase | `cargo build --workspace` writes all three binaries to `target/debug/` |
-| VS Code extension is not published | Editor setup is manual | `make vscode-package` builds a local VSIX; `make vscode-check` audits the packaged client |
 
 ## Platform profiles
 

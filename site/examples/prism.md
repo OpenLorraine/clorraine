@@ -75,14 +75,8 @@ twice that.
 - [Download `prism.adf`](/demos/prism.adf) — A500, Kickstart 1.3 or AROS,
   880 KB.
 
-From a checkout with the SDK:
-
-```sh
-make run FILE=examples/amiga/prism.clo \
-  PROFILE=hosted-amiga-13 EMULATOR=1
-```
-
-The game needs a display, so use FS-UAE or Copperline rather than `vamos`.
+The game runs until the machine is reset. `clorraine run --emulator` ends a run
+after 90 seconds, so play it in the player above or boot the ADF.
 
 ## Read the source
 

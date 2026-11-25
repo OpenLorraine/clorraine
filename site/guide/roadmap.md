@@ -18,17 +18,17 @@ Internal planning records are not published here.
 | Amiga SDK: 81 tracked capabilities across 11 bundles | Done |
 | v1.1 surfaces: `Box<T>`, ordinary `freedBy` deleters, C-hook trampolines | Done |
 | A500/Kickstart 1.3 baseline with OCS and 512 KB chip RAM | Done |
-| Linux x86_64 installer | v1.2.0 candidate; publication approval pending |
-| VS Code extension packaging and packaged-client smoke test | Done from source |
-| Language server over stdio | Done from source |
+| Linux x86_64 installer | v1.2.0 developer preview: one command installs the CLI, the toolchain, the VS Code extension, and a starter project |
+| VS Code extension with a Run in FS-UAE button | v1.2.0 developer preview, installed by the Linux installer |
+| Language server over stdio | v1.2.0 developer preview, installed by the Linux installer |
 | Apache 2.0 licensing with an output exception | Done |
 
 ## Next
 
 | Item | Why it matters |
 |---|---|
-| WSL2/Remote-WSL and Windows/macOS installers | Outside v1.2.0; Linux x86_64 only |
-| Published VS Code extension | Make editor setup a single install |
+| Windows and macOS installers | On the way; v1.2.0 is Linux x86_64 only |
+| VS Code extension in the marketplace | Install the editor support without the Linux installer |
 | Clearer NDK setup and diagnostics | Make the Amiga boundary easier to understand |
 | Broader host-platform testing and CI | Catch platform-specific issues before release |
 | More AmigaOS API coverage | Grow the tracked surface beyond the current 81 capabilities |
@@ -54,6 +54,6 @@ See [Verification](/project/verification) for the full picture.
 ## Releases
 
 Release notes and artifacts are published on
-[GitHub Releases](https://github.com/OpenLorraine/clorraine/releases). The
-current release record is **v1.2.0**; v1.1.2 remains the latest published
-release until the v1.2.0 publication approval is supplied.
+[GitHub Releases](https://github.com/OpenLorraine/clorraine/releases). **v1.2.0**
+is the current developer preview for Linux x86_64; **v1.1.2** remains the latest
+stable release.

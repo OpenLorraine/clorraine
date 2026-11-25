@@ -59,15 +59,20 @@ The source is
 
 ## Run it
 
+Download [`gui-showcase.clo`](https://github.com/OpenLorraine/clorraine/blob/main/examples/amiga/gui-showcase.clo)
+and build it:
+
 ```sh
-make build FILE=examples/amiga/gui-showcase.clo PROFILE=hosted-amiga
+clorraine build -p hosted-amiga gui-showcase.clo
 ```
 
-Then start the binary from a booted Workbench 3.x system. The program needs a
-running public Workbench screen. Boot the A1200 with Workbench 3.1, or use the
-SDK's Workbench fixture; a ROM-only insert-disk boot has no public screen, and
-the program prints `gui-showcase: no Workbench screen` and exits. It needs a
-display, so use FS-UAE rather than `vamos`.
+The Amiga binary is written to
+`build/clorraine/gui-showcase/hosted-amiga/gui-showcase`. Start it from a booted
+Workbench 3.x system. The program needs a
+running public Workbench screen. `clorraine run --emulator` boots straight into
+the program without Workbench, so the program prints
+`gui-showcase: no Workbench screen` and exits there; boot an A1200 with your own
+Workbench 3.1 setup instead.
 
 ## What to inspect
 

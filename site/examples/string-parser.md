@@ -112,14 +112,16 @@ program is part of the validation corpus, and its output is a committed golden.
 
 ## Run it
 
+Save the source as `string-parser.clo` and run it on your PC:
+
 ```sh
-clorraine run spec/tests/corpus/string-parser/program.clo
+clorraine run string-parser.clo
 ```
 
-On AmigaOS through `vamos`:
+On the emulated Amiga 1200:
 
 ```sh
-make run FILE=spec/tests/corpus/string-parser/program.clo PROFILE=hosted-amiga
+clorraine run -p hosted-amiga --emulator string-parser.clo
 ```
 
 ## What it demonstrates
