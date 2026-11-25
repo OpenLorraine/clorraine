@@ -1,7 +1,7 @@
 # Task T-01: Publish the v1.2.0 developer preview
 
 > **Type**: Task (lightweight) · **CodeOps Artifact Schema**: 1
-> **Progress**: 26/27 tasks (96%)
+> **Progress**: 27/27 tasks (100%)
 > **Reasoning**: high — public release, interactive installer, immutable tag,
 > asset verification, rollback
 > **Decision**: Public GitHub **prerelease**, tag `v1.2.0`, title
@@ -241,8 +241,8 @@ default `openDisplay` offset also pushes the picture right on that machine.
   audit) on the shim, demos, CLI, extension, and installer. ✅ (completed: 2026-11-25 15:01)
 - [x] T-01.26 **Rebuild and re-accept.** `make check`, the A500 video gates,
   `make dist`, `make acceptance`, `make acceptance-check`, `make vscode-check`. ✅ (completed: 2026-11-25 15:01)
-- [ ] T-01.27 **Recreate the prerelease** after the user's approval of the
-  visuals, then verify the public one-line install end to end.
+- [x] T-01.27 **Recreate the prerelease** after the user's approval of the
+  visuals, then verify the public one-line install end to end. ✅ (completed: 2026-11-25 15:04)
 
 ### Revision 4 evidence
 
@@ -276,6 +276,11 @@ default `openDisplay` offset also pushes the picture right on that machine.
   both hellos, starter created; the starter runs from its folder with no flags.
 - **Candidate:** archive 6,556,265 `af33058f…3794`; VSIX 26,530
   `3901f7d0…ba68`; installer 83,216 `d64f7de9…c3ca`.
+- **Release:** `v1.2.0` recreated as a public prerelease at `ede6823a` on the
+  user's go-ahead; `v1.1.2` remains Latest. The four public assets return HTTP
+  200 and match `SHA256SUMS`; the one-line command ran the full first run in
+  a fresh HOME (both hellos, emulator remembered, starter created). Log:
+  `build/tmp/r4-public-e2e.log`.
 
 ## Verify
 
