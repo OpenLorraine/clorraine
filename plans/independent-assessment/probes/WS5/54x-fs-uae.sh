@@ -10,7 +10,9 @@
 # Usage (repository root):
 #   54x-fs-uae.sh build <clc> <out>     # inside the SDK container
 #   54x-fs-uae.sh run <out> <case>...   # on the host (needs docker)
-# Cases: 540 540c 541 541c seeded. "c" is the contrasting input; "seeded" runs
+# Cases: 540 540c 541 541c seeded; a trailing "f" (541f, 541cf) also runs
+# 54x-filler.c after the second walker, which overwrites free memory with the
+# ILLEGAL opcode while VBlank interrupts run. "c" is the contrasting input; "seeded" runs
 # 54x-seeded.c, which leaves a VERTB server and the ClProbe541 port installed
 # and removes card.resource, so the walker must report all three.
 set -uo pipefail
@@ -26,6 +28,7 @@ if [ "$mode" = build ]; then
     clc=$1; out=$2; mkdir -p "$out/src"
     amiga_build "$here/54x-walker.c" "$out/walker" || exit 1
     amiga_build "$here/54x-seeded.c" "$out/seeded" || exit 1
+    amiga_build "$here/54x-filler.c" "$out/filler" || exit 1
     cp "$here/540-card-resource.clo" "$out/src/540.clo"
     sed 's/let b: bool = cardPresent();/let b: bool = true;/; s/let a: bool = cardPresent();/let a: bool = true;/' \
         "$here/540-card-resource.clo" > "$out/src/540c.clo"
@@ -54,13 +57,16 @@ for _ in $(seq 1 100); do [ -S "/tmp/.X11-unix/X$num" ] && break; sleep 0.1; don
 
 for c in "$@"; do
     d="$out/run-$c"; rm -rf "$d"; mkdir -p "$d/s"
-    cp "$out/walker" "$d/walker"; cp "$out/$c" "$d/prog"
+    base="${c%f}"; fill=""
+    [ "$base" != "$c" ] && fill="filler >>CNEXT:out.txt"
+    cp "$out/walker" "$d/walker"; cp "$out/filler" "$d/filler"; cp "$out/$base" "$d/prog"
     cat > "$d/s/startup-sequence" <<EOF
 failat 100
 walker before >CNEXT:out.txt
 prog >>CNEXT:out.txt
 echo "rc \$RC" >>CNEXT:out.txt
 walker after >>CNEXT:out.txt
+$fill
 echo "END" >>CNEXT:out.txt
 EOF
     rel="${d#"$repo"/}"

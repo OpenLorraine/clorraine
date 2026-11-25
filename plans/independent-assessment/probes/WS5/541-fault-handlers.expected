@@ -19,3 +19,6 @@ error E11211: index out of range
 rc 20
 after vertb N port 0 card 1
 END
+--- 541f (filler after the walker; 54x-filler.c)
+# Expected: as above, then "filler survived <n>" and END: no installed server refers to
+# freed memory. Contrast 541cf: the same. The detector is the crash itself (no END).
