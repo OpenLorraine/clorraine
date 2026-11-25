@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-25 19:10
-> **Progress**: 2/95 tasks (2%)
+> **Last Updated**: 2026-11-25 19:13
+> **Progress**: 4/95 tasks (4%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -91,14 +91,14 @@ this plan's folder and the roadmap; 03-01 §Ground rules)
 
 - [x] 0.1.1 Confirm with the user that the working tree is settled; record `> **Baseline**: <sha>` and the date in `findings/WS0-baseline.md`; write `probes/WS0/drift-check.sh` implementing the drift check of 03-01 §Ground rules, taking the plan folder as its argument and reading the baseline from that folder's `findings/WS0-baseline.md` (no run path written in), and run it ✅ (completed: 2026-11-25 19:07)
 - [x] 0.1.2 Write one equivalent C reference per scored benchmark (`container`, `local-table`, `lookup`, `matrix`, `moves`, `sieve`, `strings`, `text-scan`) and `calibration.c` under `probes/WS0/ref/`, following the fairness rules of 03-01 §Measurement rules, each with its golden output as the expectation (ST-13) ✅ (completed: 2026-11-25 19:10)
-- [ ] 0.1.3 Write `probes/WS0/measure.py` per 03-01 §Measurement rules (lens flag arrays; only the listed `bench.py` functions; the plan folder and baseline SHA as arguments; output under `build/tmp/assessment/`); commit Step 0.1 through the git-commit skill, local only; then red check: the comparator rejects a mutated expectation (comparator form, ST-5)
+- [x] 0.1.3 Write `probes/WS0/measure.py` per 03-01 §Measurement rules (lens flag arrays; only the listed `bench.py` functions; the plan folder and baseline SHA as arguments; output under `build/tmp/assessment/`); commit Step 0.1 through the git-commit skill, local only; then red check: the comparator rejects a mutated expectation (comparator form, ST-5) ✅ (completed: 2026-11-25 19:12)
 
 ### Step 0.2: Measurement
 
 **Reference**: 03-01 §Ground rules (Pinned tools), §Measurement rules · AR #14, AR #17
 **Objective**: Capture every baseline number later phases cite.
 
-- [ ] 0.2.1 Build the release and debug `clc` in the container; copy the release binary to `build/tmp/assessment/baseline/clc` with its sha256; record the Docker image ID, the amitools commit, and the versions of host GCC, `m68k-amigaos-gcc`, vbcc, `vamos`, and FS-UAE
+- [x] 0.2.1 Build the release and debug `clc` in the container; copy the release binary to `build/tmp/assessment/baseline/clc` with its sha256; record the Docker image ID, the amitools commit, and the versions of host GCC, `m68k-amigaos-gcc`, vbcc, `vamos`, and FS-UAE ✅ (completed: 2026-11-25 19:13)
 - [ ] 0.2.2 With the pinned `clc`, emit C for the spec corpus, the benchmarks, and `examples/amiga/` on every profile that accepts each program, twice, into `build/tmp/assessment/baseline/emit/`; record expected rejections, whether the two emissions are byte-identical, the debug-`clc` emission for WS3-09, and the C compile time of each emitted program on each C compiler (for WS3-11)
 - [ ] 0.2.3 Run the bench harness, the compile-time harness, and the flag audit once per 03-01 §Ground rules (pinned `--clc`, new `build/perf/assessment-baseline-*.json` outputs copied to `build/tmp/assessment/baseline/`, `--compiler-git <sha>` where supported); record the numbers (labelled nix20 where they are) and any failing floor as a `WS0` observation in `findings/WS0-baseline.md` (ST-12)
 - [ ] 0.2.4 Check whether `vamos` runs a 68020 CPU; record the method, or the static-section-size fallback and its named limit (ST-15)

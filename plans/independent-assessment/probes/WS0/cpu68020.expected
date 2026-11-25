@@ -1,0 +1,10 @@
+# Expected outcome of cpu68020.c (0.2.4).
+# Source: C99 6.2.5p9 (unsigned arithmetic is reduced modulo 2^32 for a 32-bit
+# uint32_t) and 6.5.5p6 (integer division truncates): 123456789 * 987 mod 2^32
+# = 1592766455, 123456789 / 987 = 125082.
+# 1. `m68k-amigaos-objdump -d` of the -m68020 build shows a long multiply
+#    (mulu.l or muls.l) and a long divide (divu.l, divul.l, or divs.l).
+# 2. `vamos -C 68020 <binary>` prints exactly:
+cpu68020: 1592766455 125082
+# 3. `vamos <binary>` (default CPU 68000) does not print that line (an illegal
+#    instruction or line-F/line-A trap, or a non-zero exit).
