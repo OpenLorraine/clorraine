@@ -1,7 +1,7 @@
 # Task T-02: Document the Linux installer on the website and in docs/
 
 > **Type**: Task (lightweight) · **CodeOps Artifact Schema**: 1
-> **Progress**: 9/10 tasks (90%)
+> **Progress**: 10/10 tasks (100%)
 > **Reasoning**: medium — wide but mechanical documentation change; public
 > deployment at the end
 > **Implements**: — (user-requested task, follows `plans/public-preview-v1.2.0`)
@@ -103,14 +103,14 @@ website and from three install-facing `docs/` files, to be rewritten later.
   showcases, GUI). ✅ (completed: 2026-11-25 17:14)
 - [x] T-02.9 **`docs/`** — `linux-cli.md` rewrite, `README.md` row,
   `known-limitations.md` sections, per R5. ✅ (completed: 2026-11-25 17:14)
-- [ ] T-02.10 **Verify, preview, publish.** Audit green; `make site-check`;
+- [x] T-02.10 **Verify, preview, publish.** Audit green; `make site-check`;
   `make dist-check` (retained-inputs test) and
   `make -C docker exec CMD="cargo test --test docs_guide_spec_test"`; every
   command shown in the docs checked against `clorraine --help` / `install.sh
   --help`; local preview with `make site-dev` for the user (R6); after approval,
   commit and push with the **git-commit skill in push mode** (staging only this
   task's files), wait for the Pages deployment, and spot-check the live quick
-  start, home page, and status page.
+  start, home page, and status page. ✅ (completed: 2026-11-25 17:22)
 
 ## Install-path audit
 
@@ -151,6 +151,12 @@ quick start, home page, and status page.
   (installer 181 + 28, producer 46, Python 37 including the retained-inputs
   test); `docs_guide_spec_test` 4 passed. Every command shown matches
   `clorraine --help` and `install.sh --help`.
+
+- **Published:** `a777415f` pushed to `main` together with the other session's
+  `2eff956c` (user ruling). The Pages deploy first failed with HTTP 500 during
+  a GitHub partial outage (Pages and Actions degraded); the re-run deployed.
+  The live home page, quick start, and status page show the new text and none
+  of the old wording.
 
 ## Rollback
 

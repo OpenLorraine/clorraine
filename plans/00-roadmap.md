@@ -4,7 +4,7 @@
 > **Status**: Active
 > **Created**: 2026-09-17
 > **Last Updated**: 2026-11-25
-> **Progress**: 598/603 rows done; 1 active; 1 planned; 0 blocked; 1 deferred; 2 Parked
+> **Progress**: 599/603 rows done; 0 active; 1 planned; 0 blocked; 1 deferred; 2 Parked
 > **CodeOps Artifact Schema**: 1
 
 ## Legend
@@ -609,7 +609,7 @@
 | PLAN-44 | Pin the A500 asset and exec gates (#35) | — | [a500-asset-exec-window-pin](a500-asset-exec-window-pin/99-execution-plan.md) | Done | ✅ | 2026-11-15 | 5/5; both gates pinned to 960x540 with a pre-crop size assertion (including the exec golden re-import), caller display override, crops unchanged, goldens regenerated AE=0, seven-gate geometry/caller/topmost tests, 90-poll budgets; reviews clean on critical/major with AP-001..AP-004 and RV-001..RV-002 fixed; full `verify: all legs passed`; commit `bb9cdeca`; #35 closed |
 | PLAN-45 | v1.2.0 native Linux delivery | — | [v1.2.0-release-installer](v1.2.0-release-installer/00-index.md) | Parked | ⏸ | 2026-11-24 | 82/91; **superseded** by the linux-cli-v1.2.0 plan (AR-50); unpublished, no further execution |
 | PLAN-46 | Linux v1.2.0 CLI and FS-UAE delivery | — | [linux-cli-v1.2.0](linux-cli-v1.2.0/00-index.md) | Done | ✅ | 2026-11-25 | 28/28; local candidate accepted; make verify all legs; old pipeline removed; publication awaits separate approval |
-| PLAN-47 | Independent assessment of Clorraine | — | [independent-assessment](independent-assessment/00-index.md) | Plan Created | 📋 | 2026-11-25 | 0/89; read-only audit of compiler, codegen, optimizer question, shims, stdlib, performance; execution waits for a settled working tree; verified Critical/Major findings become DEF rows at synthesis |
+| PLAN-47 | Independent assessment of Clorraine | — | [independent-assessment](independent-assessment/00-index.md) | Plan Preflighted | 🔬 | 2026-11-25 | 0/90; preflight passed (43 findings resolved, 3 iterations); read-only audit of compiler, codegen, optimizer question, shims, stdlib, performance; execution starts after the user confirms a settled tree; surviving Critical/Major findings become DEF rows at synthesis |
 | ↳ DEF-581 | Phase4 major review corrections | — | [Findings](v1.2.0-release-installer/05-findings.md) | Done | ✅ | 2026-11-21 | CA-401/RV-C401/SA-401 fixed, full gates green, one re-review clean; no third review |
 | ↳ DEF-580 | Editor implementation verification ordering | — | [Decision](v1.2.0-release-installer/00-ambiguity-register.md) | Done | ✅ | 2026-11-21 | user approves ordered4.2.1–4.2.5 cohort and restart/full-gate rules; no automatic promotion |
 | ↳ DEF-579 | Verified receipt fix and Phase3 disposition | — | [Handoff](v1.2.0-release-installer/05-findings.md) | Done | ✅ | 2026-11-21 | user accepts verified RV-Q303 bounded fix and Phase3 closure; no third review/commit/publication |
@@ -634,7 +634,7 @@
 | ↳ DEF-560 | libamiga legal review — user-owned | — | [Evidence](../tools/distribution/inputs/licence-review.md) | Deferred | ⏸️ | 2026-11-17 | user owns legalities; nonblocking local implementation; no licence-clearance claim or public promotion |
 
 | T-01 | Publish the v1.2.0 developer preview | — | [public-preview-v1.2.0](public-preview-v1.2.0/99-execution-plan.md) | Done | ✅ | 2026-11-25 | 27/27; exciting first run: banner, demo-scene Amiga hello, `clorraine new` starter with VS Code run button, KS2+ display fix; v1.2.0 prerelease recreated; docs/site frozen |
-| T-02 | Document the Linux installer on the website and in docs/ | — | [site-linux-installer-docs](site-linux-installer-docs/99-execution-plan.md) | Executing | 🔄 | 2026-11-25 | 9/10; site and docs/ rewritten around the one-line installer; pushing and verifying the live site |
+| T-02 | Document the Linux installer on the website and in docs/ | — | [site-linux-installer-docs](site-linux-installer-docs/99-execution-plan.md) | Done | ✅ | 2026-11-25 | 10/10; the one-line installer is the only install path on the site and in docs/; developer preview; Windows/macOS on the way; live site verified |
 
 ## Batch N accounting (2026-10-19)
 
