@@ -28,5 +28,13 @@ jobs:
         run: make dist-check
       - name: SDK setup tests
         run: make setup-check
+      # The runner has no Amiga SDK. These editor-source controls must run the
+      # real m68k compiler and vamos and never skip themselves, so the SDK
+      # container's `make check` runs them; this host-only job leaves them out.
       - name: Workspace tests
-        run: cargo test --workspace
+        run: >-
+          cargo test --workspace --no-fail-fast --
+          --exact
+          --skip should_route_standalone_selection_through_all_runnable_profiles
+          --skip should_validate_explicit_hosted_amiga_driver_and_dependency_omission_controls
+          --skip should_validate_explicit_hosted_amiga_13_driver_and_dependency_omission_controls
