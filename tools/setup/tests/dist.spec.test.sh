@@ -154,7 +154,24 @@ release_readme_has_no_local_links() {
     check_contains "$readme" "https://github.com/OpenLorraine/clorraine" "release README repository URL"
 }
 
+# The installer carries the demo-scene Amiga hello; verification rejects an
+# installer without it.
+the_installer_embeds_the_amiga_hello() {
+    fixture
+    local status
+    status="$(run_package "$package_script" --stage "$stage" --output "$output" --version 1.2.0 --vsix "$vsix")"
+    check_status 0 "$status" "package with the Amiga hello"
+    check_contains "$output/install.sh" "module demo.HelloIntro;" "embedded intro"
+    check_not_contains "$output/install.sh" "@HELLO_AMIGA_SOURCE@" "placeholder replaced"
+    sed -i 's/^module demo.HelloIntro;$/module demo.Other;/' "$output/install.sh"
+    ( cd "$output" && sha256sum clorraine-1.2.0-x86_64-linux.tar.gz clorraine-1.2.0.vsix install.sh >SHA256SUMS )
+    status="$(run_package "$package_script" --verify --output "$output" --version 1.2.0)"
+    check_status 1 "$status" "installer without the intro"
+    check_contains "$root/stderr" "Amiga hello" "missing-intro message"
+}
+
 build_creates_the_expected_assets
+the_installer_embeds_the_amiga_hello
 a_version_mismatch_fails
 an_extra_file_fails
 a_forbidden_file_fails

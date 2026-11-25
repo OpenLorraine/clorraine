@@ -10,6 +10,7 @@ set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 template="$here/install.sh"
+hello_amiga="$here/../../examples/amiga/hello-intro.clo"
 
 usage() {
     cat <<'EOF'
@@ -124,11 +125,16 @@ assemble_installer() {
         "https://github.com/OpenLorraine/clorraine/releases/download/v$version/$(basename "$archive")" \
         "$bytes" "$digest" "$vsix_name" \
         "https://github.com/OpenLorraine/clorraine/releases/download/v$version/$vsix_name" \
-        "$vsix_bytes" "$vsix_digest" <<'PY'
+        "$vsix_bytes" "$vsix_digest" "$hello_amiga" <<'PY'
 import sys
 (template, target, version, name, url, size, digest,
- vsix_name, vsix_url, vsix_size, vsix_digest) = sys.argv[1:]
+ vsix_name, vsix_url, vsix_size, vsix_digest, hello_amiga) = sys.argv[1:]
 text = open(template, encoding="utf-8").read()
+# The Amiga hello is embedded in a quoted here-document after the pins, so
+# nothing in it is substituted; only its terminator line must not occur.
+intro = open(hello_amiga, encoding="utf-8").read().rstrip("\n")
+if "CLORRAINE_HELLO_AMIGA" in intro.splitlines():
+    sys.exit("package: the Amiga hello source contains the here-document terminator")
 for token, value in {
     "@VERSION@": version,
     "@ARCHIVE_NAME@": name,
@@ -141,6 +147,7 @@ for token, value in {
     "@VSIX_SHA256@": vsix_digest,
 }.items():
     text = text.replace(token, value)
+text = text.replace("@HELLO_AMIGA_SOURCE@", intro)
 open(target, "w", encoding="utf-8").write(text)
 PY
     chmod +x "$target"
@@ -196,6 +203,10 @@ verify_candidate() {
     digest="$(sha256sum "$target" | awk '{print $1}')"
     grep -Fq "VSIX_BYTES='$bytes'" "$installer" || die "installer pin mismatch: VSIX_BYTES"
     grep -Fq "VSIX_SHA256='$digest'" "$installer" || die "installer pin mismatch: VSIX_SHA256"
+    if grep -Fq "@HELLO_AMIGA_SOURCE@" "$installer" ||
+        ! grep -Fxq "module demo.HelloIntro;" "$installer"; then
+        die "installer does not embed the Amiga hello"
+    fi
 
     top="$(tar -tzf "$archive" | awk -F/ 'NR == 1 { print $1 }')"
     [ "$top" = "clorraine-$version-x86_64-linux" ] || die "archive has the wrong top-level directory"

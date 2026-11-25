@@ -1,0 +1,382 @@
+// My first Amiga program, written in Clorraine.
+//
+// Your message bounces across an evening sky. The sky gradient and the
+// rainbow shimmer on the letters are painted by the copper, the Amiga's
+// display co-processor, so they cost the CPU nothing. The message itself is
+// moved by the blitter, the Amiga's chip for copying graphics.
+//
+// Try it: change MESSAGE or the colours below, save, and run it again with the
+// Run in FS-UAE button. Click the left mouse button in the Amiga window to
+// quit; the program also stops by itself after a minute.
+
+module starter.Main;
+
+import {
+    Bitmap, Copper, Display,
+    newBitmap, freeBitmap, bitmapFill, bitmapBlit, bitmapFromIndices,
+    newCopper, copperWait, copperColor, copperEnd,
+    openDisplayAt, freeDisplay, displaySetColor, displaySetCopper,
+    displayFlip, displayFailed, displayIndex
+} from std.amiga.video;
+import { readJoystick, JOY_FIRE } from std.amiga.input;
+import { ticks } from std.amiga.dos;
+import { Buffer, bufferNew, bufferBytes } from std.mem;
+import { String, stringOf, bytes } from std.text;
+import { println } from std.io;
+
+// ---------------------------------------------------------------------------
+// Things to change
+// ---------------------------------------------------------------------------
+
+/// The text that bounces around: up to 17 characters. Letters, digits,
+/// spaces, and . , ! ? - work.
+const MESSAGE: str = "Hello, Amiga!";
+
+/// The sky, from the top of the screen to the ground, as 0xRRGGBB colours.
+const SKY_TOP: i32 = 0x0A0A3C;
+const SKY_MIDDLE: i32 = 0x6A2A8A;
+const SKY_LOW: i32 = 0xFF8A50;
+
+/// How fast the message moves, in pixels per second.
+const SPEED_X: i32 = 70;
+const SPEED_Y: i32 = 45;
+
+/// How many seconds the program runs before it stops by itself. Keep it under
+/// 75: a run in FS-UAE, Amiga boot included, is stopped after 90 seconds.
+const SECONDS: i32 = 60;
+
+// ---------------------------------------------------------------------------
+// The program
+// ---------------------------------------------------------------------------
+
+/// The screen: 320x256 pixels in 16 colours.
+const WIDTH: i32 = 320;
+const HEIGHT: i32 = 256;
+/// The ground starts here; the message bounces above it.
+const GROUND: i32 = 220;
+const GROUND_COLOUR: i32 = 0x180C28;
+
+/// Each letter of the message is a 5x7 grid of SCALE-pixel squares.
+const SCALE: i32 = 3;
+/// Empty pixels around the message.
+const PAD: i32 = 2;
+
+/// Colour numbers (pens). The copper changes pens 0 and 1 on every few lines.
+const PEN_SKY: u8 = 0;
+const PEN_TEXT: u8 = 1;
+const PEN_SHADOW: u8 = 2;
+const PEN_GROUND: u8 = 3;
+const PEN_LINE: u8 = 4;
+const PEN_HINT: u8 = 5;
+
+func main(): i32 {
+    let message: String = stringOf(MESSAGE);
+    let text: u8[] = bytes(message);
+
+    // Draw the message once into its own small bitmap.
+    let boxWidth: i32 = textWidth(text, SCALE, PAD);
+    let boxHeight: i32 = textHeight(SCALE, PAD);
+    if (boxWidth > WIDTH) {
+        println("MESSAGE is too long for the screen; use up to 17 characters.");
+        return 1;
+    }
+    let box: Bitmap? = drawText(text, SCALE, PAD, PEN_TEXT, PEN_SHADOW, PEN_SKY);
+    let hint: String = stringOf("Click to quit");
+    let hintText: u8[] = bytes(hint);
+    let hintBox: Bitmap? = drawText(hintText, 1, 0, PEN_HINT, PEN_GROUND, PEN_GROUND);
+
+    // Two screens' worth of memory: the Amiga shows one while we draw the
+    // other, then swaps them. This is called double buffering.
+    let front: Bitmap? = newBitmap(WIDTH, HEIGHT, 4);
+    let back: Bitmap? = newBitmap(WIDTH, HEIGHT, 4);
+    if (box == null || hintBox == null || front == null || back == null) {
+        println("Not enough chip memory.");
+        return 1;
+    }
+    let hintX: i32 = (WIDTH - textWidth(hintText, 1, 0)) / 2;
+    let hintWidth: i32 = textWidth(hintText, 1, 0);
+    drawBackground(front, hintBox, hintX, hintWidth);
+    drawBackground(back, hintBox, hintX, hintWidth);
+
+    let copper: Copper? = buildCopper();
+    let display: Display? = openDisplayAt(front, back, 0, 0);
+    if (copper == null || display == null) {
+        println("Cannot open the display.");
+        return 1;
+    }
+    setColours(display);
+    displaySetCopper(display, copper);
+    displayFlip(display);
+    if (displayFailed(display)) {
+        freeDisplay(display);
+        println("Cannot open the display.");
+        return 1;
+    }
+
+    // The main loop: work out where the message is, draw it into the hidden
+    // screen, and show that screen at the next frame.
+    let start: u32 = ticks();
+    let elapsed: i32 = 0;
+    let clicked: bool = false;
+    let held: i32 = 0;
+    // Where each of the two screens last showed the message (-1: nowhere).
+    let lastX: i32[2] = [; -1];
+    let lastY: i32[2] = [; -1];
+    while (elapsed < SECONDS * 50 && !clicked) {
+        elapsed = i32(ticks() - start);
+        // A click is the left button held for at least two frames and then
+        // let go, so a stray reading cannot end the program.
+        if ((readJoystick(0) & JOY_FIRE) != 0) {
+            held = held + 1;
+        } else {
+            clicked = held >= 2;
+            held = 0;
+        }
+        let x: i32 = bounce(elapsed * SPEED_X / 50, WIDTH - boxWidth);
+        let y: i32 = bounce(elapsed * SPEED_Y / 50, GROUND - boxHeight);
+        // Draw into the screen that is hidden right now, then show it.
+        let hidden: usize = 1 - usize(displayIndex(display));
+        if (hidden == 1) {
+            moveBox(back, box, lastX[1], lastY[1], x, y, boxWidth, boxHeight);
+        } else {
+            moveBox(front, box, lastX[0], lastY[0], x, y, boxWidth, boxHeight);
+        }
+        lastX[hidden] = x;
+        lastY[hidden] = y;
+        displayFlip(display);
+    }
+
+    freeDisplay(display);
+    freeBitmap(back);
+    freeBitmap(front);
+    freeBitmap(hintBox);
+    freeBitmap(box);
+    if (clicked) {
+        println($"You clicked after {elapsed / 50} seconds. Thanks for watching!");
+    } else {
+        println($"Stopped after {elapsed / 50} seconds. Thanks for watching!");
+    }
+    return 0;
+}
+
+/// Erases the message where `screen` last showed it, then draws it at (`x`,
+/// `y`). Erasing first means no trail is left, however far it moved.
+func moveBox(borrow screen: Bitmap, const box: Bitmap, oldX: i32, oldY: i32,
+             x: i32, y: i32, width: i32, height: i32): void {
+    if (oldX >= 0) {
+        bitmapFill(screen, oldX, oldY, oldX + width - 1, oldY + height - 1, PEN_SKY);
+    }
+    bitmapBlit(screen, box, 0, 0, x, y, width, height);
+}
+
+/// Turns a distance travelled into a position that bounces between 0 and
+/// `range`, like a ball between two walls.
+func bounce(distance: i32, range: i32): i32 {
+    if (range <= 0) {
+        return 0;
+    }
+    let step: i32 = distance % (range * 2);
+    if (step > range) {
+        return range * 2 - step;
+    }
+    return step;
+}
+
+/// Draws the ground, its bright edge, and the hint at the bottom. The sky is
+/// pen 0 everywhere else; the copper gives it its colours.
+func drawBackground(borrow screen: Bitmap, const hint: Bitmap, hintX: i32,
+                   hintWidth: i32): void {
+    bitmapFill(screen, 0, 0, WIDTH - 1, GROUND - 1, PEN_SKY);
+    bitmapFill(screen, 0, GROUND, WIDTH - 1, HEIGHT - 1, PEN_GROUND);
+    bitmapFill(screen, 0, GROUND, WIDTH - 1, GROUND + 1, PEN_LINE);
+    bitmapBlit(screen, hint, 0, 0, hintX, GROUND + 14, hintWidth, textHeight(1, 0));
+}
+
+/// The width of `text` drawn at `scale` with `pad` empty pixels around it.
+func textWidth(const text: u8[], scale: i32, pad: i32): i32 {
+    return i32(len(text)) * 6 * scale + 2 + pad * 2;
+}
+
+/// The height of a line of text drawn at `scale` with `pad` around it.
+func textHeight(scale: i32, pad: i32): i32 {
+    return 7 * scale + 2 + pad * 2;
+}
+
+/// Draws `text` into a new bitmap: `face` letters with a `shadow` two pixels
+/// down and to the right, on `background`.
+func drawText(const text: u8[], scale: i32, pad: i32, face: u8, shadow: u8,
+              background: u8): Bitmap? {
+    let width: i32 = textWidth(text, scale, pad);
+    let height: i32 = textHeight(scale, pad);
+    let canvas: Buffer? = bufferNew(usize(width * height));
+    let bitmap: Bitmap? = newBitmap(width, height, 4);
+    if (canvas == null || bitmap == null) {
+        return null;
+    }
+    let pixels: u8[] = bufferBytes(canvas);
+    let i: usize = 0;
+    while (i < len(pixels)) {
+        pixels[i] = background;
+        i = i + 1;
+    }
+    let n: usize = 0;
+    while (n < len(text)) {
+        let x: i32 = pad + i32(n) * 6 * scale;
+        stamp(pixels, width, text[n], scale, x + 2, pad + 2, shadow);
+        stamp(pixels, width, text[n], scale, x, pad, face);
+        n = n + 1;
+    }
+    bitmapFromIndices(bitmap, pixels);
+    return bitmap;
+}
+
+/// Paints one letter at `scale` into a chunky pixel buffer `width` pixels wide.
+func stamp(borrow pixels: u8[], width: i32, ch: u8, scale: i32, x: i32, y: i32,
+           pen: u8): void {
+    let row: i32 = 0;
+    while (row < 7) {
+        let bits: i32 = letterRow(ch, row);
+        let col: i32 = 0;
+        while (col < 5) {
+            if ((bits & (16 >> col)) != 0) {
+                let dy: i32 = 0;
+                while (dy < scale) {
+                    let dx: i32 = 0;
+                    while (dx < scale) {
+                        let px: i32 = x + col * scale + dx;
+                        let py: i32 = y + row * scale + dy;
+                        pixels[usize(py * width + px)] = pen;
+                        dx = dx + 1;
+                    }
+                    dy = dy + 1;
+                }
+            }
+            col = col + 1;
+        }
+        row = row + 1;
+    }
+}
+
+/// Mixes two 0xRRGGBB colours: `step` of `steps` of the way from `a` to `b`.
+func mix(a: i32, b: i32, step: i32, steps: i32): i32 {
+    let r: i32 = ((a >> 16) & 255) + (((b >> 16) & 255) - ((a >> 16) & 255)) * step / steps;
+    let g: i32 = ((a >> 8) & 255) + (((b >> 8) & 255) - ((a >> 8) & 255)) * step / steps;
+    let bl: i32 = (a & 255) + ((b & 255) - (a & 255)) * step / steps;
+    return (r << 16) | (g << 8) | bl;
+}
+
+/// The sky colour at screen line `y`.
+func skyAt(y: i32): i32 {
+    let middle: i32 = GROUND / 2;
+    if (y < middle) {
+        return mix(SKY_TOP, SKY_MIDDLE, y, middle);
+    }
+    return mix(SKY_MIDDLE, SKY_LOW, y - middle, GROUND - middle);
+}
+
+/// A rainbow colour; `step` runs around the colour wheel every 48 steps.
+func rainbowAt(step: i32): i32 {
+    let colours: i32[6] = [0xFF4060, 0xFFB030, 0xF0F040, 0x40E080, 0x40B0FF, 0xC070FF];
+    let at: i32 = step % 48;
+    let index: usize = usize(at / 8);
+    return mix(colours[index], colours[(index + 1) % 6], at % 8, 8);
+}
+
+/// Appends a colour change for `pen` to the copper list.
+func copperRgb(borrow copper: Copper, pen: u8, rgb: i32): void {
+    copperColor(copper, pen, u8((rgb >> 16) & 255), u8((rgb >> 8) & 255), u8(rgb & 255));
+}
+
+/// Builds the copper list. Every four lines it waits for the beam and changes
+/// the sky colour and the letter colour, so the sky is a smooth gradient and
+/// the message shimmers through a rainbow as it moves.
+func buildCopper(): Copper? {
+    let copper: Copper? = newCopper();
+    if (copper == null) {
+        return null;
+    }
+    let y: i32 = 4;
+    while (y < GROUND) {
+        copperWait(copper, y);
+        copperRgb(copper, PEN_SKY, skyAt(y));
+        copperRgb(copper, PEN_TEXT, rainbowAt(y / 4 * 3));
+        y = y + 4;
+    }
+    // Below the horizon, pen 0 also colours the screen border; match it to
+    // the ground.
+    copperWait(copper, GROUND + 2);
+    copperRgb(copper, PEN_SKY, GROUND_COLOUR);
+    copperEnd(copper);
+    return copper;
+}
+
+/// Sets a pen from a 0xRRGGBB colour.
+func setRgb(borrow display: Display, pen: u8, rgb: i32): void {
+    displaySetColor(display, pen, u8((rgb >> 16) & 255), u8((rgb >> 8) & 255), u8(rgb & 255));
+}
+
+/// Sets the colours the copper does not change.
+func setColours(borrow display: Display): void {
+    setRgb(display, PEN_SKY, SKY_TOP);
+    setRgb(display, PEN_TEXT, rainbowAt(0));
+    setRgb(display, PEN_SHADOW, 0x100820);
+    setRgb(display, PEN_GROUND, GROUND_COLOUR);
+    setRgb(display, PEN_LINE, SKY_LOW);
+    setRgb(display, PEN_HINT, 0x9088B0);
+}
+
+// ---------------------------------------------------------------------------
+// The letters: a 5x7 grid per character, one number per row. You do not need
+// to read this part; add a line here to teach the program a new character.
+// ---------------------------------------------------------------------------
+
+/// Returns one row of a letter; bit 4 is the leftmost square.
+func letterRow(ch: u8, row: i32): i32 {
+    let c: u8 = ch;
+    if (c >= 97 && c <= 122) {
+        c = c - 32;
+    }
+    let rows: i32[7] = [0, 0, 0, 0, 0, 0, 0];
+    if (c == 65) { rows = [14, 17, 17, 31, 17, 17, 17]; }
+    if (c == 66) { rows = [30, 17, 17, 30, 17, 17, 30]; }
+    if (c == 67) { rows = [14, 17, 16, 16, 16, 17, 14]; }
+    if (c == 68) { rows = [30, 17, 17, 17, 17, 17, 30]; }
+    if (c == 69) { rows = [31, 16, 16, 30, 16, 16, 31]; }
+    if (c == 70) { rows = [31, 16, 16, 30, 16, 16, 16]; }
+    if (c == 71) { rows = [14, 17, 16, 23, 17, 17, 15]; }
+    if (c == 72) { rows = [17, 17, 17, 31, 17, 17, 17]; }
+    if (c == 73) { rows = [14, 4, 4, 4, 4, 4, 14]; }
+    if (c == 74) { rows = [7, 2, 2, 2, 2, 18, 12]; }
+    if (c == 75) { rows = [17, 18, 20, 24, 20, 18, 17]; }
+    if (c == 76) { rows = [16, 16, 16, 16, 16, 16, 31]; }
+    if (c == 77) { rows = [17, 27, 21, 21, 17, 17, 17]; }
+    if (c == 78) { rows = [17, 17, 25, 21, 19, 17, 17]; }
+    if (c == 79) { rows = [14, 17, 17, 17, 17, 17, 14]; }
+    if (c == 80) { rows = [30, 17, 17, 30, 16, 16, 16]; }
+    if (c == 81) { rows = [14, 17, 17, 17, 21, 18, 13]; }
+    if (c == 82) { rows = [30, 17, 17, 30, 20, 18, 17]; }
+    if (c == 83) { rows = [15, 16, 16, 14, 1, 1, 30]; }
+    if (c == 84) { rows = [31, 4, 4, 4, 4, 4, 4]; }
+    if (c == 85) { rows = [17, 17, 17, 17, 17, 17, 14]; }
+    if (c == 86) { rows = [17, 17, 17, 17, 17, 10, 4]; }
+    if (c == 87) { rows = [17, 17, 17, 21, 21, 21, 10]; }
+    if (c == 88) { rows = [17, 17, 10, 4, 10, 17, 17]; }
+    if (c == 89) { rows = [17, 17, 17, 10, 4, 4, 4]; }
+    if (c == 90) { rows = [31, 1, 2, 4, 8, 16, 31]; }
+    if (c == 48) { rows = [14, 17, 19, 21, 25, 17, 14]; }
+    if (c == 49) { rows = [4, 12, 4, 4, 4, 4, 14]; }
+    if (c == 50) { rows = [14, 17, 1, 2, 4, 8, 31]; }
+    if (c == 51) { rows = [31, 2, 4, 2, 1, 17, 14]; }
+    if (c == 52) { rows = [2, 6, 10, 18, 31, 2, 2]; }
+    if (c == 53) { rows = [31, 16, 30, 1, 1, 17, 14]; }
+    if (c == 54) { rows = [6, 8, 16, 30, 17, 17, 14]; }
+    if (c == 55) { rows = [31, 1, 2, 4, 8, 8, 8]; }
+    if (c == 56) { rows = [14, 17, 17, 14, 17, 17, 14]; }
+    if (c == 57) { rows = [14, 17, 17, 15, 1, 2, 12]; }
+    if (c == 33) { rows = [4, 4, 4, 4, 4, 0, 4]; }
+    if (c == 44) { rows = [0, 0, 0, 0, 12, 4, 8]; }
+    if (c == 45) { rows = [0, 0, 0, 31, 0, 0, 0]; }
+    if (c == 46) { rows = [0, 0, 0, 0, 0, 12, 12]; }
+    if (c == 63) { rows = [14, 17, 1, 2, 4, 0, 4]; }
+    return rows[usize(row)];
+}

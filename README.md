@@ -20,18 +20,30 @@ Linux x86_64, glibc 2.38 or newer. One command:
 curl -fsSL https://github.com/OpenLorraine/clorraine/releases/download/v1.2.0/install.sh -o clorraine-install.sh && sh clorraine-install.sh
 ```
 
-The installer asks where to install (default `~/.local`), offers to add it to
-your PATH, verifies the download, installs `clc`, `clorraine`, and
-`clorraine-lsp`, sets up the rc24 Amiga toolchain (downloaded or an existing
-copy), and runs a hello test. If VS Code is detected it offers the extension;
-if FS-UAE and a licensed Kickstart ROM are detected it also runs the hello on
-a real Amiga screen.
+The installer walks you through five steps:
 
-The host hello stays at `~/.local/share/clorraine/examples/hello.clo`, with an
-Amiga version beside it. You supply the licensed Kickstart ROM; Clorraine never
-bundles or mirrors it. The [Linux CLI guide](docs/linux-cli.md) and the
+1. installs `clc`, `clorraine`, and `clorraine-lsp` (default `~/.local`) and
+   offers to add them to your PATH;
+2. sets up the rc24 Amiga toolchain, downloaded from AmigaPorts or an existing
+   copy;
+3. finds FS-UAE and your licensed Kickstart ROM and remembers them;
+4. runs the hello program, then boots an Amiga 1200 in FS-UAE and plays a
+   demo-scene intro: copper gradients, raster bars, and a chrome logo;
+5. installs the VS Code extension and creates a starter Amiga project in the
+   current folder that runs in FS-UAE with one click.
+
+Make another project at any time:
+
+```sh
+clorraine new my-game
+cd my-game && code .
+```
+
+Open `main.clo`, change the message or the colours, and press **Run in FS-UAE**
+in the editor title bar. You supply the licensed Kickstart ROM; Clorraine never
+bundles or mirrors it. The
 [release page](https://github.com/OpenLorraine/clorraine/releases/tag/v1.2.0)
-have the details, including checksum verification and the VS Code extension.
+has the details, including checksum verification.
 
 **Windows and macOS are on the way.**
 

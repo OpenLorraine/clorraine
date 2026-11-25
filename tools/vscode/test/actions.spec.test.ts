@@ -240,6 +240,24 @@ test("should register and declare all three labelled editor commands", () => {
   }
 });
 
+test("should offer Run in FS-UAE and Run as editor title buttons for Clorraine files", () => {
+  const manifest: unknown = JSON.parse(readFileSync(join(packageRoot, "package.json"), "utf8"));
+  assert.ok(record(manifest) && record(manifest.contributes) && record(manifest.contributes.menus));
+  const buttons = manifest.contributes.menus["editor/title/run"];
+  assert.ok(Array.isArray(buttons), "the run buttons live in the editor title run group");
+  for (const id of [commandIds[2], commandIds[1]]) {
+    assert.ok(buttons.some((item: unknown) =>
+      record(item) && item.command === id && item.when === "resourceLangId == clorraine"), id);
+  }
+  assert.ok(record(buttons[0]) && buttons[0].command === commandIds[2], "Run in FS-UAE is the primary button");
+  const contributions = manifest.contributes.commands;
+  assert.ok(Array.isArray(contributions));
+  for (const id of [commandIds[2], commandIds[1]]) {
+    assert.ok(contributions.some((item: unknown) =>
+      record(item) && item.command === id && typeof item.icon === "string"), `${id} has an icon`);
+  }
+});
+
 // Each action must pass saved sources as literal argv; settings apply only to supported modes.
 for (const profile of profiles) {
   for (const command of commandIds) {

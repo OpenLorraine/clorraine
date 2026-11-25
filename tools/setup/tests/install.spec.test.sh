@@ -404,7 +404,7 @@ interactive_toolchain_path_is_used() {
     fixture
     mkdir -p "$root/fake-toolchain"
     local status
-    status="$(run_interactive "$root" "\ny\ny\n$root/fake-toolchain\n" 0)"
+    status="$(run_interactive "$root" "\ny\ny\n$root/fake-toolchain\ny\nn\n" 0)"
     check_status 0 "$status" "interactive toolchain root"
     check_contains "$root/stdout" "Toolchain" "toolchain prompt"
     check_contains "$root/stdout" "configured toolchain" "interactive setup"
@@ -460,11 +460,13 @@ hello_examples_stay_available() {
         --archive "$archive" --checksums "$checksums")"
     check_status 0 "$status" "example install"
     check_exists "$prefix/share/clorraine/examples/hello.clo" "host hello source"
-    check_exists "$prefix/share/clorraine/examples/hello-guest.clo" "guest hello source"
+    check_exists "$prefix/share/clorraine/examples/hello-amiga.clo" "Amiga hello source"
     check_contains "$prefix/share/clorraine/examples/hello.clo" \
         "module demo.Hello" "host hello text"
-    check_contains "$prefix/share/clorraine/examples/hello-guest.clo" \
-        "timerWait" "guest hello wait"
+    check_contains "$prefix/share/clorraine/examples/hello-amiga.clo" \
+        "module demo.HelloIntro;" "Amiga hello is the intro"
+    check_not_contains "$prefix/share/clorraine/examples/hello-amiga.clo" \
+        "@HELLO_AMIGA_SOURCE@" "intro placeholder replaced"
     check_contains "$root/stdout" "First run complete" "summary"
     check_contains "$root/stdout" "hello.clo" "hello path"
 }
@@ -523,9 +525,13 @@ fs_uae_guest_hello_runs() {
     check_status 0 "$status" "FS-UAE guest hello"
     check_contains "$root/cli.log" "--emulator" "verified runner"
     check_contains "$root/cli.log" "--kickstart" "selected ROM"
-    check_contains "$root/cli.log" "hello-guest.clo" "guest source"
+    check_contains "$root/cli.log" "hello-amiga.clo" "guest source"
+    check_contains "$root/cli.log" "--release" "the intro runs optimized"
+    check_contains "$root/cli.log" "setup --toolchain $root/fake-toolchain --fs-uae $root/fake/fs-uae --kickstart $rom" \
+        "setup remembers the emulator paths"
     check_contains "$root/stdout" "Hello, Amiga, from Clorraine!" "guest hello output"
     check_contains "$root/stdout" "FS-UAE" "FS-UAE summary"
+    check_contains "$root/stdout" "ran on this PC and on the Amiga" "both hellos in the summary"
 }
 
 # Without FS-UAE the host hello still runs and the guest command is printed.
@@ -551,7 +557,7 @@ interactive_detects_fs_uae_and_vscode() {
     export FAKE_EDITOR_READY=1 FAKE_FS_UAE_READY=1
     export FAKE_EDITOR_LOG="$root/editor.log" FAKE_CLI_LOG="$root/cli.log"
     export FAKE_CURL_SOURCE_VSIX="$root/clorraine-1.2.0.vsix"
-    status="$(run_interactive "$root" "\ny\ny\n$root/fake-toolchain\n\n\n" 0)"
+    status="$(run_interactive "$root" "\ny\ny\n$root/fake-toolchain\n\n\ny\ny\ny\n" 0)"
     unset FAKE_EDITOR_READY FAKE_FS_UAE_READY FAKE_EDITOR_LOG FAKE_CLI_LOG
     unset FAKE_CURL_SOURCE_VSIX
     check_status 0 "$status" "interactive detection"
@@ -559,6 +565,67 @@ interactive_detects_fs_uae_and_vscode() {
     check_contains "$root/stdout" "Kickstart" "ROM prompt"
     check_contains "$root/cli.log" "--emulator" "interactive guest run"
     check_contains "$root/editor.log" "--install-extension" "interactive VSIX"
+    check_contains "$root/stdout" "Step 1 of 5" "numbered steps"
+    check_contains "$root/stdout" "Safe, modern programming for the Amiga" "banner"
+    check_contains "$root/stdout" "Run the hello program now?" "hello prompt"
+    check_contains "$root/stdout" "Create a starter Amiga project" "starter prompt"
+    check_contains "$root/cli.log" "new " "starter created"
+    check_contains "$root/editor.log" "open " "project opened in VS Code"
+    check_contains "$root/stdout" "What next" "next steps"
+}
+
+# Declining the hello prompt runs neither hello.
+interactive_hello_can_be_declined() {
+    fixture
+    local status
+    export FAKE_CLI_LOG="$root/cli.log"
+    status="$(run_interactive "$root" "\ny\ny\n$root/fake-toolchain\nn\nn\n" 0)"
+    unset FAKE_CLI_LOG
+    check_status 0 "$status" "declined hello"
+    check_contains "$root/stdout" "Run the hello program now?" "hello prompt"
+    check_not_contains "$root/cli.log" "run " "no hello run"
+    check_contains "$root/stdout" "Hello      not run" "summary says not run"
+}
+
+# --no-hello skips both hellos in a scripted install.
+no_hello_skips_the_runs() {
+    fixture
+    local rom status
+    rom="$(make_fake_rom "$root/kick31.rom")"
+    status="$(FAKE_FS_UAE_READY=1 FAKE_CLI_LOG="$root/cli.log" \
+        run_installer "$root" "$installer" --prefix "$prefix" --no-hello \
+        --toolchain "$root/fake-toolchain" --no-vscode \
+        --fs-uae "$root/fake/fs-uae" --kickstart "$rom" \
+        --archive "$archive" --checksums "$checksums")"
+    check_status 0 "$status" "no hello"
+    check_contains "$root/cli.log" "setup --toolchain" "toolchain still configured"
+    check_not_contains "$root/cli.log" "run " "no hello run"
+}
+
+# --starter creates the project in a scripted install; none is made otherwise.
+starter_is_created_only_on_request() {
+    fixture
+    local status
+    status="$(FAKE_CLI_LOG="$root/cli.log" run_installer "$root" "$installer" \
+        --prefix "$prefix" --toolchain "$root/fake-toolchain" --no-vscode \
+        --no-emulator --archive "$archive" --checksums "$checksums")"
+    check_status 0 "$status" "default scripted install"
+    check_not_contains "$root/cli.log" "new " "no starter by default"
+
+    fixture
+    status="$(FAKE_CLI_LOG="$root/cli.log" run_installer "$root" "$installer" \
+        --prefix "$prefix" --toolchain "$root/fake-toolchain" --no-vscode \
+        --no-emulator --starter "$root/my-app" \
+        --archive "$archive" --checksums "$checksums")"
+    check_status 0 "$status" "starter install"
+    check_contains "$root/cli.log" "new $root/my-app" "starter created"
+    check_contains "$root/stdout" "Project" "summary names the project"
+    check_contains "$root/stdout" "Run in FS-UAE" "next steps name the editor action"
+
+    local status2
+    status2="$(run_installer "$root" "$installer" --prefix "$prefix" --no-toolchain \
+        --starter "$root/x" --archive "$archive" --checksums "$checksums")"
+    check_status 2 "$status2" "starter needs the toolchain"
 }
 
 toolchain_root_is_configured_and_hello_runs
@@ -571,4 +638,47 @@ vscode_without_an_editor_is_not_fatal
 fs_uae_guest_hello_runs
 guest_hello_falls_back_without_fs_uae
 interactive_detects_fs_uae_and_vscode
+# A rejected ROM is reported, setup is retried without it, and the install
+# completes; a broken toolchain is not retried.
+setup_retries_only_for_rejected_emulator_paths() {
+    fixture
+    local rom status
+    rom="$(make_fake_rom "$root/kick31.rom")"
+    status="$(FAKE_FS_UAE_READY=1 FAKE_SETUP_REJECT_EMULATOR=1 FAKE_CLI_LOG="$root/cli.log" \
+        run_installer "$root" "$installer" --prefix "$prefix" \
+        --toolchain "$root/fake-toolchain" --no-vscode \
+        --fs-uae "$root/fake/fs-uae" --kickstart "$rom" \
+        --archive "$archive" --checksums "$checksums")"
+    check_status 0 "$status" "rejected emulator paths"
+    check_contains "$root/stdout" "not accepted" "rejection reported"
+    if [ "$(grep -c '^setup ' "$root/cli.log")" = 2 ]; then pass; else fail "expected two setup runs"; fi
+    check_not_contains "$root/cli.log" "--emulator" "no Amiga run without a ROM"
+    check_contains "$root/stdout" "--kickstart <ks31-a1200.rom>" "replay command names the ROM"
+
+    fixture
+    status="$(FAKE_FS_UAE_READY=1 FAKE_SETUP_FAIL=1 FAKE_CLI_LOG="$root/cli.log" \
+        run_installer "$root" "$installer" --prefix "$prefix" \
+        --toolchain "$root/fake-toolchain" --no-vscode \
+        --fs-uae "$root/fake/fs-uae" --kickstart "$rom" \
+        --archive "$archive" --checksums "$checksums")"
+    check_status 1 "$status" "broken toolchain"
+    if [ "$(grep -c '^setup ' "$root/cli.log")" = 1 ]; then pass; else fail "a toolchain failure is not retried"; fi
+}
+
+# An explicit --starter is honoured even when no toolchain is found.
+starter_without_a_toolchain_is_still_created() {
+    fixture
+    local status
+    status="$(FAKE_CLI_LOG="$root/cli.log" run_installer "$root" "$installer" \
+        --prefix "$prefix" --no-vscode --no-emulator --starter "$root/app" \
+        --archive "$archive" --checksums "$checksums")"
+    check_status 0 "$status" "starter without toolchain"
+    check_contains "$root/cli.log" "new $root/app" "starter created"
+}
+
+interactive_hello_can_be_declined
+no_hello_skips_the_runs
+starter_is_created_only_on_request
+setup_retries_only_for_rejected_emulator_paths
+starter_without_a_toolchain_is_still_created
 finish

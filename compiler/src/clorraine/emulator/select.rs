@@ -13,6 +13,7 @@ use std::time::Duration;
 
 use super::super::display;
 use super::super::environment::{self, EnvironmentError};
+use super::super::setup;
 use super::absolute;
 use super::Rom;
 
@@ -34,11 +35,16 @@ const ROM_KS31_A1200: u64 = 524_299;
 /// A 256 KB Kickstart 1.3 image.
 const ROM_256K: u64 = 262_144;
 
-/// Resolves the FS-UAE executable from the flag, environment, or `PATH`.
+/// Resolves the FS-UAE executable from the flag, environment, the path
+/// remembered by `setup`, or `PATH`.
 pub(super) fn resolve_executable(explicit: Option<&str>, path: &OsStr) -> Result<PathBuf, EnvironmentError> {
-    let selected = explicit
+    let selected = match explicit
         .map(OsString::from)
-        .or_else(|| std::env::var_os("CLORRAINE_FS_UAE"));
+        .or_else(|| std::env::var_os("CLORRAINE_FS_UAE"))
+    {
+        Some(selected) => Some(selected),
+        None => remembered(|config| config.fs_uae)?,
+    };
     let executable = match selected {
         Some(selected) => absolute(Path::new(&selected))
             .map_err(|error| input_error(2, "--fs-uae", &error.to_string()))?,
@@ -65,6 +71,18 @@ pub(super) fn resolve_executable(explicit: Option<&str>, path: &OsStr) -> Result
         ));
     }
     Ok(executable)
+}
+
+/// Reads one emulator path remembered by `setup`.
+///
+/// A config that cannot be read stops the run with its own message rather
+/// than silently falling through to a lower-priority source.
+fn remembered(
+    pick: impl FnOnce(setup::Config) -> Option<PathBuf>,
+) -> Result<Option<OsString>, EnvironmentError> {
+    let config = setup::stored_config()
+        .map_err(|failure| EnvironmentError { code: failure.code, message: failure.message })?;
+    Ok(pick(config).map(PathBuf::into_os_string))
 }
 
 /// Runs `fs-uae --version` once and requires 3.2.0 or newer.
@@ -133,14 +151,19 @@ fn leading_number(text: &str) -> Option<u64> {
 
 /// Resolves and size-checks the Kickstart image.
 pub(super) fn resolve_rom(explicit: Option<&str>) -> Result<Rom, EnvironmentError> {
-    let selected = explicit
+    let selected = match explicit
         .map(OsString::from)
         .or_else(|| std::env::var_os("CLORRAINE_KICKSTART"))
+    {
+        Some(selected) => Some(selected),
+        None => remembered(|config| config.kickstart)?,
+    };
+    let selected = selected
         .ok_or_else(|| {
             input_error(
                 2,
                 "--kickstart",
-                "a Kickstart 3.1 A1200 ROM is required; pass --kickstart PATH or set CLORRAINE_KICKSTART",
+                "a Kickstart 3.1 A1200 ROM is required; pass --kickstart PATH, set CLORRAINE_KICKSTART, or remember it with clorraine setup --kickstart PATH",
             )
         })?;
     let path = absolute(Path::new(&selected))
@@ -284,6 +307,36 @@ fn open_media(path: &Path) -> io::Result<File> {
 fn input_error(code: i32, flag: &str, detail: &str) -> EnvironmentError {
     EnvironmentError {
         code,
-        message: display::sanitize(&format!("clorraine: {flag}: {detail}\n")).into_owned(),
+        message: format!("{}\n", display::sanitize(&format!("clorraine: {flag}: {detail}"))),
     }
+}
+
+/// True when the run will use the path `setup` remembered for `key`: no flag
+/// and no environment variable names one.
+pub(super) fn uses_remembered(explicit: Option<&str>, variable: &str, key: &str) -> bool {
+    if explicit.is_some() || std::env::var_os(variable).is_some() {
+        return false;
+    }
+    match setup::stored_config() {
+        Ok(config) => match key {
+            "fs-uae" => config.fs_uae.is_some(),
+            _ => config.kickstart.is_some(),
+        },
+        Err(_) => false,
+    }
+}
+
+/// Adds where a remembered path came from and how to change it.
+pub(super) fn remembered_hint(mut error: EnvironmentError, key: &str) -> EnvironmentError {
+    let config = setup::config_file()
+        .map(|path| path.display().to_string())
+        .unwrap_or_else(|_| "the clorraine config".to_owned());
+    error.message.push_str(&format!(
+        "{}\n",
+        display::sanitize(&format!(
+            "  the {key} path was remembered in '{config}'; change it with: \
+             clorraine setup --toolchain PATH --{key} PATH"
+        ))
+    ));
+    error
 }

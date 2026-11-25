@@ -18,6 +18,7 @@ mod docgen;
 mod display;
 mod emulator;
 mod environment;
+mod new;
 mod run;
 mod setup;
 mod toolchain;
@@ -93,6 +94,15 @@ fn run_with_marker(args: Vec<String>, marker: &str) -> i32 {
 /// The marker path and the `PATH` value are parameters so the two environment
 /// gates can be exercised with synthetic inputs.
 fn invoke(options: Options, marker: &str, search_path: &OsStr) -> i32 {
+    if options.command == Command::New {
+        return match new::run(&options, search_path) {
+            Ok(()) => 0,
+            Err(error) => {
+                report_error(options.diagnostics, &error.message);
+                error.code
+            }
+        };
+    }
     if options.command == Command::Setup {
         return match setup::run(&options) {
             Ok(()) => 0,
@@ -135,7 +145,9 @@ fn invoke(options: Options, marker: &str, search_path: &OsStr) -> i32 {
         Command::Emit => emit(&options),
         Command::Build => build_command(&options, native.as_ref()),
         Command::Run => run_command(options, native.as_ref(), guest),
-        Command::Setup => unreachable!("setup is handled before resolution"),
+        Command::Setup | Command::New => {
+            unreachable!("setup and new are handled before resolution")
+        }
     }
 }
 
@@ -181,7 +193,7 @@ fn environment_exit(
 fn required_tools(options: &Options) -> Vec<&'static str> {
     let mut tools = Vec::new();
     match options.command {
-        Command::Emit | Command::Setup => {}
+        Command::Emit | Command::Setup | Command::New => {}
         Command::Build => tools.push(toolchain::tool(options.profile).program),
         Command::Run => {
             tools.push(toolchain::tool(options.profile).program);

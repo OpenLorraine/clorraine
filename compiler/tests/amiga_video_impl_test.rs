@@ -280,3 +280,25 @@ func main(): i32 {
         "the native-video module must not inject the Intuition screen handle"
     );
 }
+
+/// The first flip turns bitplane DMA on after loading the view. A program
+/// started from a bare Kickstart 2.0+ startup-sequence never opens an
+/// Intuition screen, so without this the display shows only colour 0.
+#[test]
+fn the_first_flip_enables_bitplane_dma() {
+    let c = emit_hosted_amiga("dma", ROUTING_PROGRAM);
+    let flip = c
+        .find("void cl_video_display_flip(")
+        .expect("the display flip is in the shim");
+    let body = &c[flip..];
+    let first_load = body.find("LoadView(&display->views[0]);").expect("the first view is loaded");
+    let wait = first_load + body[first_load..].find("WaitTOF();").expect("the flip waits for the view");
+    let enable = body
+        .find("DMAF_SETCLR | DMAF_RASTER")
+        .expect("the first flip enables raster DMA");
+    let built = body.find("display->built = 1;\n        return;").expect("the first build returns");
+    assert!(
+        first_load < wait && wait < enable && enable < built,
+        "raster DMA must be enabled once the first view is active, before the build completes"
+    );
+}

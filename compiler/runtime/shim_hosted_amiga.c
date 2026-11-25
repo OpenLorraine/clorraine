@@ -40,6 +40,7 @@
 #include <graphics/text.h>
 #include <graphics/view.h>
 #include <hardware/custom.h>
+#include <hardware/dmabits.h>
 #include <devices/audio.h>
 #include <devices/timer.h>
 #include <proto/diskfont.h>
@@ -4575,6 +4576,15 @@ void cl_video_display_flip(void *handle)
         }
         LoadView(&display->views[0]);
         WaitTOF();
+        /*
+         * A program started from a bare startup-sequence on Kickstart 3.1
+         * (observed) runs before Intuition has opened a screen, and bitplane
+         * DMA is still off, so the view shows only colour 0. Turn raster DMA
+         * on, as Intuition's ON_DISPLAY does, once the new view is active.
+         * Where the system already enabled it, the write changes nothing.
+         */
+        ((volatile struct Custom *)CL_VIDEO_CUSTOM_BASE)->dmacon =
+            (UWORD)(DMAF_SETCLR | DMAF_RASTER);
         display->front = 0;
         display->built = 1;
         return;

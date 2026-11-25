@@ -1,7 +1,7 @@
 # Task T-01: Publish the v1.2.0 developer preview
 
 > **Type**: Task (lightweight) · **CodeOps Artifact Schema**: 1
-> **Progress**: 18/18 tasks (100%)
+> **Progress**: 26/27 tasks (96%)
 > **Reasoning**: high — public release, interactive installer, immutable tag,
 > asset verification, rollback
 > **Decision**: Public GitHub **prerelease**, tag `v1.2.0`, title
@@ -208,6 +208,74 @@ release; deleting `v1.1.2`; public announcements.
   FS-UAE with the licensed ROM; the interactive path auto-detected FS-UAE and
   the ROM and ran the five-second guest hello; the VSIX installed into a
   temporary extensions directory and listed `openlorraine.clorraine`.
+
+## Revision 4 — an exciting first run
+
+User verdict on Revision 3: functionally passed, but the experience is flat.
+Rulings (2026-11-25): demo-scene intro for the Amiga hello; a hackable visual
+starter app; a permanent `clorraine new` command; a Run-in-FS-UAE button in the
+VS Code editor title. Probe finding: every `std.amiga.video` display is black on
+the A1200/KS3.1 recipe because a silent startup leaves bitplane DMA off; the
+default `openDisplay` offset also pushes the picture right on that machine.
+
+- [x] T-01.19 **Fix the KS2+ custom display.** Enable raster DMA after the first
+  `LoadView`; prove it on the A1200 runner and keep the A500 gates green. ✅ (completed: 2026-11-25 15:01)
+- [x] T-01.20 **Demo-scene hello intro.** `examples/amiga/hello-intro.clo`:
+  copper sky and chrome logo gradients, moving raster bars, a static star field, a
+  waving greeting; exits on its own (or on a mouse click) and prints the exact
+  hello line. User visual approval before the next demo. ✅ (completed: 2026-11-25 15:01)
+- [x] T-01.21 **Hackable starter app.** A short, commented visual program that
+  quits on a mouse click; user visual approval. ✅ (completed: 2026-11-25 15:01)
+- [x] T-01.22 **`clorraine new` and remembered emulator settings.** `new [DIR]`
+  writes the starter, `.vscode/` tasks/settings/extension recommendation, a
+  README, and `.gitignore`; refuses a non-empty directory. `setup` also stores
+  `--kickstart` and `--fs-uae`; `run --emulator` falls back to them. ✅ (completed: 2026-11-25 15:01)
+- [x] T-01.23 **VS Code run button.** Editor-title Run in FS-UAE / Run actions
+  for `.clo` files; extension tests updated. ✅ (completed: 2026-11-25 15:01)
+- [x] T-01.24 **Installer experience.** Branded, step-numbered output; asks
+  before running the hello; runs the intro in FS-UAE when available; offers a
+  starter in the current folder and opens it in VS Code; closes with clear next
+  steps. Tests first; non-interactive flags preserved. ✅ (completed: 2026-11-25 15:01)
+- [x] T-01.25 **Independent review.** Correctness reviewer and
+  `amiga-platform-reviewer` (no ownership or drop change, so no memory-safety
+  audit) on the shim, demos, CLI, extension, and installer. ✅ (completed: 2026-11-25 15:01)
+- [x] T-01.26 **Rebuild and re-accept.** `make check`, the A500 video gates,
+  `make dist`, `make acceptance`, `make acceptance-check`, `make vscode-check`. ✅ (completed: 2026-11-25 15:01)
+- [ ] T-01.27 **Recreate the prerelease** after the user's approval of the
+  visuals, then verify the public one-line install end to end.
+
+### Revision 4 evidence
+
+- **Display fix:** a bare KS3.1 startup left bitplane DMA off; the first flip
+  now enables raster DMA after `WaitTOF` (Intuition's `ON_DISPLAY`). Probed on
+  the A1200 runner; `amiga_video_impl_test::the_first_flip_enables_bitplane_dma`
+  fails without the fix. A500 gates boing, sprites, paddle, text, and assets
+  pass unchanged. Follow-up: no gate yet boots a video program on KS2+ from a
+  bare startup (AP-001); the intro run in the installer is the current proof.
+- **Intro:** `examples/amiga/hello-intro.clo`, 49 fps on a stock A1200 (release),
+  39 fps debug; dirty-region updates after a 6 fps first draft. Stars are a
+  static field (per-frame plots were the CPU bottleneck without fast RAM).
+  User approved the look.
+- **Starter:** `compiler/templates/starter/main.clo`, 50 fps debug; per-buffer
+  erase before draw (user-reported H trail fixed, verified at 10x speed);
+  click = button held two frames then released (a stray reading quit early on
+  the user's desktop). User approved.
+- **CLI:** `clorraine new [DIR]`; `setup` remembers `--kickstart`/`--fs-uae`;
+  `run --emulator` resolves flag, environment, remembered, PATH.
+  `first_run_spec_test` 12 cases.
+- **Extension:** Run in FS-UAE and Run editor-title buttons; `make vscode-check`.
+- **Installer:** banner, five steps, hello prompt, intro in FS-UAE, starter in
+  the current folder, open in VS Code, summary with next commands; 181 spec,
+  28 impl, 46 producer checks.
+- **Reviews:** amiga-platform-reviewer (AP-001..AP-006) and correctness
+  (RV-001..RV-008): no critical/major; all minors fixed except AP-001
+  (follow-up gate) and AP-005 (nit, left).
+- **Gates:** `make check`, `make dist`, `make dist-verify`, `make acceptance`
+  (`build/acceptance/20261125T135937Z/evidence.json`), `make acceptance-check`.
+  Final interactive installer run: toolchain, Kickstart and FS-UAE remembered,
+  both hellos, starter created; the starter runs from its folder with no flags.
+- **Candidate:** archive 6,556,265 `af33058f…3794`; VSIX 26,530
+  `3901f7d0…ba68`; installer 83,216 `d64f7de9…c3ca`.
 
 ## Verify
 

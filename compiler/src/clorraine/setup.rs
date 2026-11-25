@@ -5,6 +5,10 @@
 //! that both libnix runtimes and the NDK headers can link a trivial program.
 //! Only after those checks pass does it replace the stored toolchain path.
 //!
+//! `setup` can also remember the FS-UAE executable and the Kickstart image for
+//! emulator runs. Each is validated before it is stored, and a later setup
+//! that does not name them keeps the remembered values.
+//!
 //! Build and run commands use a lighter selection check: the root, compiler,
 //! and `m68k-amigaos` tree must exist, but the expensive probes run only during
 //! setup. A broken library then fails at the real link with the compiler's own
@@ -21,6 +25,7 @@ use std::time::{Duration, Instant};
 
 use super::cli::Options;
 use super::display;
+use super::emulator;
 
 /// The only toolchain version this release validates.
 const SUPPORTED_VERSION: &str = "16.2-rc24";
@@ -56,21 +61,50 @@ pub enum Validation {
     Selection,
 }
 
-/// Runs `setup --toolchain PATH`.
+/// The settings the CLI remembers between commands.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct Config {
+    /// The selected toolchain root.
+    pub toolchain: Option<PathBuf>,
+    /// The Kickstart image for emulator runs.
+    pub kickstart: Option<PathBuf>,
+    /// The FS-UAE executable for emulator runs.
+    pub fs_uae: Option<PathBuf>,
+}
+
+/// Runs `setup --toolchain PATH [--kickstart PATH] [--fs-uae PATH]`.
 ///
-/// The stored config is replaced only after the full validation succeeds.
+/// The stored config is replaced only after every named input validates. An
+/// emulator path that is not named keeps its remembered value.
 pub fn run(options: &Options) -> Result<(), SetupError> {
     let selected = options
         .toolchain
         .as_deref()
         .ok_or_else(|| error(2, "--toolchain is required with 'setup'"))?;
     let toolchain = validate(Path::new(selected), Validation::Full)?;
-    write_config(&toolchain.root)?;
+    let (fs_uae, kickstart) =
+        emulator::validate_media(options.fs_uae.as_deref(), options.kickstart.as_deref())
+            .map_err(|failure| SetupError { code: failure.code, message: failure.message })?;
+    // An unreadable or malformed old config must not block the repair that
+    // setup exists for; it is replaced as a whole below.
+    let stored = stored_config().unwrap_or_default();
+    let config = Config {
+        toolchain: Some(toolchain.root.clone()),
+        kickstart: kickstart.clone().or(stored.kickstart),
+        fs_uae: fs_uae.clone().or(stored.fs_uae),
+    };
+    write_config(&config)?;
     println!(
         "configured toolchain {}",
         display::sanitize(&toolchain.root.display().to_string())
     );
     println!("{}", display::sanitize(&toolchain.version));
+    if let Some(path) = &kickstart {
+        println!("configured Kickstart {}", display::sanitize(&path.display().to_string()));
+    }
+    if let Some(path) = &fs_uae {
+        println!("configured FS-UAE {}", display::sanitize(&path.display().to_string()));
+    }
     Ok(())
 }
 
@@ -167,10 +201,15 @@ pub fn validate(selected: &Path, mode: Validation) -> Result<Toolchain, SetupErr
 
 /// Reads the stored toolchain, if any.
 pub fn stored_toolchain() -> Result<Option<PathBuf>, SetupError> {
+    Ok(stored_config()?.toolchain)
+}
+
+/// Reads every remembered setting; a missing config is an empty one.
+pub fn stored_config() -> Result<Config, SetupError> {
     let path = config_file()?;
     match fs::read_to_string(&path) {
         Ok(text) => parse_config(&text, &path),
-        Err(cause) if cause.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(cause) if cause.kind() == io::ErrorKind::NotFound => Ok(Config::default()),
         Err(cause) => Err(error(
             2,
             format!(
@@ -204,37 +243,60 @@ fn config_dir(xdg: Option<&OsStr>, home: Option<&OsStr>) -> Result<PathBuf, Setu
     Ok(home.join(".config/clorraine"))
 }
 
-/// Parses the one supported key while preserving spaces in the value.
-fn parse_config(text: &str, path: &Path) -> Result<Option<PathBuf>, SetupError> {
-    let mut selected = None;
+/// Parses the supported keys while preserving spaces in the values. Unknown
+/// keys are ignored so an older driver can read a newer config.
+fn parse_config(text: &str, path: &Path) -> Result<Config, SetupError> {
+    let mut config = Config::default();
     for line in text.lines() {
         let line = line.strip_suffix('\r').unwrap_or(line);
         if line.is_empty() || line.starts_with('#') {
             continue;
         }
-        if let Some(value) = line.strip_prefix("toolchain=") {
-            if value.is_empty() {
-                return Err(error(
-                    2,
-                    format!(
-                        "clorraine: config '{}' has an empty toolchain value",
-                        display::sanitize(&path.display().to_string())
-                    ),
-                ));
-            }
-            selected = Some(PathBuf::from(value));
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
+        let slot = match key {
+            "toolchain" => &mut config.toolchain,
+            "kickstart" => &mut config.kickstart,
+            "fs-uae" => &mut config.fs_uae,
+            _ => continue,
+        };
+        if value.is_empty() {
+            return Err(error(
+                2,
+                format!(
+                    "clorraine: config '{}' has an empty {key} value",
+                    display::sanitize(&path.display().to_string())
+                ),
+            ));
+        }
+        *slot = Some(PathBuf::from(value));
+    }
+    Ok(config)
+}
+
+/// Renders the config file text, one `key=value` line per remembered setting.
+fn render_config(config: &Config) -> String {
+    let mut text = String::new();
+    for (key, value) in [
+        ("toolchain", &config.toolchain),
+        ("kickstart", &config.kickstart),
+        ("fs-uae", &config.fs_uae),
+    ] {
+        if let Some(value) = value {
+            text.push_str(&format!("{key}={}\n", value.display()));
         }
     }
-    Ok(selected)
+    text
 }
 
 /// Writes the config atomically in the same directory.
-fn write_config(toolchain: &Path) -> Result<(), SetupError> {
-    write_config_at(&config_file()?, toolchain)
+fn write_config(config: &Config) -> Result<(), SetupError> {
+    write_config_at(&config_file()?, config)
 }
 
 /// Writes one config file atomically; separated for a filesystem-level test.
-fn write_config_at(path: &Path, toolchain: &Path) -> Result<(), SetupError> {
+fn write_config_at(path: &Path, config: &Config) -> Result<(), SetupError> {
     let parent = path
         .parent()
         .ok_or_else(|| error(2, "clorraine: config path has no parent directory"))?;
@@ -254,7 +316,7 @@ fn write_config_at(path: &Path, toolchain: &Path) -> Result<(), SetupError> {
     }
     let temporary = parent.join(format!("config.tmp.{}", std::process::id()));
     let _ = fs::remove_file(&temporary);
-    let text = format!("toolchain={}\n", toolchain.display());
+    let text = render_config(config);
     let result = (|| -> io::Result<()> {
         let mut builder = OpenOptions::new();
         builder.write(true).create_new(true);
@@ -497,6 +559,24 @@ fn error(code: i32, message: impl Into<String>) -> SetupError {
 mod tests {
     use super::*;
 
+    /// A config that selects only `toolchain`.
+    fn selection(toolchain: &str) -> Config {
+        Config { toolchain: Some(PathBuf::from(toolchain)), ..Config::default() }
+    }
+
+    #[test]
+    fn the_emulator_paths_round_trip_and_unknown_keys_are_ignored() {
+        let config = Config {
+            toolchain: Some(PathBuf::from("/t")),
+            kickstart: Some(PathBuf::from("/roms/kick 31.rom")),
+            fs_uae: Some(PathBuf::from("/usr/bin/fs-uae")),
+        };
+        let text = render_config(&config);
+        assert_eq!(text, "toolchain=/t\nkickstart=/roms/kick 31.rom\nfs-uae=/usr/bin/fs-uae\n");
+        let parsed = parse_config(&format!("{text}future=1\n"), Path::new("/config")).expect("parse");
+        assert_eq!(parsed, config);
+    }
+
     #[test]
     fn config_dir_prefers_an_absolute_xdg_home() {
         let path = config_dir(Some(OsStr::new("/xdg")), Some(OsStr::new("/home/user")))
@@ -516,23 +596,25 @@ mod tests {
         let path = Path::new("/config");
         let selected = parse_config("toolchain=/a path/with=equals\n", path)
             .expect("parse")
+            .toolchain
             .expect("selection");
         assert_eq!(selected, Path::new("/a path/with=equals"));
     }
 
     #[test]
     fn config_parser_allows_an_empty_file_but_rejects_an_empty_value() {
-        assert!(parse_config("# comment\n", Path::new("/config")).expect("empty").is_none());
+        assert_eq!(parse_config("# comment\n", Path::new("/config")).expect("empty"), Config::default());
         assert!(parse_config("toolchain=\n", Path::new("/config")).is_err());
+        assert!(parse_config("kickstart=\n", Path::new("/config")).is_err());
     }
 
     #[test]
     fn config_writer_replaces_the_selection_atomically() {
         let dir = std::env::temp_dir().join(format!("clorraine-config-{}", std::process::id()));
         let path = dir.join("config");
-        write_config_at(&path, Path::new("/a path/one")).expect("first write");
+        write_config_at(&path, &selection("/a path/one")).expect("first write");
         assert_eq!(fs::read_to_string(&path).unwrap(), "toolchain=/a path/one\n");
-        write_config_at(&path, Path::new("/a path/two")).expect("second write");
+        write_config_at(&path, &selection("/a path/two")).expect("second write");
         assert_eq!(fs::read_to_string(&path).unwrap(), "toolchain=/a path/two\n");
         let _ = fs::remove_dir_all(&dir);
     }
@@ -552,7 +634,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("clorraine-config-fail-{}", std::process::id()));
         let target = dir.join("config");
         fs::create_dir_all(&target).expect("create target directory");
-        assert!(write_config_at(&target, Path::new("/a/toolchain")).is_err());
+        assert!(write_config_at(&target, &selection("/a/toolchain")).is_err());
         let names: Vec<String> = fs::read_dir(&dir)
             .expect("read temp dir")
             .map(|entry| entry.expect("entry").file_name().to_string_lossy().into_owned())

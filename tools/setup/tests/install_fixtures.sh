@@ -136,8 +136,22 @@ if [ -n "\${FAKE_CLI_LOG:-}" ]; then
 fi
 case "\${1:-}" in
     --version) printf '%s\\n' "clorraine $version" ;;
-    setup) printf 'configured toolchain\\n' ;;
+    setup)
+        if [ "\${FAKE_SETUP_FAIL:-0}" = 1 ]; then
+            printf 'clorraine: --toolchain: not a toolchain\\n' >&2
+            exit 2
+        fi
+        case " \$* " in
+            *' --kickstart '*|*' --fs-uae '*)
+                if [ "\${FAKE_SETUP_REJECT_EMULATOR:-0}" = 1 ]; then
+                    printf 'clorraine: --kickstart: a 256 KB Kickstart 1.3 ROM cannot boot the A1200 recipe\\n' >&2
+                    exit 2
+                fi
+                ;;
+        esac
+        printf 'configured toolchain\\n' ;;
     run) printf 'Hello, Amiga, from Clorraine!\\n' ;;
+    new) [ "\${FAKE_NEW_FAIL:-0}" = 1 ] && exit 1; printf 'Created your Amiga project\\n' ;;
     *) exit 0 ;;
 esac
 EOF
@@ -183,10 +197,11 @@ assemble_installer() {
     vsix_bytes="$(wc -c <"$vsix")"
     vsix_digest="$(sha256sum "$vsix" | awk '{print $1}')"
     python3 - "$template" "$output" "$version" "$base" "https://example.invalid/$base" "$bytes" "$digest" \
-        "$vsix_base" "https://example.invalid/$vsix_base" "$vsix_bytes" "$vsix_digest" <<'PY'
+        "$vsix_base" "https://example.invalid/$vsix_base" "$vsix_bytes" "$vsix_digest" \
+        "$repo/examples/amiga/hello-intro.clo" <<'PY'
 import sys
 (template, output, version, name, url, size, digest,
- vsix_name, vsix_url, vsix_size, vsix_digest) = sys.argv[1:]
+ vsix_name, vsix_url, vsix_size, vsix_digest, hello_amiga) = sys.argv[1:]
 text = open(template, encoding="utf-8").read()
 for token, value in {
     "@VERSION@": version,
@@ -200,6 +215,8 @@ for token, value in {
     "@VSIX_SHA256@": vsix_digest,
 }.items():
     text = text.replace(token, value)
+intro = open(hello_amiga, encoding="utf-8").read().rstrip("\n")
+text = text.replace("@HELLO_AMIGA_SOURCE@", intro)
 open(output, "w", encoding="utf-8").write(text)
 PY
     chmod +x "$output"
@@ -269,6 +286,7 @@ case "${1:-}" in
         [ -n "${FAKE_EDITOR_LOG:-}" ] && printf '%s\n' "$*" >>"$FAKE_EDITOR_LOG"
         [ "${FAKE_EDITOR_FAIL:-0}" = 1 ] && exit 1
         ;;
+    *) [ -n "${FAKE_EDITOR_LOG:-}" ] && printf 'open %s\n' "$*" >>"$FAKE_EDITOR_LOG" ;;
 esac
 exit 0
 EOF

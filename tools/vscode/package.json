@@ -18,9 +18,15 @@
   "contributes": {
     "commands": [
       { "command": "clorraine.build", "title": "Clorraine: Build" },
-      { "command": "clorraine.run", "title": "Clorraine: Run" },
-      { "command": "clorraine.runInFsUae", "title": "Clorraine: Run in FS-UAE" }
+      { "command": "clorraine.run", "title": "Clorraine: Run", "icon": "$(play-circle)" },
+      { "command": "clorraine.runInFsUae", "title": "Clorraine: Run in FS-UAE", "icon": "$(play)" }
     ],
+    "menus": {
+      "editor/title/run": [
+        { "command": "clorraine.runInFsUae", "when": "resourceLangId == clorraine", "group": "navigation@1" },
+        { "command": "clorraine.run", "when": "resourceLangId == clorraine", "group": "navigation@2" }
+      ]
+    },
     "languages": [
       {
         "id": "clorraine",

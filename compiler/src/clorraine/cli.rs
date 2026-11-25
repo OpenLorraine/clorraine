@@ -23,8 +23,10 @@ pub enum Command {
     Build,
     /// Produce the C translation unit only.
     Emit,
-    /// Validate and persist an Amiga toolchain.
+    /// Validate and persist an Amiga toolchain and optional emulator paths.
     Setup,
+    /// Create a starter Amiga project.
+    New,
 }
 
 /// The documentation-generator options.
@@ -98,7 +100,8 @@ Commands:
   run     Build and run a program
   build   Build a program without running it
   emit    Print the generated C (or write it with -o)
-  setup   Validate and store an Amiga toolchain
+  setup   Validate and store an Amiga toolchain (and the FS-UAE and Kickstart paths)
+  new     Create a starter Amiga project with VS Code tasks (default folder: amiga-starter)
 
 Options:
   -p, --profile <host|hosted-amiga|hosted-amiga-13|freestanding>   Target profile (default: host)
@@ -107,8 +110,8 @@ Options:
       --emit-c                        Print the generated C after building
       --emulator                      Amiga run: verified FS-UAE guest run (marked SDK container: host handoff)
       --toolchain PATH                Toolchain root (setup/build/run; or CLORRAINE_TOOLCHAIN)
-      --fs-uae PATH                   FS-UAE executable for a native emulator run (or CLORRAINE_FS_UAE, then PATH)
-      --kickstart PATH                Kickstart 3.1 A1200 ROM for a native emulator run (or CLORRAINE_KICKSTART)
+      --fs-uae PATH                   FS-UAE executable for an emulator run or setup (or CLORRAINE_FS_UAE, setup, then PATH)
+      --kickstart PATH                Kickstart 3.1 A1200 ROM for an emulator run or setup (or CLORRAINE_KICKSTART, then setup)
       --capture                       Write program stdout to out.txt; print its path (verified guest: success only)
   -o FILE                             emit only: write C to FILE (default: stdout)
       --doc [-o DIR] FILE...          Generate Markdown from /// comments (default: build/doc)
@@ -176,6 +179,7 @@ pub fn parse(args: &[String]) -> Result<Action, String> {
         "build" => Command::Build,
         "emit" => Command::Emit,
         "setup" => Command::Setup,
+        "new" => Command::New,
         other if other.starts_with('-') => return Err(format!("unknown option '{other}'")),
         other => return Err(format!("unknown command '{other}'")),
     };
@@ -363,6 +367,25 @@ fn select_mode(current: &mut BuildMode, requested: BuildMode) -> Result<(), Stri
 
 /// Applies the rules that only hold once the command is known.
 fn validate(options: &Options) -> Result<(), String> {
+    if options.command == Command::New {
+        if options.files.len() > 1 {
+            return Err("'new' accepts at most one folder name".to_owned());
+        }
+        if options.profile_explicit
+            || options.mode != BuildMode::Debug
+            || options.emit_c
+            || options.emulator
+            || options.capture
+            || options.toolchain.is_some()
+            || options.fs_uae.is_some()
+            || options.kickstart.is_some()
+            || options.output.is_some()
+            || options.diagnostics == crate::diag::DiagnosticFormat::Json
+        {
+            return Err("'new' accepts only a folder name".to_owned());
+        }
+        return Ok(());
+    }
     if options.command == Command::Setup {
         if options.toolchain.is_none() {
             return Err("--toolchain is required with 'setup'".to_owned());
@@ -382,7 +405,7 @@ fn validate(options: &Options) -> Result<(), String> {
         if options.output.is_some() {
             return Err("-o is only valid with 'emit'".to_owned());
         }
-        if options.emulator || options.capture || options.fs_uae.is_some() || options.kickstart.is_some() || options.emit_c {
+        if options.emulator || options.capture || options.emit_c {
             return Err("build/run flags are not valid with 'setup'".to_owned());
         }
         return Ok(());
@@ -516,13 +539,37 @@ mod tests {
     }
 
     #[test]
+    fn setup_also_reads_the_emulator_paths() {
+        let options = invoke(&[
+            "setup", "--toolchain", "/opt/amiga", "--fs-uae", "/bin/fs-uae", "--kickstart", "/roms/k.rom",
+        ]);
+        assert_eq!(options.fs_uae.as_deref(), Some("/bin/fs-uae"));
+        assert_eq!(options.kickstart.as_deref(), Some("/roms/k.rom"));
+        assert!(parse(&args(&["setup", "--kickstart", "/roms/k.rom"])).is_err(), "setup still needs a toolchain");
+    }
+
+    #[test]
+    fn new_takes_an_optional_folder_and_nothing_else() {
+        assert_eq!(invoke(&["new"]).command, Command::New);
+        assert_eq!(invoke(&["new", "game"]).files, ["game"]);
+        for line in [
+            vec!["new", "a", "b"],
+            vec!["new", "-p", "hosted-amiga", "a"],
+            vec!["new", "--release"],
+            vec!["new", "--toolchain", "/opt/amiga"],
+            vec!["new", "--emulator"],
+        ] {
+            assert!(parse(&args(&line)).is_err(), "{line:?} must be rejected");
+        }
+    }
+
+    #[test]
     fn setup_rejects_missing_or_extra_arguments() {
         for line in [
             vec!["setup"],
             vec!["setup", "--toolchain", "/opt/amiga", "a.clo"],
             vec!["setup", "--toolchain", "/opt/amiga", "--release"],
             vec!["setup", "--toolchain", "/opt/amiga", "--emulator"],
-            vec!["setup", "--toolchain", "/opt/amiga", "--fs-uae", "/bin/fs-uae"],
             vec!["setup", "--profile", "host", "--toolchain", "/opt/amiga"],
             vec!["setup", "--toolchain", "/opt/amiga", "--diagnostics=json"],
         ] {

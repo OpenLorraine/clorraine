@@ -12,9 +12,10 @@
 #
 # The installer never invokes Docker. It verifies the CLI archive before
 # extraction, optionally installs the pinned rc24 toolchain from AmigaPorts,
-# runs a host hello, and runs the guest hello when FS-UAE and a licensed ROM
-# are available. The active version is switched only after the extracted tree
-# passes its version check.
+# remembers FS-UAE and a licensed ROM when they are found, runs the host hello
+# and the demo-scene Amiga hello, and offers a starter project that opens in
+# VS Code. The active version is switched only after the extracted tree passes
+# its version check.
 set -eu
 umask 022
 
@@ -27,6 +28,10 @@ VSIX_NAME='@VSIX_NAME@'
 VSIX_URL='@VSIX_URL@'
 VSIX_BYTES='@VSIX_BYTES@'
 VSIX_SHA256='@VSIX_SHA256@'
+
+# Plain-text style until `init_style` sees an interactive terminal.
+BOLD= DIM= RESET= GREEN= YELLOW= CYAN= C1= C2= C3= C4= C5=
+CHECK='[ok]' CROSS='[!!]' ARROW='>' PLAY='>' UNICODE=0
 
 TOOLCHAIN_URL='https://github.com/AmigaPorts/m68k-amigaos-gcc/releases/download/v16.2-rc24/m68k-amigaos-gcc-16.2-rc24-x86_64-linux.tar.xz'
 TOOLCHAIN_BYTES='69868548'
@@ -47,7 +52,10 @@ Options:
   --no-toolchain            skip toolchain setup and the hello checks
   --fs-uae PATH             FS-UAE executable for the guest hello
   --kickstart PATH          licensed KS3.1 A1200 ROM for the guest hello
-  --no-emulator             skip the guest hello
+  --no-emulator             skip FS-UAE detection and the Amiga hello
+  --no-hello                do not run the hello programs
+  --starter DIR             create a starter Amiga project in DIR
+  --no-starter              do not offer a starter project
   --vscode                  install the VS Code extension when detected
   --no-vscode               skip VS Code detection and install
   --uninstall               remove the active version and PATH block
@@ -55,9 +63,10 @@ Options:
   -h, --help                show this help
 
 When stdin and stdout are terminals, an install asks for the prefix, the PATH
-choice, confirmation, and any detected toolchain, ROM, or VS Code install.
-Non-terminal runs keep the flag/default behavior. The host hello source stays
-under $PREFIX/share/clorraine/examples for later use.
+choice, confirmation, the toolchain, the ROM, whether to run the hello, the VS
+Code extension, and a starter project in the current folder. Non-terminal runs
+keep the flag/default behavior. The hello sources stay under
+$PREFIX/share/clorraine/examples for later use.
 EOF
 }
 
@@ -319,9 +328,10 @@ local_checksum() {
     printf '%s\n' "$expected"
 }
 
-# Verifies a local archive against its checksum file.
+# Verifies a local archive against its checksum file; a third argument
+# `quiet` suppresses the report for the private re-check.
 verify_local_archive() {
-    local archive=$1 checksums=$2 expected actual bytes
+    local archive=$1 checksums=$2 quiet=${3:-} expected actual bytes
     [ -f "$archive" ] || die "archive '$archive' is not a readable file"
     [ -f "$checksums" ] || die "checksum file '$checksums' is not a readable file"
     expected=$(local_checksum "$archive" "$checksums")
@@ -330,7 +340,7 @@ verify_local_archive() {
         die "archive SHA-256 mismatch; expected $expected, got $actual"
     fi
     bytes=$(wc -c <"$archive")
-    printf 'clorraine: using local archive (%s bytes)\n' "$bytes" >&2
+    [ -n "$quiet" ] || printf 'clorraine: using local archive (%s bytes)\n' "$bytes" >&2
 }
 
 # Downloads and verifies the assembled network archive.
@@ -500,11 +510,11 @@ install_archive() {
     rm -rf "$staging"
     if [ "$MODIFY_PATH" = 1 ]; then
         modify_path
-        printf 'updated %s\n' "$HOME/.profile"
+        ok "updated $HOME/.profile"
     else
         printf 'add this to your shell profile: export PATH=%s:$PATH\n' "$(single_quote "$PREFIX/bin")"
     fi
-    printf 'installed Clorraine %s in %s\n' "$VERSION" "$PREFIX"
+    ok "installed Clorraine $VERSION in $PREFIX"
 }
 
 # Asks a yes/no question on the terminal; an empty answer uses the default.
@@ -589,12 +599,6 @@ download_toolchain() {
     printf '%s\n' "$TOOLCHAIN_DIR"
 }
 
-# Runs the installed CLI setup against a toolchain root.
-configure_toolchain() {
-    local root=$1
-    "$PREFIX/bin/clorraine" setup --toolchain "$root"
-}
-
 # Writes the portable host hello source to one path.
 write_hello_source() {
     cat >"$1" <<'EOF'
@@ -609,58 +613,6 @@ func main(): i32 {
     return 0;
 }
 EOF
-}
-
-# Writes the Amiga hello source; the short wait keeps the FS-UAE window visible.
-write_guest_hello_source() {
-    cat >"$1" <<'EOF'
-// The Amiga hello waits five seconds so the FS-UAE screen is easy to see.
-module demo.HelloGuest;
-
-import { println } from std.io;
-import { Timer, openTimer, freeTimer, timerWait } from std.amiga.timer;
-
-func main(): i32 {
-    println("Hello, Amiga, from Clorraine!");
-    let timer: Timer? = openTimer();
-    if (timer != null) {
-        timerWait(timer, 250);
-        freeTimer(timer);
-    }
-    return 0;
-}
-EOF
-}
-
-# Leaves the hello sources under the prefix without overwriting a user edit.
-install_examples() {
-    local examples="$PREFIX/share/clorraine/examples"
-    HELLO_FILE="$examples/hello.clo"
-    HELLO_GUEST_FILE="$examples/hello-guest.clo"
-    mkdir -p "$examples" || {
-        printf 'clorraine: cannot create %s\n' "$examples" >&2
-        return 1
-    }
-    if [ ! -e "$HELLO_FILE" ] && [ ! -L "$HELLO_FILE" ]; then
-        write_hello_source "$HELLO_FILE" || return 1
-    fi
-    if [ ! -e "$HELLO_GUEST_FILE" ] && [ ! -L "$HELLO_GUEST_FILE" ]; then
-        write_guest_hello_source "$HELLO_GUEST_FILE" || return 1
-    fi
-    chmod 644 "$HELLO_FILE" "$HELLO_GUEST_FILE" 2>/dev/null || true
-    printf 'hello example: %s\n' "$HELLO_FILE"
-}
-
-# Builds and runs the persistent host hello; requires the exact output.
-run_hello() {
-    local dir output status
-    [ -f "${HELLO_FILE:-}" ] || return 1
-    dir=$(mktemp -d "${TMPDIR:-/tmp}/clorraine-hello.XXXXXXXX") || return 1
-    status=0
-    output=$(cd "$dir" && "$PREFIX/bin/clorraine" run "$HELLO_FILE" 2>&1) || status=$?
-    rm -rf "$dir"
-    printf '%s\n' "$output"
-    [ "$status" -eq 0 ] && [ "$output" = "Hello, Amiga, from Clorraine!" ]
 }
 
 # Downloads, verifies, and returns the pinned VS Code extension.
@@ -741,13 +693,13 @@ install_vscode() {
         return 0
     fi
     if vscode_extension_installed "$editor"; then
-        printf 'the Clorraine extension is already installed in VS Code\n'
+        ok "the Clorraine extension is already installed in VS Code"
         VSCODE_STATE=already-installed
         return 0
     fi
     if [ "$VSCODE_SET" = 0 ]; then
         if [ -t 0 ] && [ -t 1 ]; then
-            if ! confirm "Install the Clorraine extension in VS Code? [Y/n] " yes; then
+            if ! confirm "  Install the Clorraine extension in VS Code? [Y/n] " yes; then
                 VSCODE_STATE=skipped
                 return 0
             fi
@@ -757,13 +709,18 @@ install_vscode() {
             return 0
         fi
     fi
+    # download_vsix runs in a subshell; create its directory here so the
+    # exit cleanup sees it.
+    if [ -z "${download_dir:-}" ]; then
+        download_dir=$(mktemp -d "${TMPDIR:-/tmp}/clorraine-install.XXXXXXXX") || download_dir=
+    fi
     if ! vsix=$(download_vsix); then
         printf 'could not download the VS Code extension; install it from the release\n' >&2
         VSCODE_STATE=failed
         return 0
     fi
     if "$editor" --install-extension "$vsix" >/dev/null 2>&1; then
-        printf 'installed the Clorraine extension in VS Code\n'
+        ok "installed the Clorraine extension in VS Code"
         VSCODE_STATE=installed
     else
         printf 'could not install the VS Code extension; run: %s --install-extension %s\n' "$editor" "$vsix" >&2
@@ -846,23 +803,192 @@ detect_kickstart() {
     return 1
 }
 
-# Runs the persistent guest hello when FS-UAE and a ROM are available.
-guest_first_run() {
-    local emulator rom answer output status work
-    GUEST_STATE=${GUEST_STATE:-skipped}
+# Sets the colours and symbols for an interactive terminal. Plain text is
+# used for pipes, NO_COLOR, a dumb terminal, or a non-UTF-8 locale.
+init_style() {
+    BOLD= DIM= RESET= GREEN= YELLOW= CYAN= C1= C2= C3= C4= C5=
+    CHECK='[ok]' CROSS='[!!]' ARROW='>' PLAY='>'
+    UNICODE=0
+    case "${LC_ALL:-${LC_CTYPE:-${LANG:-}}}" in
+        *UTF-8*|*utf-8*|*UTF8*|*utf8*) UNICODE=1 ;;
+    esac
+    if [ "$UNICODE" = 1 ]; then
+        CHECK='✔' CROSS='✘' ARROW='▸' PLAY='▶'
+    fi
+    if [ -t 1 ] && [ -z "${NO_COLOR:-}" ] && [ "${TERM:-dumb}" != dumb ]; then
+        esc=$(printf '\033')
+        BOLD="${esc}[1m" DIM="${esc}[2m" RESET="${esc}[0m"
+        GREEN="${esc}[38;5;114m" YELLOW="${esc}[38;5;221m" CYAN="${esc}[38;5;81m"
+        C1="${esc}[38;5;51m" C2="${esc}[38;5;75m" C3="${esc}[38;5;141m"
+        C4="${esc}[38;5;205m" C5="${esc}[38;5;215m"
+    fi
+}
+
+# Prints the opening banner on a terminal.
+banner() {
+    printf '\n'
+    if [ "$UNICODE" = 1 ]; then
+        printf '  %s%s%s\n' "$C1" '▄▀▀▀▄ █     ▄▀▀▀▄ █▀▀▀▄ █▀▀▀▄ ▄▀▀▀▄ ▀▀█▀▀ █▄  █ █▀▀▀▀' "$RESET"
+        printf '  %s%s%s\n' "$C2" '█     █     █   █ █▄▄▄▀ █▄▄▄▀ █▄▄▄█   █   █ ▀▄█ █▄▄▄' "$RESET"
+        printf '  %s%s%s\n' "$C3" '█   ▄ █     █   █ █ ▀▄  █ ▀▄  █   █   █   █   █ █' "$RESET"
+        printf '  %s%s%s\n' "$C4" ' ▀▀▀  ▀▀▀▀▀  ▀▀▀  ▀   ▀ ▀   ▀ ▀   ▀ ▀▀▀▀▀ ▀   ▀ ▀▀▀▀▀' "$RESET"
+    else
+        printf '  %sC L O R R A I N E%s\n' "$BOLD" "$RESET"
+    fi
+    printf '\n  %sSafe, modern programming for the Amiga.%s\n' "$C5" "$RESET"
+    printf '  %sClorraine %s developer preview%s\n' "$DIM" "$VERSION" "$RESET"
+}
+
+# True when both stdin and stdout are terminals, so prompts are possible.
+interactive() {
+    [ -t 0 ] && [ -t 1 ]
+}
+
+# Prints a numbered step heading.
+step() {
+    printf '\n%s%s Step %s of 5%s  %s%s%s\n' "$CYAN" "$ARROW" "$1" "$RESET" "$BOLD" "$2" "$RESET"
+}
+
+# Prints a success line.
+ok() {
+    printf '  %s%s%s %s\n' "$GREEN" "$CHECK" "$RESET" "$*"
+}
+
+# Prints a warning line.
+warn() {
+    printf '  %s%s%s %s\n' "$YELLOW" "$CROSS" "$RESET" "$*"
+}
+
+# Shows a path with ~ for the home directory when that stays a plain word.
+pretty_path() {
+    case "$1" in
+        "$HOME"/*)
+            rest=${1#"$HOME"/}
+            case "$rest" in
+                *[!A-Za-z0-9._/+-]*) single_quote "$1" ;;
+                *) printf '~/%s\n' "$rest" ;;
+            esac
+            ;;
+        *[!A-Za-z0-9._/+-]*) single_quote "$1" ;;
+        *) printf '%s\n' "$1" ;;
+    esac
+}
+
+# The command name to show: plain `clorraine` when it is (or will be) on PATH.
+cli_name() {
+    case ":$PATH:" in
+        *":$PREFIX/bin:"*) printf 'clorraine\n'; return ;;
+    esac
+    if [ "${MODIFY_PATH:-0}" = 1 ]; then
+        printf 'clorraine\n'
+    else
+        pretty_path "$PREFIX/bin/clorraine"
+    fi
+}
+
+# Runs one `clorraine setup` and shows its report as success lines, or its
+# error as a warning.
+run_setup() {
+    local output status=0 line
+    output=$("$PREFIX/bin/clorraine" "$@" 2>&1) || status=$?
+    SETUP_OUTPUT=$output
+    printf '%s\n' "$output" | while IFS= read -r line; do
+        [ -n "$line" ] || continue
+        if [ "$status" -eq 0 ]; then
+            ok "$(sanitize "$line")"
+        else
+            warn "$(sanitize "$line")"
+        fi
+    done
+    return "$status"
+}
+
+# Runs the installed CLI setup with the toolchain and any selected emulator
+# paths. A rejected emulator path is reported and setup is retried without
+# the emulator, so the toolchain is still configured.
+configure_toolchain() {
+    local root=$1
+    if [ -n "${FS_UAE_SELECTED:-}" ] || [ -n "${KICKSTART_SELECTED:-}" ]; then
+        set -- setup --toolchain "$root"
+        [ -n "${FS_UAE_SELECTED:-}" ] && set -- "$@" --fs-uae "$FS_UAE_SELECTED"
+        [ -n "${KICKSTART_SELECTED:-}" ] && set -- "$@" --kickstart "$KICKSTART_SELECTED"
+        if run_setup "$@"; then
+            return 0
+        fi
+        # Only a rejected emulator path is worth a second try; a toolchain
+        # problem would fail the same way again.
+        case "$SETUP_OUTPUT" in
+            *'clorraine: --fs-uae:'*|*'clorraine: --kickstart:'*) ;;
+            *) return 1 ;;
+        esac
+        warn "the emulator paths were not accepted; continuing without the Amiga run"
+        FS_UAE_SELECTED=
+        KICKSTART_SELECTED=
+    fi
+    run_setup setup --toolchain "$root"
+}
+
+# Writes the Amiga hello: the demo-scene intro shown in FS-UAE.
+write_guest_hello_source() {
+    cat >"$1" <<'CLORRAINE_HELLO_AMIGA'
+@HELLO_AMIGA_SOURCE@
+CLORRAINE_HELLO_AMIGA
+}
+
+# Leaves the hello sources under the prefix without overwriting a user edit.
+install_examples() {
+    local examples="$PREFIX/share/clorraine/examples"
+    HELLO_FILE="$examples/hello.clo"
+    HELLO_GUEST_FILE="$examples/hello-amiga.clo"
+    mkdir -p "$examples" || {
+        printf 'clorraine: cannot create %s\n' "$examples" >&2
+        return 1
+    }
+    if [ ! -e "$HELLO_FILE" ] && [ ! -L "$HELLO_FILE" ]; then
+        write_hello_source "$HELLO_FILE" || return 1
+    fi
+    if [ ! -e "$HELLO_GUEST_FILE" ] && [ ! -L "$HELLO_GUEST_FILE" ]; then
+        write_guest_hello_source "$HELLO_GUEST_FILE" || return 1
+    fi
+    chmod 644 "$HELLO_FILE" "$HELLO_GUEST_FILE" 2>/dev/null || true
+}
+
+# Builds and runs the persistent host hello; requires the exact output.
+run_hello() {
+    local dir output status
+    [ -f "${HELLO_FILE:-}" ] || return 1
+    dir=$(mktemp -d "${TMPDIR:-/tmp}/clorraine-hello.XXXXXXXX") || return 1
+    status=0
+    output=$(cd "$dir" && "$PREFIX/bin/clorraine" run "$HELLO_FILE" 2>&1) || status=$?
+    rm -rf "$dir"
+    printf '    %s%s%s\n' "$BOLD" "$(sanitize "$output")" "$RESET"
+    [ "$status" -eq 0 ] && [ "$output" = "Hello, Amiga, from Clorraine!" ]
+}
+
+# Makes a typed path absolute, expanding a leading ~/.
+absolute_path() {
+    case "$1" in
+        '~/'*) printf '%s/%s\n' "$HOME" "${1#'~/'}" ;;
+        /*) printf '%s\n' "$1" ;;
+        *) printf '%s/%s\n' "$PWD" "$1" ;;
+    esac
+}
+
+# Detects FS-UAE and a Kickstart ROM for the Amiga run and asks on a terminal.
+select_emulator() {
+    local emulator rom answer
     if [ "$NO_EMULATOR" = 1 ]; then
         return 0
     fi
     if ! emulator=$(detect_fs_uae); then
-        printf 'FS-UAE was not found; the host hello is ready and the Amiga command is below\n'
+        warn "FS-UAE was not found; the Amiga run is skipped (install FS-UAE 3.2 or newer to see it)"
         return 0
     fi
-    FS_UAE_SELECTED=$emulator
     rom=$(detect_kickstart || true)
     if [ -t 0 ] && [ -t 1 ]; then
-        printf 'FS-UAE detected: %s\n' "$emulator"
+        ok "FS-UAE detected: $(pretty_path "$emulator")"
         if [ -n "$rom" ]; then
-            printf 'Kickstart 3.1 A1200 ROM [%s] (Enter to use, - to skip): ' "$rom"
+            printf '  Kickstart 3.1 A1200 ROM [%s] (Enter to use, - to skip): ' "$(pretty_path "$rom")"
             read -r answer || answer=
             case "$answer" in
                 '') ;;
@@ -870,105 +996,207 @@ guest_first_run() {
                 *) rom=$answer ;;
             esac
         else
-            printf 'Kickstart 3.1 A1200 ROM path (leave empty to skip the Amiga hello): '
+            printf '  Kickstart 3.1 A1200 ROM path (leave empty to skip the Amiga run): '
             read -r rom || rom=
         fi
     elif [ -z "${FS_UAE:-}${CLORRAINE_FS_UAE:-}" ] || [ -z "${KICKSTART:-}${CLORRAINE_KICKSTART:-}" ]; then
         printf 'FS-UAE detected; pass --fs-uae and --kickstart to run the Amiga hello\n'
         return 0
     fi
+    FS_UAE_SELECTED=$(absolute_path "$emulator")
     if [ -z "$rom" ]; then
-        printf 'Amiga hello: skipped (no Kickstart ROM)\n'
+        warn "no Kickstart ROM selected; the Amiga run is skipped"
         return 0
     fi
-    KICKSTART_SELECTED=$rom
-    printf 'Running the Amiga hello in FS-UAE; a window opens for about five seconds...\n'
+    KICKSTART_SELECTED=$(absolute_path "$rom")
+}
+
+# Runs the demo-scene hello in FS-UAE when an emulator and ROM are ready.
+run_guest_hello() {
+    local output status work
     work=$(mktemp -d "${TMPDIR:-/tmp}/clorraine-guest.XXXXXXXX") || return 0
+    printf '  Booting an Amiga 1200 in FS-UAE. The intro ends by itself, or click in its window.\n'
     status=0
-    output=$(cd "$work" && CLORRAINE_EMULATOR_TIMEOUT_SECONDS="${CLORRAINE_EMULATOR_TIMEOUT_SECONDS:-45}" \
-        "$PREFIX/bin/clorraine" run -p hosted-amiga --emulator \
-        --fs-uae "$emulator" --kickstart "$rom" "$HELLO_GUEST_FILE" \
+    output=$(cd "$work" && CLORRAINE_EMULATOR_TIMEOUT_SECONDS="${CLORRAINE_EMULATOR_TIMEOUT_SECONDS:-90}" \
+        "$PREFIX/bin/clorraine" run -p hosted-amiga --release --emulator \
+        --fs-uae "$FS_UAE_SELECTED" --kickstart "$KICKSTART_SELECTED" "$HELLO_GUEST_FILE" \
         </dev/null 2>"$work/stderr") || status=$?
-    if [ -n "$output" ]; then
-        printf '%s\n' "$output"
-    fi
     if [ "$status" -eq 0 ] && [ "$output" = "Hello, Amiga, from Clorraine!" ]; then
+        printf '    %s%s%s\n' "$BOLD" "$output" "$RESET"
+        ok "your Amiga said hello"
         GUEST_STATE=passed
     else
-        printf 'Amiga hello did not complete (status %s)\n' "$status" >&2
+        [ -n "$output" ] && printf '%s\n' "$(sanitize "$output")"
+        warn "the Amiga run did not complete (status $status)"
         if [ -s "$work/stderr" ]; then
-            sed 's/^/  /' "$work/stderr" >&2
+            sed 's/^/    /' "$work/stderr" >&2
         fi
         GUEST_STATE=failed
     fi
     rm -rf "$work"
+}
+
+# Picks ./amiga-starter, or the first free amiga-starter-N.
+default_starter_dir() {
+    local base="$PWD/amiga-starter" candidate n=2
+    candidate=$base
+    while [ -e "$candidate" ] && [ -n "$(ls -A "$candidate" 2>/dev/null)" ]; do
+        candidate="$base-$n"
+        n=$((n + 1))
+    done
+    printf '%s\n' "$candidate"
+}
+
+# Offers a starter project in the current folder and opens it in VS Code.
+offer_starter() {
+    local dir answer editor
+    dir=$STARTER
+    if [ -z "$dir" ]; then
+        if [ "$NO_STARTER" = 1 ] || [ ! -t 0 ] || [ ! -t 1 ]; then
+            return 0
+        fi
+        dir=$(default_starter_dir)
+        if ! confirm "  Create a starter Amiga project in $(pretty_path "$dir")? [Y/n] " yes; then
+            return 0
+        fi
+    fi
+    if ! "$PREFIX/bin/clorraine" new "$dir" >/dev/null; then
+        warn "could not create the starter project in $(pretty_path "$dir")"
+        return 0
+    fi
+    STARTER_DIR=$dir
+    ok "created $(pretty_path "$dir") with main.clo and a VS Code setup"
+    if [ -t 0 ] && [ -t 1 ] && [ "$NO_VSCODE" = 0 ] && editor=$(detect_editor); then
+        if confirm "  Open it in VS Code now? [Y/n] " yes; then
+            PATH="$PREFIX/bin:$PATH" "$editor" "$dir" "$dir/main.clo" </dev/null >/dev/null 2>&1 &
+            ok "opening VS Code: press $PLAY Run in FS-UAE in the editor title bar"
+            STARTER_OPENED=1
+        fi
+    fi
+}
+
+# Asks before running the hello programs on a terminal, then runs the host
+# hello and, with FS-UAE and a ROM, the Amiga intro. Fails only when the host
+# hello itself is wrong.
+run_first_hello() {
+    if [ "$NO_HELLO" = 1 ]; then
+        return 0
+    fi
+    if [ -t 0 ] && [ -t 1 ]; then
+        confirm "  Run the hello program now? [Y/n] " yes || return 0
+    fi
+    if command -v cc >/dev/null 2>&1; then
+        if ! run_hello; then
+            HOST_STATE=failed
+            return 1
+        fi
+        HOST_STATE=passed
+        ok "the compiler, the toolchain, and your C compiler work"
+    else
+        warn "cc not found; skipping the host hello check"
+    fi
+    if [ -n "${KICKSTART_SELECTED:-}" ] && [ -n "${FS_UAE_SELECTED:-}" ] && [ -f "${HELLO_GUEST_FILE:-}" ]; then
+        if [ -t 0 ] && [ -t 1 ]; then
+            confirm "  Now watch it on an Amiga 1200 in FS-UAE? [Y/n] " yes || return 0
+        fi
+        run_guest_hello
+    fi
     return 0
 }
 
-# Prints the successful first-run summary and the commands to repeat it.
+# Prints the closing summary and the exact next commands.
 print_summary() {
-    printf '\nFirst run complete.\n'
-    printf '  CLI           %s\n' "$PREFIX/bin/clorraine"
-    printf '  Hello source  %s\n' "${HELLO_FILE:-$PREFIX/share/clorraine/examples/hello.clo}"
+    local cli
+    cli=$(cli_name)
+    printf '\n%s%s First run complete. You are all set!%s\n\n' "$GREEN$BOLD" "$CHECK" "$RESET"
+    printf '  CLI        %s\n' "$(pretty_path "$PREFIX/bin/clorraine")"
     if [ -n "${TOOLCHAIN_ROOT:-}" ]; then
-        printf '  Toolchain     %s\n' "$TOOLCHAIN_ROOT"
+        printf '  Toolchain  %s\n' "$(pretty_path "$TOOLCHAIN_ROOT")"
     else
-        printf '  Toolchain     not configured\n'
+        printf '  Toolchain  not configured\n'
     fi
-    case "${HOST_STATE:-skipped}" in
-        passed) printf '  Host hello    passed\n' ;;
-        failed) printf '  Host hello    failed\n' ;;
-        *) printf '  Host hello    skipped\n' ;;
-    esac
-    case "${GUEST_STATE:-skipped}" in
-        passed) printf '  Amiga hello   ran in FS-UAE\n' ;;
-        failed) printf '  Amiga hello   failed in FS-UAE\n' ;;
-        *) printf '  Amiga hello   not run; the command is below\n' ;;
+    if [ -n "${KICKSTART_SELECTED:-}" ]; then
+        printf '  Emulator   FS-UAE with %s\n' "$(pretty_path "$KICKSTART_SELECTED")"
+    else
+        printf '  Emulator   not set up\n'
+    fi
+    case "${HOST_STATE:-skipped}/${GUEST_STATE:-skipped}" in
+        passed/passed) printf '  Hello      ran on this PC and on the Amiga\n' ;;
+        passed/failed) printf '  Hello      ran on this PC; the Amiga run failed\n' ;;
+        passed/*) printf '  Hello      ran on this PC\n' ;;
+        failed/*) printf '  Hello      failed\n' ;;
+        *) printf '  Hello      not run\n' ;;
     esac
     case "${VSCODE_STATE:-unavailable}" in
-        installed) printf '  VS Code       extension installed\n' ;;
-        already-installed) printf '  VS Code       extension already installed\n' ;;
-        failed) printf '  VS Code       extension not installed\n' ;;
-        available) printf '  VS Code       detected; rerun with --vscode\n' ;;
-        skipped) printf '  VS Code       skipped\n' ;;
-        *) printf '  VS Code       not found\n' ;;
+        installed) printf '  VS Code    extension installed\n' ;;
+        already-installed) printf '  VS Code    extension already installed\n' ;;
+        failed) printf '  VS Code    extension not installed\n' ;;
+        available) printf '  VS Code    detected; rerun with --vscode\n' ;;
+        skipped) printf '  VS Code    skipped\n' ;;
+        *) printf '  VS Code    not found\n' ;;
     esac
-    printf '\nRun the host hello again:\n  %s run %s\n' \
-        "$PREFIX/bin/clorraine" "${HELLO_FILE:-$PREFIX/share/clorraine/examples/hello.clo}"
-    if [ -n "${TOOLCHAIN_ROOT:-}" ]; then
-        printf 'Run the Amiga hello again:\n  %s run -p hosted-amiga --emulator --fs-uae %s --kickstart %s %s\n' \
-            "$PREFIX/bin/clorraine" "${FS_UAE_SELECTED:-fs-uae}" \
-            "${KICKSTART_SELECTED:-<ks31-a1200.rom>}" \
-            "${HELLO_GUEST_FILE:-$PREFIX/share/clorraine/examples/hello-guest.clo}"
+    printf '  Examples   %s\n' "$(pretty_path "${HELLO_FILE:-$PREFIX/share/clorraine/examples/hello.clo}")"
+    if [ -n "${STARTER_DIR:-}" ]; then
+        printf '  Project    %s\n' "$(pretty_path "$STARTER_DIR")"
+    fi
+
+    printf '\n%sWhat next%s\n' "$BOLD" "$RESET"
+    if [ -n "${STARTER_DIR:-}" ]; then
+        printf '  cd %s\n' "$(pretty_path "$STARTER_DIR")"
+        printf '  code .                      %s# open main.clo, change MESSAGE, press %s Run in FS-UAE%s\n' "$DIM" "$PLAY" "$RESET"
+        printf '  %s run -p hosted-amiga --emulator main.clo\n' "$cli"
+        printf '  %s new my-game         %s# start another project%s\n' "$cli" "$DIM" "$RESET"
+    elif [ -n "${TOOLCHAIN_ROOT:-}" ]; then
+        printf '  %s new my-game         %s# create a starter Amiga project with VS Code tasks%s\n' "$cli" "$DIM" "$RESET"
     else
-        printf 'Set up the Amiga toolchain, then run the guest hello:\n  %s setup --toolchain <rc24 root>\n' "$PREFIX/bin/clorraine"
+        printf '  %s setup --toolchain <rc24 root>\n' "$cli"
+    fi
+    if [ -n "${TOOLCHAIN_ROOT:-}" ]; then
+        if [ "${GUEST_STATE:-}" = passed ]; then
+            printf '\n%sWatch the Amiga hello again%s\n' "$BOLD" "$RESET"
+        else
+            printf '\n%sWatch the Amiga hello%s\n' "$BOLD" "$RESET"
+        fi
+        if [ -n "${KICKSTART_SELECTED:-}" ]; then
+            printf '  %s run -p hosted-amiga --release --emulator %s\n' "$cli" \
+                "$(pretty_path "${HELLO_GUEST_FILE:-$PREFIX/share/clorraine/examples/hello-amiga.clo}")"
+        else
+            printf '  %s run -p hosted-amiga --release --emulator --kickstart <ks31-a1200.rom> %s\n' "$cli" \
+                "$(pretty_path "${HELLO_GUEST_FILE:-$PREFIX/share/clorraine/examples/hello-amiga.clo}")"
+            printf '  %s(or remember the ROM: %s setup --toolchain %s --kickstart <ks31-a1200.rom>)%s\n' \
+                "$DIM" "$cli" "$(pretty_path "$TOOLCHAIN_ROOT")" "$RESET"
+        fi
     fi
     if [ "${VSCODE_STATE:-}" = available ]; then
-        printf 'Install the VS Code extension with: %s --vscode (rerun the installer)\n' "$0"
+        printf '\nInstall the VS Code extension with: %s --vscode (rerun the installer)\n' "$0"
     fi
+    case ":$PATH:" in
+        *":$PREFIX/bin:"*) ;;
+        *)
+            if [ "${MODIFY_PATH:-0}" = 1 ]; then
+                printf '\n%sOpen a new terminal (or run: . ~/.profile) so clorraine is on your PATH.%s\n' "$YELLOW" "$RESET"
+            fi
+            ;;
+    esac
+    printf '\n  %sDocs and examples: https://github.com/OpenLorraine/clorraine%s\n\n' "$DIM" "$RESET"
 }
 
-# Detects or installs the rc24 toolchain, then configures it.
+# Selects an existing rc24 root or downloads the pinned one. Sets
+# TOOLCHAIN_ROOT; configuration happens once the emulator is known.
 toolchain_first_run() {
     local answer root
     if [ -n "$TOOLCHAIN" ]; then
-        configure_toolchain "$TOOLCHAIN" || return 1
-        TOOLCHAIN_CONFIGURED=1
         TOOLCHAIN_ROOT=$TOOLCHAIN
         return 0
     fi
     if [ -n "${CLORRAINE_TOOLCHAIN:-}" ]; then
-        configure_toolchain "$CLORRAINE_TOOLCHAIN" || return 1
-        TOOLCHAIN_CONFIGURED=1
         TOOLCHAIN_ROOT=$CLORRAINE_TOOLCHAIN
         return 0
     fi
     if [ -d "$TOOLCHAIN_DIR" ]; then
         if [ -t 0 ] && [ -t 1 ]; then
-            confirm "Use the rc24 toolchain at $TOOLCHAIN_DIR? [Y/n] " yes || return 0
+            confirm "  Use the rc24 toolchain at $(pretty_path "$TOOLCHAIN_DIR")? [Y/n] " yes || return 0
         fi
-        configure_toolchain "$TOOLCHAIN_DIR" || return 1
-        TOOLCHAIN_CONFIGURED=1
         TOOLCHAIN_ROOT=$TOOLCHAIN_DIR
         return 0
     fi
@@ -976,18 +1204,14 @@ toolchain_first_run() {
         printf 'no toolchain selected; run: %s/bin/clorraine setup --toolchain <rc24 root>\n' "$PREFIX"
         return 0
     fi
-    printf 'Toolchain: path to an existing rc24 root (leave empty to download): '
+    printf '  Toolchain: path to an existing rc24 root (leave empty to download): '
     read -r answer || answer=
     if [ -n "$answer" ]; then
-        configure_toolchain "$answer" || return 1
-        TOOLCHAIN_CONFIGURED=1
         TOOLCHAIN_ROOT=$answer
         return 0
     fi
-    if confirm "Download rc24 from AmigaPorts (70 MB)? [Y/n] " yes; then
+    if confirm "  Download rc24 from AmigaPorts (70 MB)? [Y/n] " yes; then
         root=$(download_toolchain) || return 1
-        configure_toolchain "$root" || return 1
-        TOOLCHAIN_CONFIGURED=1
         TOOLCHAIN_ROOT=$root
         return 0
     fi
@@ -1003,8 +1227,8 @@ print_next_steps() {
     fi
     printf '  Host hello: %s/bin/clorraine run %s\n' "$PREFIX" \
         "${HELLO_FILE:-$PREFIX/share/clorraine/examples/hello.clo}"
-    printf '  Amiga hello: %s/bin/clorraine run -p hosted-amiga --emulator --fs-uae fs-uae --kickstart <ks31-a1200.rom> %s\n' \
-        "$PREFIX" "${HELLO_GUEST_FILE:-$PREFIX/share/clorraine/examples/hello-guest.clo}"
+    printf '  Amiga hello: %s/bin/clorraine run -p hosted-amiga --release --emulator --fs-uae fs-uae --kickstart <ks31-a1200.rom> %s\n' \
+        "$PREFIX" "${HELLO_GUEST_FILE:-$PREFIX/share/clorraine/examples/hello-amiga.clo}"
     printf '  VS Code extension: install %s from the release\n' "$VSIX_NAME"
 }
 
@@ -1045,6 +1269,12 @@ main() {
     FS_UAE=
     KICKSTART=
     NO_EMULATOR=0
+    NO_HELLO=0
+    STARTER=
+    NO_STARTER=0
+    STARTER_DIR=
+    STARTER_OPENED=
+    SETUP_OUTPUT=
     VSCODE=0
     VSCODE_SET=0
     NO_VSCODE=0
@@ -1116,6 +1346,19 @@ main() {
                 NO_EMULATOR=1
                 shift
                 ;;
+            --no-hello)
+                NO_HELLO=1
+                shift
+                ;;
+            --starter)
+                [ "$#" -ge 2 ] || usage_error "--starter needs a value"
+                STARTER=$2
+                shift 2
+                ;;
+            --no-starter)
+                NO_STARTER=1
+                shift
+                ;;
             --vscode)
                 VSCODE=1
                 VSCODE_SET=1
@@ -1153,7 +1396,10 @@ main() {
     if [ "$NO_TOOLCHAIN" = 1 ] && { [ -n "$FS_UAE" ] || [ -n "$KICKSTART" ]; }; then
         usage_error "--fs-uae and --kickstart require the toolchain"
     fi
-    if [ "$UNINSTALL" = 1 ] && { [ -n "$ARCHIVE" ] || [ -n "$CHECKSUMS" ] || [ "$MODIFY_PATH" = 1 ] || [ -n "$TOOLCHAIN" ] || [ "$NO_TOOLCHAIN" = 1 ] || [ -n "$FS_UAE" ] || [ -n "$KICKSTART" ] || [ "$NO_EMULATOR" = 1 ] || [ "$VSCODE_SET" = 1 ]; }; then
+    if [ -n "$STARTER" ] && { [ "$NO_STARTER" = 1 ] || [ "$NO_TOOLCHAIN" = 1 ]; }; then
+        usage_error "--starter cannot be combined with --no-starter or --no-toolchain"
+    fi
+    if [ "$UNINSTALL" = 1 ] && { [ -n "$ARCHIVE" ] || [ -n "$CHECKSUMS" ] || [ "$MODIFY_PATH" = 1 ] || [ -n "$TOOLCHAIN" ] || [ "$NO_TOOLCHAIN" = 1 ] || [ -n "$FS_UAE" ] || [ -n "$KICKSTART" ] || [ "$NO_EMULATOR" = 1 ] || [ "$VSCODE_SET" = 1 ] || [ "$NO_HELLO" = 1 ] || [ -n "$STARTER" ] || [ "$NO_STARTER" = 1 ]; }; then
         usage_error "--uninstall cannot be combined with install options"
     fi
     if { [ -n "$ARCHIVE" ] && [ -z "$CHECKSUMS" ]; } || { [ -z "$ARCHIVE" ] && [ -n "$CHECKSUMS" ]; }; then
@@ -1176,22 +1422,24 @@ main() {
         return 0
     fi
 
+    init_style
     if [ -t 0 ] && [ -t 1 ]; then
-        printf 'Clorraine %s developer preview\n' "$VERSION"
-        printf 'Detected %s %s, %s.\n' "$(uname -s)" "$(uname -m)" "$libc"
+        banner
+        step 1 "Install the Clorraine CLI"
+        printf '  Detected %s %s, %s.\n' "$(uname -s)" "$(uname -m)" "$libc"
         if [ "$PREFIX_SET" = 0 ]; then
-            printf 'Install prefix [%s]: ' "$PREFIX"
+            printf '  Install prefix [%s]: ' "$PREFIX"
             read -r answer || answer=
             [ -n "$answer" ] && PREFIX=$answer
         fi
         if [ "$MODIFY_PATH_SET" = 0 ]; then
-            if confirm "Add $PREFIX/bin to PATH in $HOME/.profile? [Y/n] " yes; then
+            if confirm "  Add $PREFIX/bin to PATH in $HOME/.profile? [Y/n] " yes; then
                 MODIFY_PATH=1
             else
                 MODIFY_PATH=0
             fi
         fi
-        if ! confirm "Install Clorraine $VERSION into $PREFIX? [Y/n] " yes; then
+        if ! confirm "  Install Clorraine $VERSION into $PREFIX? [Y/n] " yes; then
             printf 'install cancelled\n'
             exit 0
         fi
@@ -1207,7 +1455,7 @@ main() {
             die "cannot create private archive storage"
         archive="$verified_dir/$(basename "$ARCHIVE")"
         cp "$ARCHIVE" "$archive" || die "cannot copy the archive into private storage"
-        verify_local_archive "$archive" "$CHECKSUMS"
+        verify_local_archive "$archive" "$CHECKSUMS" quiet
     else
         download_archive
         archive=$downloaded
@@ -1218,26 +1466,33 @@ main() {
     install_archive "$archive"
     install_examples || die "cannot write the hello examples"
     if [ "$NO_TOOLCHAIN" = 0 ]; then
+        interactive && step 2 "Amiga toolchain"
         if ! toolchain_first_run; then
             print_next_steps
             exit 1
         fi
-        if [ -n "${TOOLCHAIN_CONFIGURED:-}" ]; then
-            if command -v cc >/dev/null 2>&1; then
-                if ! run_hello; then
-                    HOST_STATE=failed
-                    print_next_steps
-                    exit 1
-                fi
-                HOST_STATE=passed
-            else
-                printf 'cc not found; skipping the host hello check\n'
-                HOST_STATE=skipped
+        if [ -n "${TOOLCHAIN_ROOT:-}" ]; then
+            interactive && step 3 "Amiga emulator"
+            select_emulator
+            if ! configure_toolchain "$TOOLCHAIN_ROOT"; then
+                print_next_steps
+                exit 1
             fi
-            guest_first_run
+            TOOLCHAIN_CONFIGURED=1
+            [ "$NO_HELLO" = 0 ] && interactive && step 4 "Say hello"
+            run_first_hello || {
+                print_next_steps
+                exit 1
+            }
         fi
     fi
+    interactive && step 5 "Your first Amiga project"
     install_vscode
+    # A starter named with --starter is created even without a toolchain;
+    # `new` does not need one. The interactive offer needs a working setup.
+    if [ -n "${TOOLCHAIN_CONFIGURED:-}" ] || [ -n "$STARTER" ]; then
+        offer_starter
+    fi
     print_summary
     release_lock
     cleanup_temp

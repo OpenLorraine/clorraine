@@ -1,0 +1,834 @@
+// Hello, Amiga: a demo-scene greeting for the first run.
+//
+// A 320x256, 32-colour double-buffered display. The copper paints three
+// gradients that cost no CPU or blitter time: the night sky, the airbrushed
+// chrome on the CLORRAINE logo, and the sunset colours of the greeting. The
+// logo opens outward from its chrome horizon, three raster bars swing beneath
+// it over a field of stars in three brightnesses, and the greeting drops in
+// letter by letter; a ripple then runs through it every few seconds.
+//
+// The blitter and the CPU share chip memory with a five-plane display, so each
+// frame touches only what changed: the rows a bar has just left, the bars
+// themselves, and the letters that moved. That keeps the intro at the full
+// frame rate on a stock Amiga 1200.
+// Motion follows the system clock, so the timing is the same on every Amiga.
+// The intro ends after about ten seconds, or earlier on a left mouse click, and
+// prints the greeting to the console.
+
+module demo.HelloIntro;
+
+import {
+    Bitmap, Copper, Display,
+    newBitmap, freeBitmap, bitmapFill, bitmapBlit,
+    bitmapFromIndices,
+    newCopper, copperWait, copperColor, copperEnd,
+    openDisplayAt, freeDisplay, displaySetColor, displaySetCopper,
+    displayFlip, displayFailed, displayIndex
+} from std.amiga.video;
+import { readJoystick, JOY_FIRE } from std.amiga.input;
+import { ticks } from std.amiga.dos;
+import { Buffer, bufferNew, bufferBytes, slice } from std.mem;
+import { String, stringOf, bytes } from std.text;
+import { sin, cos } from std.math;
+import { println } from std.io;
+
+/// Frame size in pixels.
+const WIDTH: i32 = 320;
+const HEIGHT: i32 = 256;
+/// The number of rows stars may use; see `starRow`.
+const STAR_ROWS: i32 = 92;
+
+/// The logo: nine letters on a 5x7 grid of 6-pixel cells.
+const CELL: i32 = 6;
+const LETTER_STEP: i32 = 34;
+const LOGO_W: i32 = 309;
+const LOGO_H: i32 = 49;
+const LOGO_X: i32 = 5;
+const LOGO_Y: i32 = 20;
+/// The logo row on the chrome horizon, where the reveal starts.
+const LOGO_HORIZON: i32 = 22;
+
+/// The raster bars: three 7-row bars swinging around one line.
+const BAR_H: i32 = 7;
+const BARS: i32 = 3;
+const BAR_MID: i32 = 102;
+const BAR_SWING: i32 = 16;
+
+/// The greeting: 8x8 glyphs at twice the size with a shadow, in 18-pixel
+/// cells. Each cell carries empty rows above and below, so redrawing a letter
+/// that moved also erases where it was.
+const GLYPH: i32 = 18;
+const PAD: i32 = 6;
+const CELL_ROWS: i32 = 30;
+const LETTERS: i32 = 28;
+const LINE_BREAK: i32 = 13;
+const LINE1_Y: i32 = 136;
+const LINE2_Y: i32 = 174;
+const TEXT_TOP: i32 = 128;
+const TEXT_BOTTOM: i32 = 204;
+/// When the first letter lands, and the gap between letters, in ticks.
+const TEXT_START: i32 = 60;
+const TEXT_STAGGER: i32 = 3;
+/// The ripple that runs through the greeting once it has landed.
+const RIPPLE_START: i32 = 180;
+const RIPPLE_PERIOD: i32 = 150;
+
+/// The number of stars, in three brightnesses.
+const STARS: i32 = 90;
+
+/// The intro length in 1/50 s ticks.
+const DURATION: i32 = 520;
+
+/// Pens. The copper rewrites pens 0, 4 and 8 on the way down the screen.
+const PEN_SKY: u8 = 0;
+const PEN_LOGO: u8 = 4;
+const PEN_SHINE: u8 = 5;
+const PEN_OUTLINE: u8 = 6;
+const PEN_SHADOW: u8 = 7;
+const PEN_TEXT: u8 = 8;
+const PEN_TEXT_SHADOW: u8 = 9;
+const PEN_FOOTER: u8 = 10;
+/// Three bar hues of four shades each.
+const PEN_BARS: i32 = 11;
+
+/// Clears a chunky byte buffer to pen 0. `bufferNew` does not zero memory.
+func clearBytes(borrow pixels: u8[]): void {
+    let i: usize = 0;
+    while (i < len(pixels)) {
+        pixels[i] = 0;
+        i = i + 1;
+    }
+}
+
+/// Returns one 5-bit row of a logo letter. The leftmost pixel is bit 4.
+func logoRow(ch: u8, row: i32): i32 {
+    let rows: i32[7] = [0, 0, 0, 0, 0, 0, 0];
+    if (ch == 65) {
+        rows = [14, 17, 17, 31, 17, 17, 17];
+    } else if (ch == 67) {
+        rows = [14, 17, 16, 16, 16, 17, 14];
+    } else if (ch == 69) {
+        rows = [31, 16, 16, 30, 16, 16, 31];
+    } else if (ch == 73) {
+        rows = [31, 4, 4, 4, 4, 4, 31];
+    } else if (ch == 76) {
+        rows = [16, 16, 16, 16, 16, 16, 31];
+    } else if (ch == 78) {
+        rows = [17, 25, 21, 19, 17, 17, 17];
+    } else if (ch == 79) {
+        rows = [14, 17, 17, 17, 17, 17, 14];
+    } else if (ch == 82) {
+        rows = [30, 17, 17, 30, 20, 18, 17];
+    }
+    return rows[usize(row)];
+}
+
+/// True when cell (`col`, `row`) of a logo letter is filled.
+func logoCell(ch: u8, col: i32, row: i32): bool {
+    if (col < 0 || col > 4 || row < 0 || row > 6) {
+        return false;
+    }
+    return (logoRow(ch, row) & (1 << (4 - col))) != 0;
+}
+
+/// Picks one byte of a glyph packed as two big-endian words of four rows.
+func packedRow(top: i32, bottom: i32, row: i32): i32 {
+    if (row < 4) {
+        return (top >> ((3 - row) * 8)) & 255;
+    }
+    return (bottom >> ((7 - row) * 8)) & 255;
+}
+
+/// Returns one row of an 8x8 glyph. The leftmost pixel is bit 0.
+///
+/// The shapes are from the public-domain font8x8 set. Only the characters
+/// this intro prints are included; anything else is blank.
+func glyphRow(ch: u8, row: i32): i32 {
+    if (ch == 33) { return packedRow(0x183C3C18, 0x18001800, row); }
+    if (ch == 44) { return packedRow(0x00000000, 0x000C0C06, row); }
+    if (ch == 45) { return packedRow(0x0000003F, 0x00000000, row); }
+    if (ch == 46) { return packedRow(0x00000000, 0x000C0C00, row); }
+    if (ch == 65) { return packedRow(0x0C1E3333, 0x3F333300, row); }
+    if (ch == 67) { return packedRow(0x3C660303, 0x03663C00, row); }
+    if (ch == 72) { return packedRow(0x3333333F, 0x33333300, row); }
+    if (ch == 89) { return packedRow(0x3333331E, 0x0C0C1E00, row); }
+    if (ch == 97) { return packedRow(0x00001E30, 0x3E336E00, row); }
+    if (ch == 99) { return packedRow(0x00001E33, 0x03331E00, row); }
+    if (ch == 100) { return packedRow(0x3830303E, 0x33336E00, row); }
+    if (ch == 101) { return packedRow(0x00001E33, 0x3F031E00, row); }
+    if (ch == 102) { return packedRow(0x1C36060F, 0x06060F00, row); }
+    if (ch == 103) { return packedRow(0x00006E33, 0x333E301F, row); }
+    if (ch == 104) { return packedRow(0x0706366E, 0x66666700, row); }
+    if (ch == 105) { return packedRow(0x0C000E0C, 0x0C0C1E00, row); }
+    if (ch == 107) { return packedRow(0x07066636, 0x1E366700, row); }
+    if (ch == 108) { return packedRow(0x0E0C0C0C, 0x0C0C1E00, row); }
+    if (ch == 109) { return packedRow(0x0000337F, 0x7F6B6300, row); }
+    if (ch == 110) { return packedRow(0x00001F33, 0x33333300, row); }
+    if (ch == 111) { return packedRow(0x00001E33, 0x33331E00, row); }
+    if (ch == 114) { return packedRow(0x00003B6E, 0x66060F00, row); }
+    if (ch == 115) { return packedRow(0x00003E03, 0x1E301F00, row); }
+    if (ch == 116) { return packedRow(0x080C3E0C, 0x0C2C1800, row); }
+    if (ch == 117) { return packedRow(0x00003333, 0x33336E00, row); }
+    if (ch == 120) { return packedRow(0x00006336, 0x1C366300, row); }
+    if (ch == 121) { return packedRow(0x00003333, 0x333E301F, row); }
+    return 0;
+}
+
+/// Stamps an 8x8 glyph into a chunky buffer at `scale`.
+func stampGlyph(borrow pixels: u8[], stride: i32, x: i32, y: i32, ch: u8,
+                scale: i32, pen: u8): void {
+    let height: i32 = i32(len(pixels)) / stride;
+    let row: i32 = 0;
+    while (row < 8) {
+        let bits: i32 = glyphRow(ch, row);
+        let col: i32 = 0;
+        while (col < 8) {
+            if ((bits & (1 << col)) != 0) {
+                let dy: i32 = 0;
+                while (dy < scale) {
+                    let dx: i32 = 0;
+                    while (dx < scale) {
+                        let px: i32 = x + col * scale + dx;
+                        let py: i32 = y + row * scale + dy;
+                        if (px >= 0 && px < stride && py >= 0 && py < height) {
+                            pixels[usize(py * stride + px)] = pen;
+                        }
+                        dx = dx + 1;
+                    }
+                    dy = dy + 1;
+                }
+            }
+            col = col + 1;
+        }
+        row = row + 1;
+    }
+}
+
+/// Draws a line of 1x text centred on the frame.
+func centredText(borrow pixels: u8[], y: i32, const text: u8[], pen: u8): void {
+    let x: i32 = (WIDTH - i32(len(text)) * 8) / 2;
+    let i: usize = 0;
+    while (i < len(text)) {
+        stampGlyph(pixels, WIDTH, x, y, text[i], 1, pen);
+        x = x + 8;
+        i = i + 1;
+    }
+}
+
+/// Maps `pick` (0..STAR_ROWS-1) to a row where a star may live.
+func starRow(pick: i32): i32 {
+    let upper: i32 = LOGO_Y - 1;
+    // Below the logo, down to where a dropping letter's cell can reach: the
+    // drop starts 8 rows high, (12 * 12) / 18.
+    let middle: i32 = LINE1_Y - PAD - 8 - (LOGO_Y + LOGO_H);
+    if (pick < upper) {
+        return 1 + pick;
+    }
+    if (pick < upper + middle) {
+        return LOGO_Y + LOGO_H + pick - upper;
+    }
+    return LINE2_Y + GLYPH + PAD + pick - upper - middle;
+}
+
+/// Builds the static background: the stars and the two footer lines on pen 0.
+/// Stars sit only where nothing is drawn over them for good: above the logo,
+/// through the bars (which restore what they uncover from here), and below
+/// the greeting.
+func buildMaster(): Bitmap? {
+    let canvas: Buffer? = bufferNew(usize(WIDTH * HEIGHT));
+    if (canvas == null) {
+        return null;
+    }
+    let pixels: u8[] = bufferBytes(canvas);
+    clearBytes(pixels);
+    let seed: i32 = 29;
+    let s: i32 = 0;
+    while (s < STARS) {
+        seed = (seed * 75 + 74) % 65537;
+        let x: i32 = seed % WIDTH;
+        seed = (seed * 75 + 74) % 65537;
+        let y: i32 = starRow(seed % STAR_ROWS);
+        pixels[usize(y * WIDTH + x)] = u8(s % 3 + 1);
+        s = s + 1;
+    }
+    let ready: String = stringOf("Your Amiga toolchain is ready.");
+    centredText(pixels, 226, bytes(ready), PEN_FOOTER);
+    let hint: String = stringOf("Click the mouse to exit.");
+    centredText(pixels, 240, bytes(hint), 2);
+    let master: Bitmap? = newBitmap(WIDTH, HEIGHT, 5);
+    if (master == null) {
+        return null;
+    }
+    bitmapFromIndices(master, pixels);
+    return master;
+}
+
+/// Fills `inside` with pixel (`x`, `y`) of the logo when it is in range.
+func fillLogo(borrow inside: u8[], x: i32, y: i32): void {
+    if (x >= 0 && x < LOGO_W && y >= 0 && y < LOGO_H) {
+        inside[usize(y * LOGO_W + x)] = 1;
+    }
+}
+
+/// Fills one letter cell. A corner is rounded only where the three cells
+/// around it are empty, so joins and diagonal strokes stay solid.
+func fillCell(borrow inside: u8[], ch: u8, ox: i32, col: i32, row: i32): void {
+    let left: bool = logoCell(ch, col - 1, row);
+    let right: bool = logoCell(ch, col + 1, row);
+    let up: bool = logoCell(ch, col, row - 1);
+    let down: bool = logoCell(ch, col, row + 1);
+    let upLeft: bool = logoCell(ch, col - 1, row - 1);
+    let upRight: bool = logoCell(ch, col + 1, row - 1);
+    let downLeft: bool = logoCell(ch, col - 1, row + 1);
+    let downRight: bool = logoCell(ch, col + 1, row + 1);
+    let last: i32 = CELL - 1;
+    let py: i32 = 0;
+    while (py < CELL) {
+        let px: i32 = 0;
+        while (px < CELL) {
+            let cut: bool = false;
+            if (!left && !up && !upLeft && px + py < 2) {
+                cut = true;
+            }
+            if (!right && !up && !upRight && (last - px) + py < 2) {
+                cut = true;
+            }
+            if (!left && !down && !downLeft && px + (last - py) < 2) {
+                cut = true;
+            }
+            if (!right && !down && !downRight && (last - px) + (last - py) < 2) {
+                cut = true;
+            }
+            if (!cut) {
+                fillLogo(inside, ox + col * CELL + px, 2 + row * CELL + py);
+            }
+            px = px + 1;
+        }
+        py = py + 1;
+    }
+}
+
+/// Bridges two diagonally touching cells with a 45-degree band through their
+/// shared corner. `down` selects a stroke that falls to the right.
+func bridge(borrow inside: u8[], cornerX: i32, cornerY: i32, down: bool): void {
+    let v: i32 = -CELL / 2;
+    while (v < CELL / 2) {
+        let u: i32 = -CELL / 2;
+        while (u < CELL / 2) {
+            let along: i32 = u + v + 1;
+            if (down) {
+                along = u - v;
+            }
+            if (along >= -2 && along <= 2) {
+                fillLogo(inside, cornerX + u, cornerY + v);
+            }
+            u = u + 1;
+        }
+        v = v + 1;
+    }
+}
+
+/// Fills `inside` with the logo letters: 1 where the face is.
+func logoShape(borrow inside: u8[]): void {
+    let word: String = stringOf("CLORRAINE");
+    let letters: u8[] = bytes(word);
+    let li: usize = 0;
+    while (li < len(letters)) {
+        let ch: u8 = letters[li];
+        let ox: i32 = 2 + i32(li) * LETTER_STEP;
+        let row: i32 = 0;
+        while (row < 7) {
+            let col: i32 = 0;
+            while (col < 5) {
+                if (logoCell(ch, col, row)) {
+                    fillCell(inside, ch, ox, col, row);
+                    let cornerX: i32 = ox + (col + 1) * CELL;
+                    if (logoCell(ch, col + 1, row + 1) &&
+                        !logoCell(ch, col + 1, row) && !logoCell(ch, col, row + 1)) {
+                        bridge(inside, cornerX, 2 + (row + 1) * CELL, true);
+                    }
+                    if (logoCell(ch, col + 1, row - 1) &&
+                        !logoCell(ch, col + 1, row) && !logoCell(ch, col, row - 1)) {
+                        bridge(inside, cornerX, 2 + row * CELL, false);
+                    }
+                }
+                col = col + 1;
+            }
+            row = row + 1;
+        }
+        li = li + 1;
+    }
+}
+
+/// True when the logo face covers (`x`, `y`).
+func covered(const inside: u8[], x: i32, y: i32): bool {
+    if (x < 0 || x >= LOGO_W || y < 0 || y >= LOGO_H) {
+        return false;
+    }
+    return inside[usize(y * LOGO_W + x)] != 0;
+}
+
+/// Paints the logo: chrome face, a bright top edge, a dark outline, and a drop
+/// shadow, on pen 0.
+func paintLogo(const inside: u8[], borrow pixels: u8[]): void {
+    let y: i32 = 0;
+    while (y < LOGO_H) {
+        let x: i32 = 0;
+        while (x < LOGO_W) {
+            let pen: u8 = 0;
+            if (covered(inside, x, y)) {
+                pen = PEN_LOGO;
+                if (!covered(inside, x, y - 1)) {
+                    pen = PEN_SHINE;
+                }
+            } else if (covered(inside, x - 1, y) || covered(inside, x + 1, y) ||
+                       covered(inside, x, y - 1) || covered(inside, x, y + 1) ||
+                       covered(inside, x - 1, y - 1) ||
+                       covered(inside, x + 1, y + 1)) {
+                pen = PEN_OUTLINE;
+            } else if (covered(inside, x - 3, y - 3)) {
+                pen = PEN_SHADOW;
+            }
+            pixels[usize(y * LOGO_W + x)] = pen;
+            x = x + 1;
+        }
+        y = y + 1;
+    }
+}
+
+/// Paints the greeting strip: one cell per character, the glyph `PAD` rows
+/// down, with a shadow two pixels down and right.
+func paintGreeting(const text: u8[], borrow pixels: u8[]): void {
+    let stride: i32 = i32(len(text)) * GLYPH;
+    let i: usize = 0;
+    while (i < len(text)) {
+        let x: i32 = i32(i) * GLYPH;
+        stampGlyph(pixels, stride, x + 2, PAD + 2, text[i], 2, PEN_TEXT_SHADOW);
+        stampGlyph(pixels, stride, x, PAD, text[i], 2, PEN_TEXT);
+        i = i + 1;
+    }
+}
+
+/// Builds one raster bar in hue `hue` (0..2): four shades up to a bright
+/// centre line and back down.
+func buildBar(hue: i32): Bitmap? {
+    let bar: Bitmap? = newBitmap(WIDTH, BAR_H, 5);
+    if (bar == null) {
+        return null;
+    }
+    let row: i32 = 0;
+    while (row < BAR_H) {
+        let shade: i32 = row;
+        if (row > 3) {
+            shade = 6 - row;
+        }
+        bitmapFill(bar, 0, row, WIDTH - 1, row, u8(PEN_BARS + hue * 4 + shade));
+        row = row + 1;
+    }
+    return bar;
+}
+
+/// Interpolates between two packed 0xRRGGBB colours, `step` of `steps`.
+func mix(a: i32, b: i32, step: i32, steps: i32): i32 {
+    let ar: i32 = (a >> 16) & 255;
+    let ag: i32 = (a >> 8) & 255;
+    let ab: i32 = a & 255;
+    let br: i32 = (b >> 16) & 255;
+    let bg: i32 = (b >> 8) & 255;
+    let bb: i32 = b & 255;
+    let r: i32 = ar + (br - ar) * step / steps;
+    let g: i32 = ag + (bg - ag) * step / steps;
+    let bl: i32 = ab + (bb - ab) * step / steps;
+    return (r << 16) | (g << 8) | bl;
+}
+
+/// Samples a five-stop gradient at `at` (0..1000).
+func gradient(const stops: i32[5], const colours: i32[5], at: i32): i32 {
+    let i: usize = 0;
+    while (i < 4) {
+        if (at <= stops[i + 1]) {
+            let span: i32 = stops[i + 1] - stops[i];
+            if (span <= 0) {
+                return colours[i + 1];
+            }
+            return mix(colours[i], colours[i + 1], at - stops[i], span);
+        }
+        i = i + 1;
+    }
+    return colours[4];
+}
+
+/// The deep night sky, top to bottom.
+func skyColour(y: i32): i32 {
+    let stops: i32[5] = [0, 350, 620, 860, 1000];
+    let colours: i32[5] = [0x000010, 0x0C0830, 0x2A0848, 0x1A0634, 0x000010];
+    return gradient(stops, colours, y * 1000 / (HEIGHT - 1));
+}
+
+/// Classic airbrushed chrome: sky blue, a hard horizon, then warm ground.
+func chromeColour(row: i32): i32 {
+    let stops: i32[5] = [0, 460, 500, 540, 1000];
+    let colours: i32[5] = [0xE8F4FF, 0x2850B0, 0xFFFFFF, 0x6A3410, 0xFFD890];
+    return gradient(stops, colours, row * 1000 / (LOGO_H - 8));
+}
+
+/// A sunset for the greeting.
+func greetingColour(y: i32): i32 {
+    let stops: i32[5] = [0, 250, 500, 750, 1000];
+    let colours: i32[5] = [0xFFF080, 0xFF9A48, 0xFF5AA8, 0xB070FF, 0x60E0FF];
+    return gradient(stops, colours, (y - TEXT_TOP) * 1000 / (TEXT_BOTTOM - TEXT_TOP));
+}
+
+/// Appends a packed colour write for `pen`.
+func copperPacked(borrow copper: Copper, pen: u8, rgb: i32): void {
+    copperColor(copper, pen, u8((rgb >> 16) & 255), u8((rgb >> 8) & 255),
+                u8(rgb & 255));
+}
+
+/// Builds the copper list: sky every 8 lines, chrome on every line of the
+/// logo, and the greeting colours on every other line of the text band.
+func buildCopper(): Copper? {
+    let copper: Copper? = newCopper();
+    if (copper == null) {
+        return null;
+    }
+    let y: i32 = 1;
+    while (y < HEIGHT) {
+        let sky: bool = y % 8 == 0;
+        let chrome: bool = y >= LOGO_Y + 2 && y < LOGO_Y + LOGO_H - 3;
+        let text: bool = y >= TEXT_TOP && y < TEXT_BOTTOM && y % 2 == 0;
+        if (sky || chrome || text) {
+            copperWait(copper, y);
+            if (sky) {
+                copperPacked(copper, PEN_SKY, skyColour(y));
+            }
+            if (chrome) {
+                copperPacked(copper, PEN_LOGO, chromeColour(y - LOGO_Y - 2));
+            }
+            if (text) {
+                copperPacked(copper, PEN_TEXT, greetingColour(y));
+            }
+        }
+        y = y + 1;
+    }
+    copperEnd(copper);
+    return copper;
+}
+
+/// Sets a pen from a packed colour.
+func setPacked(borrow display: Display, pen: u8, rgb: i32): void {
+    displaySetColor(display, pen, u8((rgb >> 16) & 255), u8((rgb >> 8) & 255),
+                    u8(rgb & 255));
+}
+
+/// Sets the fixed palette. The copper overrides pens 0, 4 and 8 per line.
+func setPalette(borrow display: Display): void {
+    setPacked(display, PEN_SKY, skyColour(0));
+    setPacked(display, 1, 0x5050A0);
+    setPacked(display, 2, 0xA8A8E8);
+    setPacked(display, 3, 0xFFFFFF);
+    setPacked(display, PEN_LOGO, chromeColour(0));
+    setPacked(display, PEN_SHINE, 0xFFFFFF);
+    setPacked(display, PEN_OUTLINE, 0x080828);
+    setPacked(display, PEN_SHADOW, 0x040010);
+    setPacked(display, PEN_TEXT, greetingColour(TEXT_TOP));
+    setPacked(display, PEN_TEXT_SHADOW, 0x140024);
+    setPacked(display, PEN_FOOTER, 0xC8C8F0);
+    let hues: i32[3] = [0xFF3C8C, 0xFFC828, 0x28C8FF];
+    let hue: usize = 0;
+    while (hue < 3) {
+        setPacked(display, u8(PEN_BARS + i32(hue) * 4), mix(0x000000, hues[hue], 1, 3));
+        setPacked(display, u8(PEN_BARS + i32(hue) * 4 + 1), mix(0x000000, hues[hue], 2, 3));
+        setPacked(display, u8(PEN_BARS + i32(hue) * 4 + 2), hues[hue]);
+        setPacked(display, u8(PEN_BARS + i32(hue) * 4 + 3), mix(hues[hue], 0xFFFFFF, 2, 3));
+        hue = hue + 1;
+    }
+}
+
+/// Opens the logo outward from its chrome horizon. Only rows this buffer has
+/// not shown yet are copied.
+func revealLogo(borrow dest: Bitmap, const logo: Bitmap, borrow shown: u8[],
+                buffer: usize, t: i32): void {
+    let before: i32 = i32(shown[buffer]);
+    let reach: i32 = t * 2;
+    if (reach > LOGO_H) {
+        reach = LOGO_H;
+    }
+    if (reach <= before) {
+        return;
+    }
+    let oldTop: i32 = LOGO_HORIZON - before;
+    let oldBottom: i32 = LOGO_HORIZON + before;
+    let top: i32 = LOGO_HORIZON - reach;
+    let bottom: i32 = LOGO_HORIZON + reach;
+    if (oldTop < 0) {
+        oldTop = 0;
+    }
+    if (top < 0) {
+        top = 0;
+    }
+    if (oldBottom > LOGO_H) {
+        oldBottom = LOGO_H;
+    }
+    if (bottom > LOGO_H) {
+        bottom = LOGO_H;
+    }
+    if (before == 0) {
+        bitmapBlit(dest, logo, 0, top, LOGO_X, LOGO_Y + top, LOGO_W, bottom - top);
+    } else {
+        if (top < oldTop) {
+            bitmapBlit(dest, logo, 0, top, LOGO_X, LOGO_Y + top, LOGO_W, oldTop - top);
+        }
+        if (bottom > oldBottom) {
+            bitmapBlit(dest, logo, 0, oldBottom, LOGO_X, LOGO_Y + oldBottom,
+                       LOGO_W, bottom - oldBottom);
+        }
+    }
+    shown[buffer] = u8(reach);
+}
+
+
+/// The top row of bar `index` at time `t`. The swing grows in after the
+/// logo opens, so the bars spread out of a single line.
+func barTop(index: i32, t: i32): i32 {
+    let swing: i32 = BAR_SWING;
+    if (t < 40) {
+        swing = 0;
+    } else if (t < 90) {
+        swing = BAR_SWING * (t - 40) / 50;
+    }
+    return BAR_MID - BAR_H / 2 + swing * sin(t * 2 + index * 85) / 256;
+}
+
+/// True when bar `index` is nearer the viewer than the others.
+func barNear(index: i32, t: i32): bool {
+    return cos(t * 2 + index * 85) > 0;
+}
+
+/// True when `row` is covered by one of the three new bars.
+func barCovers(row: i32, top0: i32, top1: i32, top2: i32): bool {
+    return (row >= top0 && row < top0 + BAR_H) ||
+           (row >= top1 && row < top1 + BAR_H) ||
+           (row >= top2 && row < top2 + BAR_H);
+}
+
+/// Moves the bars of one buffer: restore from the master only the rows a bar
+/// has left, in runs, then draw the far bars and the near bars on top.
+func moveBars(borrow dest: Bitmap, const master: Bitmap, const bar0: Bitmap,
+              const bar1: Bitmap, const bar2: Bitmap, borrow tops: u8[],
+              buffer: usize, t: i32): void {
+    if (t < 30) {
+        return;
+    }
+    let top0: i32 = barTop(0, t);
+    let top1: i32 = barTop(1, t);
+    let top2: i32 = barTop(2, t);
+    let first: i32 = BAR_MID - BAR_SWING - BAR_H;
+    let last: i32 = BAR_MID + BAR_SWING + BAR_H;
+    let run: i32 = -1;
+    let row: i32 = first;
+    while (row <= last) {
+        let left: bool = false;
+        if (row <= last - 1 && !barCovers(row, top0, top1, top2)) {
+            let b: usize = 0;
+            while (b < 3) {
+                let old: i32 = i32(tops[buffer * 3 + b]);
+                if (old > 0 && row >= old && row < old + BAR_H) {
+                    left = true;
+                }
+                b = b + 1;
+            }
+        }
+        if (left && run < 0) {
+            run = row;
+        } else if (!left && run >= 0) {
+            bitmapBlit(dest, master, 0, run, 0, run, WIDTH, row - run);
+            run = -1;
+        }
+        row = row + 1;
+    }
+    let pass: i32 = 0;
+    while (pass < 2) {
+        let near: bool = pass == 1;
+        if (barNear(0, t) == near) {
+            bitmapBlit(dest, bar0, 0, 0, 0, top0, WIDTH, BAR_H);
+        }
+        if (barNear(1, t) == near) {
+            bitmapBlit(dest, bar1, 0, 0, 0, top1, WIDTH, BAR_H);
+        }
+        if (barNear(2, t) == near) {
+            bitmapBlit(dest, bar2, 0, 0, 0, top2, WIDTH, BAR_H);
+        }
+        pass = pass + 1;
+    }
+    tops[buffer * 3] = u8(top0);
+    tops[buffer * 3 + 1] = u8(top1);
+    tops[buffer * 3 + 2] = u8(top2);
+}
+
+/// The glyph top of letter `i` at time `t`, or 0 before it appears. A
+/// letter drops in from a few rows above, then hops when the ripple passes.
+func letterY(i: i32, t: i32): i32 {
+    let age: i32 = t - TEXT_START - i * TEXT_STAGGER;
+    if (age < 0) {
+        return 0;
+    }
+    let y: i32 = LINE1_Y;
+    if (i >= LINE_BREAK) {
+        y = LINE2_Y;
+    }
+    if (age < 12) {
+        return y - (12 - age) * (12 - age) / 18;
+    }
+    if (t >= RIPPLE_START) {
+        let phase: i32 = (t - RIPPLE_START) % RIPPLE_PERIOD - i * 2;
+        if (phase >= 0 && phase < 16) {
+            return y - 6 * sin(phase * 8) / 256;
+        }
+    }
+    return y;
+}
+
+/// The left edge of letter `i`; each line is centred.
+func letterX(i: i32): i32 {
+    if (i < LINE_BREAK) {
+        return (WIDTH - LINE_BREAK * GLYPH) / 2 + i * GLYPH;
+    }
+    return (WIDTH - (LETTERS - LINE_BREAK) * GLYPH) / 2 + (i - LINE_BREAK) * GLYPH;
+}
+
+/// Redraws the letters of one buffer that moved since that buffer last
+/// showed them. The cell's empty rows erase the old position.
+func moveLetters(borrow dest: Bitmap, const glyphs: Bitmap, const text: u8[],
+                 borrow tops: u8[], buffer: usize, t: i32): void {
+    let i: i32 = 0;
+    while (i < LETTERS) {
+        let slot: usize = buffer * usize(LETTERS) + usize(i);
+        let y: i32 = letterY(i, t);
+        let old: i32 = i32(tops[slot]);
+        if (y > 0 && text[usize(i)] != 32 && y != old) {
+            // A move larger than the empty rows (only after a long stall)
+            // clears the old cell first, so no trail is left.
+            if (old > 0 && (y - old > PAD || old - y > PAD)) {
+                bitmapFill(dest, letterX(i), old - PAD, letterX(i) + GLYPH - 1,
+                           old - PAD + CELL_ROWS - 1, 0);
+            }
+            bitmapBlit(dest, glyphs, i * GLYPH, 0, letterX(i), y - PAD, GLYPH, CELL_ROWS);
+            tops[slot] = u8(y);
+        }
+        i = i + 1;
+    }
+}
+
+func main(): i32 {
+    let master: Bitmap? = buildMaster();
+    let front: Bitmap? = newBitmap(WIDTH, HEIGHT, 5);
+    let back: Bitmap? = newBitmap(WIDTH, HEIGHT, 5);
+    if (master == null || front == null || back == null) {
+        println("hello-intro: not enough chip memory");
+        return 1;
+    }
+    bitmapBlit(front, master, 0, 0, 0, 0, WIDTH, HEIGHT);
+    bitmapBlit(back, master, 0, 0, 0, 0, WIDTH, HEIGHT);
+
+    // The logo, painted once on pen 0.
+    let insideBuffer: Buffer? = bufferNew(usize(LOGO_W * LOGO_H));
+    let logoBuffer: Buffer? = bufferNew(usize(LOGO_W * LOGO_H));
+    let logo: Bitmap? = newBitmap(LOGO_W, LOGO_H, 5);
+    if (insideBuffer == null || logoBuffer == null || logo == null) {
+        println("hello-intro: not enough memory for the logo");
+        return 1;
+    }
+    let inside: u8[] = bufferBytes(insideBuffer);
+    clearBytes(inside);
+    logoShape(inside);
+    paintLogo(inside, bufferBytes(logoBuffer));
+    bitmapFromIndices(logo, bufferBytes(logoBuffer));
+
+    // The greeting: one cell per character. The comma ends the first line.
+    let greeting: String = stringOf("Hello, Amiga,from Clorraine!");
+    let text: u8[] = bytes(greeting);
+    let glyphBuffer: Buffer? = bufferNew(usize(LETTERS * GLYPH * CELL_ROWS));
+    let glyphs: Bitmap? = newBitmap(LETTERS * GLYPH, CELL_ROWS, 5);
+    if (glyphBuffer == null || glyphs == null) {
+        println("hello-intro: not enough memory for the greeting");
+        return 1;
+    }
+    clearBytes(bufferBytes(glyphBuffer));
+    paintGreeting(text, bufferBytes(glyphBuffer));
+    bitmapFromIndices(glyphs, bufferBytes(glyphBuffer));
+
+    let bar0: Bitmap? = buildBar(0);
+    let bar1: Bitmap? = buildBar(1);
+    let bar2: Bitmap? = buildBar(2);
+    if (bar0 == null || bar1 == null || bar2 == null) {
+        println("hello-intro: not enough chip memory for the bars");
+        return 1;
+    }
+
+    // What each buffer currently shows, so a frame only redraws what changed.
+    let stateBuffer: Buffer? = bufferNew(usize(LETTERS * 2 + 8));
+    if (stateBuffer == null) {
+        println("hello-intro: not enough memory");
+        return 1;
+    }
+    let state: u8[] = bufferBytes(stateBuffer);
+    clearBytes(state);
+    let barsAt: usize = usize(LETTERS * 2);
+    let letterTops: u8[] = slice(state, 0, barsAt);
+    let barTops: u8[] = slice(state, barsAt, barsAt + 6);
+    let shown: u8[] = slice(state, barsAt + 6, barsAt + 8);
+
+    let copper: Copper? = buildCopper();
+    let display: Display? = openDisplayAt(front, back, 0, 0);
+    if (copper == null || display == null) {
+        println("hello-intro: cannot open the display");
+        return 1;
+    }
+    setPalette(display);
+    displaySetCopper(display, copper);
+    displayFlip(display);
+    if (displayFailed(display)) {
+        freeDisplay(display);
+        println("hello-intro: cannot open the display");
+        return 1;
+    }
+
+    let start: u32 = ticks();
+    let t: i32 = 0;
+    let held: i32 = 0;
+    while (t < DURATION) {
+        t = i32(ticks() - start);
+        // A click is the left button held for at least two frames and then
+        // let go, so a stray reading cannot cut the intro short.
+        if ((readJoystick(0) & JOY_FIRE) != 0) {
+            held = held + 1;
+        } else if (held >= 2) {
+            break;
+        } else {
+            held = 0;
+        }
+        if (displayIndex(display) == 0) {
+            revealLogo(back, logo, shown, 1, t);
+            moveBars(back, master, bar0, bar1, bar2, barTops, 1, t);
+            moveLetters(back, glyphs, text, letterTops, 1, t);
+        } else {
+            revealLogo(front, logo, shown, 0, t);
+            moveBars(front, master, bar0, bar1, bar2, barTops, 0, t);
+            moveLetters(front, glyphs, text, letterTops, 0, t);
+        }
+        displayFlip(display);
+    }
+
+    freeDisplay(display);
+    freeBitmap(bar2);
+    freeBitmap(bar1);
+    freeBitmap(bar0);
+    freeBitmap(glyphs);
+    freeBitmap(logo);
+    freeBitmap(back);
+    freeBitmap(front);
+    freeBitmap(master);
+    println("Hello, Amiga, from Clorraine!");
+    return 0;
+}

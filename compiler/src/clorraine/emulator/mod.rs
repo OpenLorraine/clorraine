@@ -39,6 +39,30 @@ use storage::Storage;
 /// of the install layout.
 const WRAPPER_SOURCE: &str = include_str!("../../../runtime/emulator_runner.c");
 
+/// Validates the emulator paths `setup` is asked to remember.
+///
+/// Each named path gets the same checks as an emulator run: FS-UAE must be an
+/// executable 3.2.0 or newer, and the Kickstart must be a readable 512 KB
+/// image. Returns the absolute paths to store.
+pub(super) fn validate_media(
+    fs_uae: Option<&str>,
+    kickstart: Option<&str>,
+) -> Result<(Option<PathBuf>, Option<PathBuf>), EnvironmentError> {
+    let executable = match fs_uae {
+        Some(path) => {
+            let executable = select::resolve_executable(Some(path), OsStr::new(""))?;
+            select::check_version(&executable)?;
+            Some(executable)
+        }
+        None => None,
+    };
+    let rom = match kickstart {
+        Some(path) => Some(select::resolve_rom(Some(path))?.path),
+        None => None,
+    };
+    Ok((executable, rom))
+}
+
 /// The selected emulator inputs, validated before a build starts.
 pub(super) struct Emulator {
     /// Absolute FS-UAE executable.
@@ -74,9 +98,19 @@ impl Emulator {
     /// exercised without changing the process environment. An explicit
     /// `--fs-uae` value never falls back to the environment or `PATH`.
     pub(super) fn prepare(options: &Options, path: &OsStr) -> Result<Self, EnvironmentError> {
-        let executable = select::resolve_executable(options.fs_uae.as_deref(), path)?;
-        select::check_version(&executable)?;
-        let rom = select::resolve_rom(options.kickstart.as_deref())?;
+        let fs_uae = options.fs_uae.as_deref();
+        let kickstart = options.kickstart.as_deref();
+        let hint = |remembered: bool, key: &'static str| {
+            move |error: EnvironmentError| {
+                if remembered { select::remembered_hint(error, key) } else { error }
+            }
+        };
+        let remembered = select::uses_remembered(fs_uae, "CLORRAINE_FS_UAE", "fs-uae");
+        let executable = select::resolve_executable(fs_uae, path)
+            .map_err(hint(remembered, "fs-uae"))?;
+        select::check_version(&executable).map_err(hint(remembered, "fs-uae"))?;
+        let remembered = select::uses_remembered(kickstart, "CLORRAINE_KICKSTART", "kickstart");
+        let rom = select::resolve_rom(kickstart).map_err(hint(remembered, "kickstart"))?;
         let timeout = select::resolve_timeout()?;
         Ok(Self { executable, rom, timeout })
     }
