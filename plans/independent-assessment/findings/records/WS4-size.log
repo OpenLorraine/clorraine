@@ -1,0 +1,66 @@
+== calibration clo:    5900	    272	    120	   6292	   1894	build/tmp/assessment/WS4/size/calibration.clo
+616 ___nocommandline
+354 ___initstdio
+312 ___main
+282 ___exitcpp
+278 ___swbuf
+270 _fdopen
+248 _malloc
+218 _raise
+178 _DeletePort
+154 _free
+148 _write
+148 ___fclose
+148 ___exitcommandline
+144 _fclose
+128 ___fflush
+== calibration c:    5124	    272	    120	   5516	   158c	build/tmp/assessment/WS4/size/calibration.c
+616 ___nocommandline
+354 ___initstdio
+330 _raise
+282 ___exitcpp
+270 _fdopen
+268 ___swbuf
+248 _malloc
+154 _free
+148 _write
+148 ___fclose
+148 ___exitcommandline
+144 _fclose
+128 ___fflush
+128 _GetProgramName
+124 _fwrite
+warning W10004: stack frame of 'sieveOnce' is 8212 bytes
+  --> benchmarks/sieve/program.clo:10:6
+== sieve clo:   23772	    280	    120	  24172	   5e6c	build/tmp/assessment/WS4/size/sieve.clo
+10582 ___vfprintf_total_size
+2452 ___addxf3
+1124 ___mulxf3
+776 ___cmpxf2
+616 ___nocommandline
+388 ___xf_pack
+354 ___initstdio
+304 ___main
+300 _cl_string_concat
+288 ___extenddfxf2
+282 ___exitcpp
+278 ___swbuf
+270 _fdopen
+256 ___clz_tab
+248 _malloc
+== sieve c:   22648	    280	    120	  23048	   5a08	build/tmp/assessment/WS4/size/sieve.c
+10470 ___vfprintf_total_size
+2452 ___addxf3
+1124 ___mulxf3
+616 ___nocommandline
+552 ___cmpxf2
+388 ___xf_pack
+354 ___initstdio
+288 ___extenddfxf2
+282 ___exitcpp
+270 _fdopen
+268 ___swbuf
+268 ___mulsi3
+266 _main
+256 ___clz_tab
+248 _malloc

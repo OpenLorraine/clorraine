@@ -1,0 +1,8 @@
+PASS 410-sieve-range-guards (sieve): output base=True patched=True; instr 1043170 -> 1178532 (delta +135362, +13.0% of net 1040251); .text 23772 -> 23736 (-36); .data 280 -> 280 (+0); .bss 120 -> 120 (+0)
+PASS 411-container-get-direct (container): output base=True patched=True; instr 60117 -> 56045 (delta -4072, -7.1% of net 57198); .text 24056 -> 24048 (-8); .data 280 -> 280 (+0); .bss 120 -> 120 (+0)
+PASS 412-container-push-direct (container): output base=True patched=True; instr 60117 -> 46960 (delta -13157, -23.0% of net 57198); .text 24056 -> 24080 (+24); .data 280 -> 280 (+0); .bss 120 -> 120 (+0)
+PASS 413-strings-template-inline (strings): output base=True patched=True; instr 1688727 -> 1286737 (delta -401990, -23.8% of net 1685808); .text 23920 -> 23924 (+4); .data 280 -> 280 (+0); .bss 120 -> 120 (+0)
+PASS 414-strings-owned-placeholder (strings): output base=True patched=True; instr 1688727 -> 1688600 (delta -127, -0.0% of net 1685808); .text 23920 -> 23888 (-32); .data 280 -> 280 (+0); .bss 120 -> 120 (+0)
+PASS 415-strings-static-drop (strings): output base=True patched=True; instr 1688727 -> 1688739 (delta +12, +0.0% of net 1685808); .text 23920 -> 23920 (+0); .data 280 -> 280 (+0); .bss 120 -> 120 (+0)
+PASS 416-lookup-static-init (lookup): output base=True patched=True; instr 11985 -> 11978 (delta -7, -0.1% of net 9066); .text 39832 -> 39808 (-24); .data 280 -> 280 (+0); .bss 16504 -> 120 (-16384)
+PASS 417-trap-no-printf (sieve): output base=True patched=True; instr 1043170 -> 1043182 (delta +12, +0.0% of net 1040251); .text 23772 -> 7120 (-16652); .data 280 -> 272 (-8); .bss 120 -> 120 (+0)

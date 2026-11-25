@@ -1,0 +1,109 @@
+PASS a500 O2 calibration: raw=2919 text=5900
+PASS a500 O2 container: raw=60117 net=57198 text=24056 text_net=18156
+PASS a500 O2 local-table: raw=6166 net=3247 text=24520 text_net=18620
+PASS a500 O2 lookup: raw=11985 net=9066 text=39832 text_net=33932
+PASS a500 O2 matrix: raw=12472 net=9553 text=23544 text_net=17644
+PASS a500 O2 moves: raw=47773 net=44854 text=23632 text_net=17732
+PASS a500 O2 sieve: raw=1043170 net=1040251 text=23772 text_net=17872
+PASS a500 O2 strings: raw=1688727 net=1685808 text=23920 text_net=18020
+PASS a500 O2 text-scan: raw=374244 net=371325 text=24084 text_net=18184
+PASS a500 Os calibration: raw=2927 text=5924
+PASS a500 Os container: raw=74508 net=71581 text=24132 text_net=18208
+PASS a500 Os local-table: raw=5951 net=3024 text=24528 text_net=18604
+PASS a500 Os lookup: raw=11980 net=9053 text=39860 text_net=33936
+PASS a500 Os matrix: raw=11792 net=8865 text=23708 text_net=17784
+PASS a500 Os moves: raw=61798 net=58871 text=23676 text_net=17752
+PASS a500 Os sieve: raw=1043168 net=1040241 text=23772 text_net=17848
+PASS a500 Os strings: raw=1692733 net=1689806 text=23904 text_net=17980
+PASS a500 Os text-scan: raw=384199 net=381272 text=24080 text_net=18156
+PASS a500 O2-fomit-frame-pointer calibration: raw=2919 text=5900
+PASS a500 O2-fomit-frame-pointer container: raw=60117 net=57198 text=24056 text_net=18156
+PASS a500 O2-fomit-frame-pointer local-table: raw=6166 net=3247 text=24520 text_net=18620
+PASS a500 O2-fomit-frame-pointer lookup: raw=11985 net=9066 text=39832 text_net=33932
+PASS a500 O2-fomit-frame-pointer matrix: raw=12472 net=9553 text=23544 text_net=17644
+PASS a500 O2-fomit-frame-pointer moves: raw=47773 net=44854 text=23632 text_net=17732
+PASS a500 O2-fomit-frame-pointer sieve: raw=1043170 net=1040251 text=23772 text_net=17872
+PASS a500 O2-fomit-frame-pointer strings: raw=1688727 net=1685808 text=23920 text_net=18020
+PASS a500 O2-fomit-frame-pointer text-scan: raw=374244 net=371325 text=24084 text_net=18184
+PASS a500 O2-flto calibration: raw=2919 text=5560
+PASS a500 O2-flto container: raw=55955 net=53036 text=23636 text_net=18076
+PASS a500 O2-flto local-table: raw=6107 net=3188 text=24016 text_net=18456
+PASS a500 O2-flto lookup: raw=11931 net=9012 text=39336 text_net=33776
+PASS a500 O2-flto matrix: raw=12414 net=9495 text=23032 text_net=17472
+PASS a500 O2-flto moves: raw=47710 net=44791 text=23156 text_net=17596
+PASS a500 O2-flto sieve: raw=1043106 net=1040187 text=23292 text_net=17732
+PASS a500 O2-flto strings: raw=1688719 net=1685800 text=23640 text_net=18080
+PASS a500 O2-flto text-scan: raw=374200 net=371281 text=23740 text_net=18180
+PASS a500 O2-no-fwrapv calibration: raw=2919 text=5900
+PASS a500 O2-no-fwrapv container: raw=60117 net=57198 text=24056 text_net=18156
+PASS a500 O2-no-fwrapv local-table: raw=6166 net=3247 text=24520 text_net=18620
+PASS a500 O2-no-fwrapv lookup: raw=11985 net=9066 text=39832 text_net=33932
+PASS a500 O2-no-fwrapv matrix: raw=12472 net=9553 text=23544 text_net=17644
+PASS a500 O2-no-fwrapv moves: raw=47773 net=44854 text=23632 text_net=17732
+PASS a500 O2-no-fwrapv sieve: raw=1043170 net=1040251 text=23772 text_net=17872
+PASS a500 O2-no-fwrapv strings: raw=1688727 net=1685808 text=23920 text_net=18020
+PASS a500 O2-no-fwrapv text-scan: raw=374244 net=371325 text=24084 text_net=18184
+PASS a500 O3 calibration: raw=2919 text=5900
+PASS a500 O3 container: raw=49649 net=46730 text=24440 text_net=18540
+PASS a500 O3 local-table: raw=6001 net=3082 text=24992 text_net=19092
+PASS a500 O3 lookup: raw=11865 net=8946 text=40312 text_net=34412
+PASS a500 O3 matrix: raw=12356 net=9437 text=23992 text_net=18092
+PASS a500 O3 moves: raw=3600 net=681 text=23904 text_net=18004
+PASS a500 O3 sieve: raw=1043051 net=1040132 text=24288 text_net=18388
+PASS a500 O3 strings: raw=1265230 net=1262311 text=26136 text_net=20236
+PASS a500 O3 text-scan: raw=369011 net=366092 text=24660 text_net=18760
+PASS 68020-probe O2 calibration: raw=3042 text=5884
+PASS 68020-probe O2 container: raw=71970 net=68928 text=23612 text_net=17728
+PASS 68020-probe O2 local-table: raw=5841 net=2799 text=24080 text_net=18196
+PASS 68020-probe O2 lookup: raw=11703 net=8661 text=39392 text_net=33508
+PASS 68020-probe O2 matrix: raw=12356 net=9314 text=23092 text_net=17208
+PASS 68020-probe O2 moves: raw=47584 net=44542 text=23192 text_net=17308
+PASS 68020-probe O2 sieve: raw=1043349 net=1040307 text=23332 text_net=17448
+PASS 68020-probe O2 strings: raw=1025545 net=1022503 text=23476 text_net=17592
+PASS 68020-probe O2 text-scan: raw=364646 net=361604 text=23644 text_net=17760
+PASS 68020-probe Os calibration: raw=3105 text=5936
+PASS 68020-probe Os container: raw=66891 net=63786 text=23660 text_net=17724
+PASS 68020-probe Os local-table: raw=5603 net=2498 text=24072 text_net=18136
+PASS 68020-probe Os lookup: raw=11679 net=8574 text=39404 text_net=33468
+PASS 68020-probe Os matrix: raw=9615 net=6510 text=23244 text_net=17308
+PASS 68020-probe Os moves: raw=61615 net=58510 text=23244 text_net=17308
+PASS 68020-probe Os sieve: raw=1114705 net=1111600 text=23308 text_net=17372
+PASS 68020-probe Os strings: raw=1004509 net=1001404 text=23440 text_net=17504
+PASS 68020-probe Os text-scan: raw=367328 net=364223 text=23632 text_net=17696
+PASS 68020-probe O2-fomit-frame-pointer calibration: raw=3042 text=5884
+PASS 68020-probe O2-fomit-frame-pointer container: raw=71970 net=68928 text=23604 text_net=17720
+PASS 68020-probe O2-fomit-frame-pointer local-table: raw=5841 net=2799 text=24076 text_net=18192
+PASS 68020-probe O2-fomit-frame-pointer lookup: raw=11703 net=8661 text=39388 text_net=33504
+PASS 68020-probe O2-fomit-frame-pointer matrix: raw=12357 net=9315 text=23092 text_net=17208
+PASS 68020-probe O2-fomit-frame-pointer moves: raw=47584 net=44542 text=23188 text_net=17304
+PASS 68020-probe O2-fomit-frame-pointer sieve: raw=1043359 net=1040317 text=23332 text_net=17448
+PASS 68020-probe O2-fomit-frame-pointer strings: raw=1025545 net=1022503 text=23468 text_net=17584
+PASS 68020-probe O2-fomit-frame-pointer text-scan: raw=364645 net=361603 text=23632 text_net=17748
+PASS 68020-probe O2-flto calibration: raw=3042 text=5216
+PASS 68020-probe O2-flto container: raw=59633 net=56591 text=22856 text_net=17640
+PASS 68020-probe O2-flto local-table: raw=5780 net=2738 text=23236 text_net=18020
+PASS 68020-probe O2-flto lookup: raw=11648 net=8606 text=38552 text_net=33336
+PASS 68020-probe O2-flto matrix: raw=12295 net=9253 text=22236 text_net=17020
+PASS 68020-probe O2-flto moves: raw=47516 net=44474 text=22368 text_net=17152
+PASS 68020-probe O2-flto sieve: raw=1043294 net=1040252 text=22524 text_net=17308
+PASS 68020-probe O2-flto strings: raw=1011529 net=1008487 text=22844 text_net=17628
+PASS 68020-probe O2-flto text-scan: raw=364623 net=361581 text=22964 text_net=17748
+PASS 68020-probe O2-no-fwrapv calibration: raw=3042 text=5884
+PASS 68020-probe O2-no-fwrapv container: raw=71970 net=68928 text=23612 text_net=17728
+PASS 68020-probe O2-no-fwrapv local-table: raw=5841 net=2799 text=24080 text_net=18196
+PASS 68020-probe O2-no-fwrapv lookup: raw=11703 net=8661 text=39392 text_net=33508
+PASS 68020-probe O2-no-fwrapv matrix: raw=12356 net=9314 text=23092 text_net=17208
+PASS 68020-probe O2-no-fwrapv moves: raw=47584 net=44542 text=23192 text_net=17308
+PASS 68020-probe O2-no-fwrapv sieve: raw=1043349 net=1040307 text=23332 text_net=17448
+PASS 68020-probe O2-no-fwrapv strings: raw=1025545 net=1022503 text=23476 text_net=17592
+PASS 68020-probe O2-no-fwrapv text-scan: raw=364646 net=361604 text=23644 text_net=17760
+PASS 68020-probe O3 calibration: raw=3042 text=5880
+PASS 68020-probe O3 container: raw=53346 net=50304 text=23968 text_net=18088
+PASS 68020-probe O3 local-table: raw=5697 net=2655 text=24488 text_net=18608
+PASS 68020-probe O3 lookup: raw=11585 net=8543 text=39804 text_net=33924
+PASS 68020-probe O3 matrix: raw=12250 net=9208 text=23480 text_net=17600
+PASS 68020-probe O3 moves: raw=3417 net=375 text=23392 text_net=17512
+PASS 68020-probe O3 sieve: raw=1043254 net=1040212 text=23792 text_net=17912
+PASS 68020-probe O3 strings: raw=672524 net=669482 text=25556 text_net=19676
+PASS 68020-probe O3 text-scan: raw=359756 net=356714 text=24172 text_net=18292
+flags: 0 failure(s)

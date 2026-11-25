@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-25 21:43
-> **Progress**: 37/95 tasks (38%)
+> **Last Updated**: 2026-11-25 22:23
+> **Progress**: 43/95 tasks (45%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -225,15 +225,15 @@ this plan's folder and the roadmap; 03-01 §Ground rules)
 
 ### Step 4.2: Analysis
 
-- [ ] 4.2.1 WS4-01, WS4-02: overhead table from the Phase 0 matrix and attribution by symbol-mapped `vamos` traces and disassembly
-- [ ] 4.2.2 WS4-03..WS4-05: guard, drop-flag, and temporary/copy probes; measured gain per probe
-- [ ] 4.2.3 WS4-06..WS4-08: `volatile`/indirection, A500 fixed and per-feature code size, flag variants on the A500 and 68020 probe lenses
-- [ ] 4.2.4 WS4-09, WS4-10: pass-candidate table and the answer to the optimizer question with evidence
+- [x] 4.2.1 WS4-01, WS4-02: overhead table from the Phase 0 matrix and attribution by symbol-mapped `vamos` traces and disassembly ✅ (completed: 2026-11-25 22:23)
+- [x] 4.2.2 WS4-03..WS4-05: guard, drop-flag, and temporary/copy probes; measured gain per probe ✅ (completed: 2026-11-25 22:23)
+- [x] 4.2.3 WS4-06..WS4-08: `volatile`/indirection, A500 fixed and per-feature code size, flag variants on the A500 and 68020 probe lenses ✅ (completed: 2026-11-25 22:23)
+- [x] 4.2.4 WS4-09, WS4-10: pass-candidate table and the answer to the optimizer question with evidence ✅ (completed: 2026-11-25 22:23)
 
 ### Step 4.3: Hardening and gate
 
-- [ ] 4.3.1 Self-refutation against the `real-workload-audit`, `generated-c-optimization`, and `performance-levers-closeout` conclusions (a new measurement is required to contradict them)
-- [ ] 4.3.2 Phase gate: Task verify and the Phases 1–8 row of `07` §Check points for `findings/WS4-code-quality.md` and `probes/WS4/`; commit, local only
+- [x] 4.3.1 Self-refutation against the `real-workload-audit`, `generated-c-optimization`, and `performance-levers-closeout` conclusions (a new measurement is required to contradict them) ✅ (completed: 2026-11-25 22:23)
+- [x] 4.3.2 Phase gate: Task verify and the Phases 1–8 row of `07` §Check points for `findings/WS4-code-quality.md` and `probes/WS4/`; commit, local only ✅ (completed: 2026-11-25 22:23)
 
 **Test slices**: N/A — no test map
 **Verify (gate)**: `bash plans/independent-assessment/probes/WS0/drift-check.sh plans/independent-assessment`, then the Phases 1–8 row of `07` §Check points (AR #20)
