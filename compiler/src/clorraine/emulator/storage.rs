@@ -12,7 +12,22 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use super::super::artifacts;
 use super::super::display;
+use super::super::platform::{self, HostOs};
 use super::absolute;
+
+/// The variable that names the user's temporary folder on this host, for
+/// messages about it.
+fn temp_variable() -> &'static str {
+    match HostOs::current() {
+        HostOs::Unix => "TMPDIR",
+        HostOs::Windows => "TEMP",
+    }
+}
+
+/// A path for a message: terminal-safe and without a Windows verbatim prefix.
+pub(super) fn shown(path: &Path) -> String {
+    display::sanitize(&platform::display_path(HostOs::current(), &path.display().to_string())).into_owned()
+}
 
 /// One privately created run directory.
 ///
@@ -71,15 +86,15 @@ impl Storage {
         static NEXT: AtomicUsize = AtomicUsize::new(0);
         let parent = std::env::temp_dir()
             .canonicalize()
-            .map_err(|error| format!("cannot resolve TMPDIR: {error}"))?;
+            .map_err(|error| format!("cannot resolve {}: {error}", temp_variable()))?;
         match parent.to_str() {
             Some(text) if !text.chars().any(char::is_control) => {}
-            _ => return Err("TMPDIR must be UTF-8 without control characters".to_owned()),
+            _ => return Err(format!("{} must be UTF-8 without control characters", temp_variable())),
         }
         // FS-UAE passes the drive path into comma-delimited UAE mount syntax;
         // a literal argv element cannot stop that later parser truncating it.
         if parent.as_os_str().as_encoded_bytes().contains(&b',') {
-            return Err("FS-UAE TMPDIR must use a safe directory without commas".to_owned());
+            return Err(format!("FS-UAE {} must use a safe directory without commas", temp_variable()));
         }
         let build = artifacts::root()
             .canonicalize()
@@ -90,10 +105,10 @@ impl Storage {
             .canonicalize()
             .map_err(|error| format!("cannot resolve the program directory: {error}"))?;
         if parent.starts_with(&build) || parent.starts_with(&program_dir) {
-            return Err(
-                "FS-UAE TMPDIR must be outside the resettable build/clorraine tree and current program directory"
-                    .to_owned(),
-            );
+            return Err(format!(
+                "FS-UAE {} must be outside the resettable build/clorraine tree and current program directory",
+                temp_variable()
+            ));
         }
         for _ in 0..128 {
             let root = parent.join(format!(
@@ -101,12 +116,17 @@ impl Storage {
                 std::process::id(),
                 NEXT.fetch_add(1, Ordering::Relaxed)
             ));
-            let mut builder = fs::DirBuilder::new();
+            // Unix creates the run owner-only; on Windows the folder inherits
+            // the per-user access list of the user's temporary folder.
             #[cfg(unix)]
-            {
+            let builder = {
                 use std::os::unix::fs::DirBuilderExt;
+                let mut builder = fs::DirBuilder::new();
                 builder.mode(0o700);
-            }
+                builder
+            };
+            #[cfg(not(unix))]
+            let builder = fs::DirBuilder::new();
             match builder.create(&root) {
                 Ok(()) => return Ok(Self { root, cleanup_safe: true }),
                 Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
@@ -120,12 +140,8 @@ impl Storage {
     pub(super) fn cleanup(&mut self) -> Result<(), String> {
         // Never retry through Drop: a reported retained directory must stay.
         self.cleanup_safe = false;
-        fs::remove_dir_all(&self.root).map_err(|error| {
-            format!(
-                "cannot remove '{}': {error}",
-                display::sanitize(&self.root.display().to_string())
-            )
-        })
+        fs::remove_dir_all(&self.root)
+            .map_err(|error| format!("cannot remove '{}': {error}", shown(&self.root)))
     }
 }
 

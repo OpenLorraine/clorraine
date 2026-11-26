@@ -11,6 +11,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+use super::platform::{host_artifact_name, HostOs};
 use crate::profile::Profile;
 
 /// The root of the driver's build output, relative to the working directory.
@@ -29,18 +30,27 @@ pub fn c_path(profile: Profile, stem: &str) -> PathBuf {
 }
 
 /// The built program path.
+///
+/// A host program is named for the running host (`<stem>.exe` on Windows,
+/// the name the C compiler writes there); Amiga and freestanding m68k
+/// artifacts keep the bare stem.
 pub fn bin_path(profile: Profile, stem: &str) -> PathBuf {
-    program_dir(profile, stem).join(stem)
+    let name = if profile == Profile::Host {
+        host_artifact_name(HostOs::current(), stem, false)
+    } else {
+        stem.to_owned()
+    };
+    program_dir(profile, stem).join(name)
 }
 
 /// The host-run artifact path of the freestanding profile.
 ///
 /// The freestanding build produces the m68k artifact the target would run. The
 /// `run` command separately compiles the same translation unit for the host
-/// with the no-libc runtime, and names it `<stem>.host` so it sits beside the
-/// m68k artifact without colliding with it.
+/// with the no-libc runtime, and names it `<stem>.host` (`<stem>.host.exe` on
+/// Windows) so it sits beside the m68k artifact without colliding with it.
 pub fn host_bin_path(profile: Profile, stem: &str) -> PathBuf {
-    program_dir(profile, stem).join(format!("{stem}.host"))
+    program_dir(profile, stem).join(host_artifact_name(HostOs::current(), stem, true))
 }
 
 /// The captured stdout path used by `--capture`.
