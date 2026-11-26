@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-26 19:44
-> **Progress**: 4/75 tasks (5%)
+> **Last Updated**: 2026-11-26 19:52
+> **Progress**: 6/75 tasks (8%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -70,14 +70,14 @@ on Linux in this worktree; Windows runs go through the remote helper (AR-5, AR-2
 
 - [x] 1.1.1 Append the MinGW-w64 and `x86_64-pc-windows-gnu` layer — `docker/Dockerfile` ✅ (completed: 2026-11-26 19:41)
 - [x] 1.1.2 Build `clorraine-sdk:windows-cli` and confirm ST-1 — `make -C docker image IMAGE=clorraine-sdk:windows-cli` ✅ (completed: 2026-11-26 19:41) — built by layering the committed lines on `clorraine-sdk:dev` (AR-54; the from-source build fails upstream)
-- [~] 1.1.3 Add `cargo check --workspace --target x86_64-pc-windows-gnu` to the check gate (ST-2) — `Makefile` ⏳ (implemented: 2026-11-26 19:41)
+- [x] 1.1.3 Add `cargo check --workspace --target x86_64-pc-windows-gnu` to the check gate (ST-2) — `Makefile` ✅ (completed: 2026-11-26 19:52) — the step reports one Windows-only `unused_mut` warning in `emulator/storage.rs:104`, fixed with 3.2.4
 - [x] 1.1.4 Add the non-gating remote helper and desktop-session runner — `tools/setup/windows-remote.sh`, `tools/setup/windows-desktop-run.ps1` ✅ (completed: 2026-11-26 19:44)
 - [x] 1.1.5 Confirm the helper: `push` a scratch folder and `run winbox -- ver` print the expected output ✅ (completed: 2026-11-26 19:44) — also exact exit code 3, timeout 124, re-push replaces, ROM refused
-- [ ] 1.1.6 Phase gate — `make check IMAGE=clorraine-sdk:windows-cli`
+- [x] 1.1.6 Phase gate — `make check IMAGE=clorraine-sdk:windows-cli` ✅ (completed: 2026-11-26 19:52)
 
 **Deliverables**:
-- [ ] ST-1, ST-2 hold; the helper works against the Windows host
-- [ ] All verification passing
+- [x] ST-1, ST-2 hold; the helper works against the Windows host
+- [x] All verification passing
 
 **Test slices**: N/A — full verify only
 **Verify (gate)**: `make check IMAGE=clorraine-sdk:windows-cli`
@@ -136,7 +136,7 @@ on Linux in this worktree; Windows runs go through the remote helper (AR-5, AR-2
 - [ ] 3.2.1 Add `platform.rs` with `HostOs` and its functions — `compiler/src/clorraine/platform.rs`, `compiler/src/clorraine/mod.rs`
 - [ ] 3.2.2 Wire the validator, display paths, and the config file — `setup.rs`
 - [ ] 3.2.3 Wire the PATH search and the host-compiler resolver — `environment.rs`, `toolchain.rs`, `mod.rs`
-- [ ] 3.2.4 Wire FS-UAE selection, the PE version, spawn, and storage messages — `emulator/select.rs`, `emulator/mod.rs`, `emulator/storage.rs`
+- [ ] 3.2.4 Wire FS-UAE selection, the PE version, spawn, and storage messages — `emulator/select.rs`, `emulator/mod.rs`, `emulator/storage.rs` (also remove the Windows-only `unused_mut` at `storage.rs:104`)
 - [ ] 3.2.5 Wire host artifact names and the `new` launcher and summary — `artifacts.rs`, `new.rs`
 - [ ] 3.2.6 Run the spec suite — ST-9 – ST-26 pass (green); existing driver suites unchanged
 

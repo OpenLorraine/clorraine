@@ -1,6 +1,6 @@
 ## Ambiguity Register: Windows CLI and installer
 
-> **Status**: ✅ GATE PASSED — all 53 items resolved; AR-54 added and resolved during execution
+> **Status**: ✅ GATE PASSED — all 53 items resolved; AR-54 – AR-55 added and resolved during execution
 > **Last Updated**: 2026-11-26 18:30
 > **Evidence**: `spikes/08-windows-cli/README.md`
 
@@ -60,6 +60,7 @@
 | 52 | Behavioral | `-Purge` and the FS-UAE copy install.ps1 downloaded into the Clorraine folder | Purge removes our own copy / never remove | User accepted recommendation: purge removes only the FS-UAE that install.ps1 downloaded into `…\Clorraine\fs-uae\3.2.35`; any other FS-UAE and rc24 are never removed (refines AR-17) | ✅ Resolved |
 | 53 | Naming & terminology | Flag for replacing another amiga-gcc registration (AR-11) | `-ReplaceToolchain` / interactive only | User accepted recommendation: `-ReplaceToolchain`; interactive runs ask (default No) | ✅ Resolved |
 | 54 | Technical (runtime) | The full image build cannot run: the toolchain stage clones vbcc's `master` branch, which upstream no longer has, and the build cache that AR-20 assumed is gone | Layer the committed Windows lines on the existing `clorraine-sdk:dev` / fix the toolchain stage now / add a Makefile target for the layered build | Layer the committed lines on `clorraine-sdk:dev` (see AR-54 resolution) | ✅ Resolved |
+| 55 | Technical (runtime) | The driver modules are private, so the integration spec suites cannot call `native_syscalls_for`, `validate_for`, `fs_uae_version_for`, or `launcher_for` as 03-01/03-02 name them | Re-export exactly those items from `clc::clorraine` and make `platform` public / make the whole modules public / move the spec cases into unit tests | Re-export the named items from `clc::clorraine`; `pub mod platform` (see AR-55 resolution) | ✅ Resolved |
 
 ## Coverage Map
 
@@ -175,3 +176,28 @@ Reopen triggers: the toolchain stage builds again; main changes the Dockerfile b
 
 The post-merge rebuild of `clorraine-sdk:dev` (AR-37) uses the same layering until the upstream
 vbcc breakage is fixed; the merge notes and a follow-up issue draft record it.
+
+**AR-55 (runtime, auto-design):**
+
+```text
+Authority: AI — delegated by --auto-design
+Eligibility: internal interface and testing mechanism; the functions and their contracts are
+  already specified, only their reachable path is chosen
+Objective: the spec suite in compiler/tests calls the specified functions directly
+Decision: `pub mod platform` in compiler/src/clorraine/mod.rs (03-02 already makes its items pub),
+  plus `pub use` re-exports there of `toolchain::native_syscalls_for`, `setup::{validate_for,
+  Toolchain, SetupError, Validation}`, `emulator::select::fs_uae_version_for`, and
+  `new::launcher_for`; tests call them as `clc::clorraine::<name>`
+Evidence: compiler/src/clorraine/mod.rs:14-24 declares every driver module private; lsp::uri is
+  already public; no compiler/tests suite reaches a driver internal today; AGENTS.md puts spec
+  suites in compiler/tests
+Rejected alternatives: making setup/toolchain/new/emulator public (exposes every pub item and
+  silences dead-code warnings for them); unit tests inside src (contradicts the plan's spec file
+  and the project's spec-suite location)
+Strongest counterargument: the library's public surface grows by a few test-motivated names
+Confidence: High — would change if the project forbids test-only exports
+Hardening: no challenger; internal crate, reversible
+Policy version: 1
+Root invocation ID: exec-windows-cli-20261126-1938
+Reopen triggers: a reviewer finds the facade exposes behaviour beyond the named functions
+```
