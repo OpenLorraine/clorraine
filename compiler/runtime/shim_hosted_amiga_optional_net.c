@@ -22,7 +22,10 @@ struct Library *SocketBase;
 
 typedef struct cl_socket {
     LONG descriptor;
+    cl_res res;
 } cl_socket;
+
+void cl_socket_close(void *handle_void);
 
 static LONG __attribute__((noinline, optimize("O0")))
 cl_socket_send_raw(LONG sock, APTR data, LONG length)
@@ -44,10 +47,7 @@ cl_socket_connect_raw(LONG sock, struct sockaddr *address, socklen_t length)
 
 static int cl_socket_open_library(void)
 {
-    if (SocketBase == NULL) {
-        SocketBase = OpenLibrary((STRPTR)"bsdsocket.library", 4);
-    }
-    return SocketBase != NULL;
+    return cl_lib_open(&SocketBase, "bsdsocket.library", 4) != NULL;
 }
 
 void *cl_socket_open(LONG kind, LONG protocol)
@@ -68,6 +68,10 @@ void *cl_socket_open(LONG kind, LONG protocol)
         return NULL;
     }
     handle->descriptor = descriptor;
+    if (!cl_res_add(&handle->res, cl_socket_close, handle)) {
+        cl_socket_close(handle);
+        return NULL;
+    }
     return handle;
 }
 
@@ -133,6 +137,7 @@ void cl_socket_close(void *handle_void)
     if (handle == NULL) {
         return;
     }
+    cl_res_remove(&handle->res);
     if (handle->descriptor >= 0) {
         (void)CloseSocket(handle->descriptor);
     }
@@ -150,18 +155,20 @@ typedef struct cl_guide {
     struct NewAmigaGuide guide;
     char *path;
     char *screen;
+    cl_res res;
 } cl_guide;
 
 typedef struct cl_guide_message {
     struct AmigaGuideMsg *message;
+    cl_res res;
 } cl_guide_message;
+
+void cl_guide_close(void *handle_void);
+void cl_guide_reply(void *handle_void);
 
 static int cl_guide_open_library(void)
 {
-    if (AmigaGuideBase == NULL) {
-        AmigaGuideBase = OpenLibrary((STRPTR)"amigaguide.library", 37);
-    }
-    return AmigaGuideBase != NULL;
+    return cl_lib_open(&AmigaGuideBase, "amigaguide.library", 37) != NULL;
 }
 
 void *cl_guide_open(char *path, char *public_screen)
@@ -205,6 +212,10 @@ void *cl_guide_open(char *path, char *public_screen)
         FreeMem(guide, (ULONG)sizeof *guide);
         return NULL;
     }
+    if (!cl_res_add(&guide->res, cl_guide_close, guide)) {
+        cl_guide_close(guide);
+        return NULL;
+    }
     return guide;
 }
 
@@ -215,6 +226,7 @@ void cl_guide_close(void *handle_void)
     if (guide == NULL) {
         return;
     }
+    cl_res_remove(&guide->res);
     if (guide->context != NULL) {
         CloseAmigaGuide(guide->context);
     }
@@ -261,6 +273,10 @@ void *cl_guide_wait(void *handle_void)
         return NULL;
     }
     message->message = raw;
+    if (!cl_res_add(&message->res, cl_guide_reply, message)) {
+        cl_guide_reply(message);
+        return NULL;
+    }
     return message;
 }
 
@@ -295,6 +311,7 @@ void cl_guide_reply(void *handle_void)
     if (message == NULL) {
         return;
     }
+    cl_res_remove(&message->res);
     if (message->message != NULL) {
         ReplyAmigaGuideMsg(message->message);
     }

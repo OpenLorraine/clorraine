@@ -267,7 +267,7 @@ fn the_icon_shim_pins_the_calls_and_guards() {
     let shim = shim();
     for needle in [
         "struct Library *IconBase;",
-        "OpenLibrary((STRPTR)\"icon.library\", 37)",
+        "cl_lib_open(&IconBase, \"icon.library\", 37)",
         "GetDiskObject((STRPTR)name)",
         "PutDiskObject((STRPTR)name, (const struct DiskObject *)icon)",
         "FreeDiskObject((struct DiskObject *)icon)",
@@ -429,7 +429,8 @@ fn the_app_message_path_is_pinned() {
     for needle in [
         "void *cl_wait_app_message(void *port_handle)",
         "(void)WaitPort(port);",
-        "return (void *)GetMsg(port);",
+        "message = GetMsg(port);",
+        "return (void *)message;",
         "message->am_Type",
         "message->am_ID",
         "message->am_UserData",
@@ -502,7 +503,7 @@ fn the_expansion_shim_walks_the_board_list() {
     let shim = shim();
     for needle in [
         "struct Library *ExpansionBase;",
-        "OpenLibrary((STRPTR)\"expansion.library\", 37)",
+        "cl_lib_open(&ExpansionBase, \"expansion.library\", 37)",
         "FindConfigDev(NULL, -1, -1)",
         "FindConfigDev(board, -1, -1)",
         "board->cd_Rom.er_Manufacturer",
@@ -537,7 +538,7 @@ fn the_keymap_call_is_pinned() {
     let shim = shim();
     for needle in [
         "struct Library *KeymapBase;",
-        "OpenLibrary((STRPTR)\"keymap.library\", 37)",
+        "cl_lib_open(&KeymapBase, \"keymap.library\", 37)",
         "keymap = AskKeyMapDefault();",
         "memset(&event, 0, sizeof event);",
         "event.ie_Class = IECLASS_RAWKEY;",

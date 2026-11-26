@@ -17,3 +17,11 @@
 | SR-001 (P2 re-review) | 2 | MAJOR | fault-cleanup-walker.c:chip blind to slow RAM | fixed (mem field; red/green and Layer mutation proven) |
 | SR-002 (P2 re-review) | 2 | MINOR | docs: open-count claim | fixed (scoped to diskfont) |
 | SR-003 (P2 re-review) | 2 | MINOR | gate: chip column wording | fixed |
+| SR-001 (P3) | 3 | MAJOR | shim_hosted_amiga.c:cl_release_msg_port foreign messages | fixed (drain and reply; ARexx reply filter sets RC_FATAL) |
+| SR-002 (P3) | 3 | MAJOR | shim_hosted_amiga.c:kept port still live | fixed (RemPort, PA_IGNORE, SigTask NULL, FreeSignal) |
+| SR-003 (P3) | 3 | MINOR | optional_services.c:held received ARexx command | fixed (exit release replies RC_FATAL) |
+| RV-001 (P3) | 3 | MINOR | shim_hosted_amiga.c:cl_port_keep duplicates | fixed |
+| RV-002 (P3) | 3 | MINOR | 99-execution-plan.md file list | fixed |
+| SR-Q1 (P3) | 3 | MINOR | no FS-UAE fault probe for 2.0+ kinds | deferred (AR-7; known-limitations entry in 6.1.3) |
+| SR-Q2 (P3) | 3 | MINOR | CL_LIB_TABLE_MAX zero headroom | deferred (strict scope; 20 bases exactly, pinned by tests) |
+| SR-001 (P3 re-review) | 3 | MINOR | shim_hosted_amiga.c:public port drain-to-delete race | fixed (DeletePort under Forbid) |

@@ -34,18 +34,12 @@ static char *cl_ui_strdup(const char *text)
 
 static int cl_gadtools_open(void)
 {
-    if (GadToolsBase == NULL) {
-        GadToolsBase = OpenLibrary((STRPTR)"gadtools.library", 37);
-    }
-    return GadToolsBase != NULL;
+    return cl_lib_open(&GadToolsBase, "gadtools.library", 37) != NULL;
 }
 
 static int cl_asl_open(void)
 {
-    if (AslBase == NULL) {
-        AslBase = OpenLibrary((STRPTR)"asl.library", 37);
-    }
-    return AslBase != NULL;
+    return cl_lib_open(&AslBase, "asl.library", 37) != NULL;
 }
 
 /* ------------------------------------------------------------------------- */
@@ -71,7 +65,10 @@ typedef struct cl_gt_list {
     char *font_name;
     struct TextAttr attr;
     int built;
+    cl_res res;
 } cl_gt_list;
+
+void cl_gt_free(void *handle);
 
 void *cl_gt_new(void *window_handle, char *font_name, UWORD font_size)
 {
@@ -120,6 +117,10 @@ void *cl_gt_new(void *window_handle, char *font_name, UWORD font_size)
     list->attr.ta_YSize = (UBYTE)font_size;
     list->attr.ta_Style = 0;
     list->attr.ta_Flags = 0;
+    if (!cl_res_add(&list->res, cl_gt_free, list)) {
+        cl_gt_free(list);
+        return NULL;
+    }
     return list;
 }
 
@@ -263,6 +264,7 @@ void cl_gt_free(void *handle)
     if (list == NULL) {
         return;
     }
+    cl_res_remove(&list->res);
     if (list->built) {
         RemoveGList(list->window, list->glist, (LONG)list->count);
     }
@@ -332,7 +334,10 @@ typedef struct cl_asl {
     ULONG title_size;
     ULONG initial_size;
     int last_ok;
+    cl_res res;
 } cl_asl;
+
+void cl_asl_free(void *handle_void);
 
 /* Releases a copied requester string with the size it was allocated with.
  * `cl_asl_split` may insert a NUL into `initial`, so `strlen` cannot be used
@@ -428,6 +433,10 @@ void *cl_asl_new(char *title, char *initial, BOOL save)
         FreeMem(handle, (ULONG)sizeof *handle);
         return NULL;
     }
+    if (!cl_res_add(&handle->res, cl_asl_free, handle)) {
+        cl_asl_free(handle);
+        return NULL;
+    }
     return handle;
 }
 
@@ -492,6 +501,7 @@ void cl_asl_free(void *handle_void)
     if (handle == NULL) {
         return;
     }
+    cl_res_remove(&handle->res);
     if (handle->request != NULL) {
         FreeAslRequest(handle->request);
     }
@@ -509,7 +519,10 @@ typedef struct cl_boopsi {
     struct Window *window;
     cl_window *owner;
     int attached;
+    cl_res res;
 } cl_boopsi;
+
+void cl_boopsi_dispose(void *handle_void);
 
 void *cl_boopsi_new_string(void *window_handle, LONG id, LONG x, LONG y,
                            LONG width, LONG height, LONG initial)
@@ -545,6 +558,10 @@ void *cl_boopsi_new_string(void *window_handle, LONG id, LONG x, LONG y,
     if (handle->object == NULL) {
         cl_window_release_ui(handle->owner);
         FreeMem(handle, (ULONG)sizeof *handle);
+        return NULL;
+    }
+    if (!cl_res_add(&handle->res, cl_boopsi_dispose, handle)) {
+        cl_boopsi_dispose(handle);
         return NULL;
     }
     return handle;
@@ -626,6 +643,7 @@ void cl_boopsi_dispose(void *handle_void)
     if (handle == NULL) {
         return;
     }
+    cl_res_remove(&handle->res);
     cl_boopsi_detach(handle);
     if (handle->object != NULL) {
         DisposeObject(handle->object);

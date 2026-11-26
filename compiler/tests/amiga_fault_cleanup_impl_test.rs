@@ -294,17 +294,33 @@ fn the_port_exit_release_frees_own_messages_and_keeps_foreign_holders() {
             "cl_own_port_holds(message)",
             "Remove(&message->msg.mn_Node);",
             "keep = 1;",
-            "Permit();",
-            "if (!keep)",
+            "while ((foreign = GetMsg(port)) != NULL)",
+            "foreign->mn_Node.ln_Type == NT_MESSAGE",
+            "foreign->mn_ReplyPort != NULL && foreign->mn_ReplyPort != port",
+            "cl_exit_reply_filter(foreign);",
+            "ReplyMsg(foreign);",
+            "keep = keep || cl_port_kept(port);",
+            "RemPort(port);",
+            "port->mp_Flags = PA_IGNORE;",
+            "port->mp_SigTask = NULL;",
+            "FreeSignal((LONG)port->mp_SigBit);",
+            "} else {",
             "DeletePort(port);",
+            "Permit();",
         ],
     );
-    let holds = body(&shim, "static int cl_own_port_holds(cl_message *message)");
+    let holds = body(&shim, "int cl_own_ports_hold(struct Node *node)");
     assert_order(
         "own port holds",
         holds,
         &["record = cl_res_head; record != NULL; record = record->next", "record->release == cl_release_msg_port", "cl_port_holds("],
     );
+    assert_contains(
+        "own message",
+        body(&shim, "static int cl_own_port_holds(cl_message *message)"),
+        "cl_own_ports_hold(&message->msg.mn_Node)",
+    );
+
     // The in-flight lookup compares pointers only, so a foreign message is
     // never read as one of the program's own.
     let find = body(&shim, "static cl_message *cl_flight_find(const void *pointer)");
@@ -1007,4 +1023,179 @@ int main(void)
             "{profile}: only the test's own open may remain, exactly once:\n{output}"
         );
     }
+}
+
+/// One hosted-amiga suffix shim file, read directly.
+fn suffix(name: &str) -> String {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("runtime").join(name);
+    std::fs::read_to_string(&path)
+        .unwrap_or_else(|error| panic!("cannot read {}: {error}", path.display()))
+}
+
+/// Every suffix file and the base shim open library bases only through the
+/// recording helper; the base shim's helper and the user `Library` handle are
+/// the only direct opens left.
+#[test]
+fn no_shim_file_opens_a_base_outside_the_recording_helper() {
+    for name in [
+        "shim_hosted_amiga_20.c",
+        "shim_hosted_amiga_optional.c",
+        "shim_hosted_amiga_optional_ui.c",
+        "shim_hosted_amiga_optional_services.c",
+        "shim_hosted_amiga_optional_net.c",
+        "shim_hosted_amiga_optional_rtg.c",
+    ] {
+        assert_lacks(name, &suffix(name), "OpenLibrary(");
+    }
+    for (name, bases) in [
+        ("shim_hosted_amiga_20.c", &["&IconBase", "&WorkbenchBase", "&ExpansionBase", "&KeymapBase"][..]),
+        ("shim_hosted_amiga_optional.c", &["&UtilityBase", "&LowLevelBase", "&GfxBase", "&LayersBase", "&DataTypesBase"][..]),
+        ("shim_hosted_amiga_optional_ui.c", &["&GadToolsBase", "&AslBase"][..]),
+        ("shim_hosted_amiga_optional_services.c", &["&CxBase", "&LocaleBase", "&RexxSysBase", "&NVBase"][..]),
+        ("shim_hosted_amiga_optional_net.c", &["&SocketBase", "&AmigaGuideBase"][..]),
+        ("shim_hosted_amiga_optional_rtg.c", &["&P96Base", "&GfxBase"][..]),
+    ] {
+        let text = suffix(name);
+        for base in bases {
+            assert_contains(name, &text, &format!("cl_lib_open({base}, "));
+        }
+    }
+}
+
+/// Every suffix kind registers after a successful acquire, undoes the acquire
+/// when the record fails, and unregisters first in the function that really
+/// frees it.
+#[test]
+fn every_suffix_kind_registers_after_success_and_unregisters_at_its_free() {
+    // (file, acquire definition prefix, registration needle, free definition prefix, removal needle)
+    let cases: &[(&str, &str, &str, &str, &str)] = &[
+        ("shim_hosted_amiga_20.c", "static void *cl_disk_object_recorded(struct DiskObject *object)", "!cl_res_track(cl_release_disk_object, object)", "void cl_free_disk_object(void *icon)", "cl_res_untrack(cl_release_disk_object, icon);"),
+        ("shim_hosted_amiga_20.c", "void *cl_add_app_icon(void *port_handle, char *title, ULONG id,", "!cl_res_add(&record->res, cl_remove_app_icon, record)", "void cl_remove_app_icon(void *handle)", "cl_res_remove(&record->res);"),
+        ("shim_hosted_amiga_20.c", "void *cl_add_app_menu_item(void *port_handle, char *title, ULONG id,", "!cl_res_add(&record->res, cl_remove_app_menu_item, record)", "void cl_remove_app_menu_item(void *handle)", "cl_res_remove(&record->res);"),
+        ("shim_hosted_amiga_20.c", "void *cl_add_app_window(void *window_handle, void *port_handle, ULONG id,", "!cl_res_track(cl_release_app_window, app_window)", "void cl_remove_app_window(void *handle)", "cl_res_untrack(cl_release_app_window, handle);"),
+        ("shim_hosted_amiga_20.c", "void *cl_wait_app_message(void *port_handle)", "!cl_res_track(cl_release_app_message, message)", "void cl_reply_app_message(void *handle)", "cl_res_untrack(cl_release_app_message, handle);"),
+        ("shim_hosted_amiga_optional.c", "void *cl_create_semaphore(void)", "!cl_res_add(&handle->res, cl_free_semaphore, handle)", "void cl_free_semaphore(void *handle)", "cl_res_remove("),
+        ("shim_hosted_amiga_optional.c", "void *cl_new_tag_list(LONG capacity)", "!cl_res_add(&list->res, cl_free_tag_list, list)", "void cl_free_tag_list(void *handle)", "cl_res_remove(&list->res);"),
+        ("shim_hosted_amiga_optional.c", "void *cl_date_stamp_new(void)", "!cl_res_add(&handle->res, cl_free_date_stamp, handle)", "void cl_free_date_stamp(void *handle)", "cl_res_remove("),
+        ("shim_hosted_amiga_optional.c", "void *cl_new_hook(cl_hook_fn entry, LONG data)", "!cl_res_add(&record->res, cl_free_hook, record)", "void cl_free_hook(void *handle)", "cl_res_remove("),
+        ("shim_hosted_amiga_optional.c", "void *cl_create_utility_pool(ULONG mem_flags, ULONG puddle_size,", "!cl_res_add(&pool->res, cl_free_utility_pool, pool)", "static void cl_utility_pool_release(cl_utility_pool *pool)", "cl_res_remove(&pool->res);"),
+        ("shim_hosted_amiga_optional.c", "void *cl_alloc_utility_block(void *handle, ULONG size)", "!cl_res_add(&block->res, cl_free_utility_block, block)", "void cl_free_utility_block(void *handle)", "cl_res_remove(&block->res);"),
+        ("shim_hosted_amiga_optional.c", "void *cl_read_args(char *template, LONG slots)", "!cl_res_add(&args->res, cl_free_args, args)", "static void cl_args_discard(cl_args *args)", "cl_res_remove(&args->res);"),
+        ("shim_hosted_amiga_optional.c", "void *cl_read_args_from(char *template, LONG slots, APTR source,", "!cl_res_add(&args->res, cl_free_args, args)", "static void cl_args_discard(cl_args *args)", "cl_res_remove(&args->res);"),
+        ("shim_hosted_amiga_optional.c", "void *cl_eclock_open(void)", "!cl_res_add(&clock->res, cl_free_eclock, clock)", "void cl_free_eclock(void *handle)", "cl_res_remove(&clock->res);"),
+        ("shim_hosted_amiga_optional.c", "void *cl_region_new(void)", "!cl_res_add(&handle->res, cl_free_region, handle)", "void cl_free_region(void *handle)", "cl_res_remove(&region->res);"),
+        ("shim_hosted_amiga_optional.c", "void *cl_dt_open_picture(char *path)", "!cl_res_add(&handle->res, cl_dispose_dt_object, handle)", "void cl_dispose_dt_object(void *handle)", "cl_res_remove(&object->res);"),
+        ("shim_hosted_amiga_optional_ui.c", "void *cl_gt_new(void *window_handle, char *font_name, UWORD font_size)", "!cl_res_add(&list->res, cl_gt_free, list)", "void cl_gt_free(void *handle)", "cl_res_remove(&list->res);"),
+        ("shim_hosted_amiga_optional_ui.c", "void *cl_asl_new(char *title, char *initial, BOOL save)", "!cl_res_add(&handle->res, cl_asl_free, handle)", "void cl_asl_free(void *handle_void)", "cl_res_remove(&handle->res);"),
+        ("shim_hosted_amiga_optional_ui.c", "void *cl_boopsi_new_string(void *window_handle, LONG id, LONG x, LONG y,", "!cl_res_add(&handle->res, cl_boopsi_dispose, handle)", "void cl_boopsi_dispose(void *handle_void)", "cl_res_remove(&handle->res);"),
+        ("shim_hosted_amiga_optional_services.c", "void *cl_commodity_open(char *name, char *title, char *description,", "!cl_res_add(&commodity->res, cl_commodity_close, commodity)", "void cl_commodity_close(void *handle)", "cl_res_remove(&commodity->res);"),
+        ("shim_hosted_amiga_optional_services.c", "void *cl_locale_open(char *name)", "!cl_res_add(&handle->res, cl_locale_close, handle)", "void cl_locale_close(void *handle)", "cl_res_remove(&locale->res);"),
+        ("shim_hosted_amiga_optional_services.c", "static void *cl_rexx_recorded(cl_rexx_message *handle)", "!cl_res_add(&handle->res, cl_release_rexx_message, handle)", "void cl_rexx_delete(void *handle_void)", "cl_res_remove(&handle->res);"),
+        ("shim_hosted_amiga_optional_services.c", "void *cl_clipboard_open(LONG unit)", "!cl_res_add(&clipboard->res, cl_clipboard_close, clipboard)", "void cl_clipboard_close(void *handle)", "cl_res_remove(&clipboard->res);"),
+        ("shim_hosted_amiga_optional_services.c", "void *cl_serial_open(LONG unit, ULONG baud)", "!cl_res_add(&serial->res, cl_serial_close, serial)", "void cl_serial_close(void *handle)", "cl_res_remove(&serial->res);"),
+        ("shim_hosted_amiga_optional_services.c", "void *cl_parallel_open(LONG unit, ULONG flags)", "!cl_res_add(&parallel->res, cl_parallel_close, parallel)", "void cl_parallel_close(void *handle)", "cl_res_remove(&parallel->res);"),
+        ("shim_hosted_amiga_optional_services.c", "void *cl_printer_open(LONG unit)", "!cl_res_add(&printer->res, cl_printer_close, printer)", "void cl_printer_close(void *handle)", "cl_res_remove(&printer->res);"),
+        ("shim_hosted_amiga_optional_services.c", "void *cl_nv_get(char *app, char *item)", "!cl_res_add(&handle->res, cl_nv_free, handle)", "void cl_nv_free(void *handle_void)", "cl_res_remove(&handle->res);"),
+        ("shim_hosted_amiga_optional_net.c", "void *cl_socket_open(LONG kind, LONG protocol)", "!cl_res_add(&handle->res, cl_socket_close, handle)", "void cl_socket_close(void *handle_void)", "cl_res_remove(&handle->res);"),
+        ("shim_hosted_amiga_optional_net.c", "void *cl_guide_open(char *path, char *public_screen)", "!cl_res_add(&guide->res, cl_guide_close, guide)", "void cl_guide_close(void *handle_void)", "cl_res_remove(&guide->res);"),
+        ("shim_hosted_amiga_optional_net.c", "void *cl_guide_wait(void *handle_void)", "!cl_res_add(&message->res, cl_guide_reply, message)", "void cl_guide_reply(void *handle_void)", "cl_res_remove(&message->res);"),
+        ("shim_hosted_amiga_optional_rtg.c", "void *cl_rtg_open_screen(LONG width, LONG height, LONG depth, char *title)", "!cl_res_add(&handle->res, cl_rtg_close_screen, handle)", "void cl_rtg_close_screen(void *handle_void)", "cl_res_remove(&handle->res);"),
+        ("shim_hosted_amiga_optional_rtg.c", "void *cl_rtg_alloc_bitmap(LONG width, LONG height, LONG depth)", "!cl_res_add(&handle->res, cl_rtg_free_bitmap, handle)", "void cl_rtg_free_bitmap(void *handle_void)", "cl_res_remove(&handle->res);"),
+    ];
+    for (file, acquire, register, release, remove) in cases {
+        let text = suffix(file);
+        let acquired = body_from(&text, acquire);
+        assert_contains(acquire, acquired, register);
+        let after = &acquired[acquired.find(register).expect("registered")..];
+        assert_contains(acquire, after, "return NULL;");
+        let freed = body_from(&text, release);
+        assert_contains(release, freed, remove);
+        let removed_at = freed.find(remove).expect("removed");
+        for call in ["FreeMem(", "CloseDevice(", "DeleteCxObjAll(", "FreeDiskObject(", "RemoveAppIcon(", "RemoveAppMenuItem(", "ReplyMsg(", "DisposeObject(", "FreeAslRequest(", "CloseSocket(", "CloseAmigaGuide(", "p96CloseScreen(", "p96FreeBitMap(", "DisposeDTObject(", "DisposeRegion(", "CloseLocale(", "FreeNVData(", "DeletePool("] {
+            if let Some(at) = freed.find(call) {
+                assert!(removed_at < at, "{release}: unregister after {call}");
+            }
+        }
+    }
+}
+
+/// An ARexx packet the program created is recorded as in flight while a port
+/// holds it, taken back when the program receives it, and handed off again
+/// when the program replies or sends it. At exit, an in-flight packet queued
+/// on one of the program's own ports is freed; one a foreign task holds stays
+/// allocated and keeps its reply port alive.
+#[test]
+fn arexx_packets_in_flight_keep_their_reply_port_for_a_foreign_holder() {
+    let services = suffix("shim_hosted_amiga_optional_services.c");
+    assert_order(
+        "in-flight release",
+        body(&services, "static void cl_release_rexx_in_flight(void *handle)"),
+        &[
+            "Forbid();",
+            "own = cl_own_ports_hold(&message->rm_Node.mn_Node);",
+            "Remove(&message->rm_Node.mn_Node);",
+            "Permit();",
+            "cl_rexx_release_packet(message, cl_rexx_take_lifetime(message));",
+            "cl_port_keep(message->rm_Node.mn_ReplyPort);",
+        ],
+    );
+    assert_order(
+        "hand off",
+        body(&services, "static void cl_rexx_hand_off(struct RexxMsg *message)"),
+        &["cl_rexx_has_lifetime(message)", "!cl_res_track(cl_release_rexx_in_flight, message)", "cl_port_keep(message->rm_Node.mn_ReplyPort);"],
+    );
+    assert_order(
+        "send",
+        body(&services, "void cl_rexx_send(void *port, void *handle_void)"),
+        &["cl_res_remove(&handle->res);", "cl_rexx_hand_off(handle->message);", "PutMsg("],
+    );
+    assert_order(
+        "receive",
+        body(&services, "void *cl_rexx_receive(void *port)"),
+        &["cl_rexx_is_packet(message)", "cl_res_untrack(cl_release_rexx_in_flight, message);", "return cl_rexx_recorded(handle);"],
+    );
+    assert_order(
+        "reply",
+        body(&services, "void cl_rexx_reply(void *handle_void)"),
+        &["cl_res_remove(&handle->res);", "cl_rexx_hand_off(handle->message);", "cl_rexx_return(handle->message);"],
+    );
+    let shim = shim();
+    assert_order(
+        "keep",
+        body(&shim, "void cl_port_keep(struct MsgPort *port)"),
+        &[
+            "port == NULL || (!cl_kept_overflow && cl_port_kept(port))",
+            "return;",
+            "cl_kept_count < CL_KEPT_PORTS_MAX",
+            "cl_kept_ports[cl_kept_count++] = port;",
+            "cl_kept_overflow = 1;",
+        ],
+    );
+    // A command another program sent, still queued or held at exit, is
+    // replied as failed rather than as a success.
+    assert_order(
+        "reply filter",
+        body(&services, "static void cl_rexx_exit_reply_filter(struct Message *message)"),
+        &["message->mn_Length >= sizeof(struct RexxMsg)", "IsRexxMsg(", "cl_rexx_fail("],
+    );
+    assert_order(
+        "rexx open",
+        body(&services, "static int cl_rexx_open(void)"),
+        &["cl_lib_open(&RexxSysBase", "cl_exit_reply_filter = cl_rexx_exit_reply_filter;"],
+    );
+    assert_order(
+        "held command",
+        body(&services, "static void cl_release_rexx_message(void *handle_void)"),
+        &["!handle->owns && handle->message != NULL", "!cl_rexx_has_lifetime(handle->message)", "cl_rexx_fail(handle->message);", "cl_rexx_delete(handle);"],
+    );
+    assert_order(
+        "fail",
+        body(&services, "static void cl_rexx_fail(struct RexxMsg *message)"),
+        &["message->rm_Result1 = RC_FATAL;", "message->rm_Result2 = 0;"],
+    );
+    assert_order(
+        "kept",
+        body(&shim, "static int cl_port_kept(struct MsgPort *port)"),
+        &["if (cl_kept_overflow)", "return 1;", "cl_kept_ports[index] == port"],
+    );
 }

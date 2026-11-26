@@ -24,10 +24,7 @@ extern struct Library *UtilityBase;
 
 static int cl_utility_open(void)
 {
-    if (UtilityBase == NULL) {
-        UtilityBase = OpenLibrary((STRPTR) "utility.library", 37);
-    }
-    return UtilityBase != NULL;
+    return cl_lib_open(&UtilityBase, "utility.library", 37) != NULL;
 }
 
 /* ------------------------------------------------------------------------- */
@@ -36,7 +33,10 @@ static int cl_utility_open(void)
 
 typedef struct cl_semaphore {
     struct SignalSemaphore semaphore;
+    cl_res res;
 } cl_semaphore;
+
+void cl_free_semaphore(void *handle);
 
 void *cl_create_semaphore(void)
 {
@@ -47,12 +47,19 @@ void *cl_create_semaphore(void)
         return NULL;
     }
     InitSemaphore(&handle->semaphore);
+    if (!cl_res_add(&handle->res, cl_free_semaphore, handle)) {
+        cl_free_semaphore(handle);
+        return NULL;
+    }
     return handle;
 }
 
+/* A semaphore is private to the program and worker tasks cannot block, so
+ * freeing one that is still obtained leaves no waiter behind. */
 void cl_free_semaphore(void *handle)
 {
     if (handle != NULL) {
+        cl_res_remove(&((cl_semaphore *)handle)->res);
         FreeMem(handle, (ULONG)sizeof(cl_semaphore));
     }
 }
@@ -93,7 +100,10 @@ typedef struct cl_tag_list {
     struct TagItem *items;
     ULONG capacity;
     ULONG count;
+    cl_res res;
 } cl_tag_list;
+
+void cl_free_tag_list(void *handle);
 
 void *cl_new_tag_list(LONG capacity)
 {
@@ -116,6 +126,10 @@ void *cl_new_tag_list(LONG capacity)
     list->capacity = (ULONG)capacity;
     list->count = 0;
     list->items[0].ti_Tag = TAG_DONE;
+    if (!cl_res_add(&list->res, cl_free_tag_list, list)) {
+        cl_free_tag_list(list);
+        return NULL;
+    }
     return list;
 }
 
@@ -126,6 +140,7 @@ void cl_free_tag_list(void *handle)
     if (list == NULL) {
         return;
     }
+    cl_res_remove(&list->res);
     if (list->items != NULL) {
         FreeMem(list->items,
                 (list->capacity + 1UL) * (ULONG)sizeof(struct TagItem));
@@ -202,7 +217,10 @@ LONG cl_tag_count(void *handle)
 
 typedef struct cl_date_stamp {
     struct DateStamp stamp;
+    cl_res res;
 } cl_date_stamp;
+
+void cl_free_date_stamp(void *handle);
 
 void *cl_date_stamp_new(void)
 {
@@ -216,12 +234,17 @@ void *cl_date_stamp_new(void)
         return NULL;
     }
     DateStamp(&handle->stamp);
+    if (!cl_res_add(&handle->res, cl_free_date_stamp, handle)) {
+        cl_free_date_stamp(handle);
+        return NULL;
+    }
     return handle;
 }
 
 void cl_free_date_stamp(void *handle)
 {
     if (handle != NULL) {
+        cl_res_remove(&((cl_date_stamp *)handle)->res);
         FreeMem(handle, (ULONG)sizeof(cl_date_stamp));
     }
 }
@@ -258,7 +281,10 @@ typedef struct cl_hook {
     cl_hook_fn entry;
     LONG data;
     ULONG calls;
+    cl_res res;
 } cl_hook;
+
+void cl_free_hook(void *handle);
 
 static LONG cl_hook_data_value;
 static LONG cl_hook_current_result;
@@ -293,6 +319,10 @@ void *cl_new_hook(cl_hook_fn entry, LONG data)
     record->hook.h_Data = record;
     record->entry = entry;
     record->data = data;
+    if (!cl_res_add(&record->res, cl_free_hook, record)) {
+        cl_free_hook(record);
+        return NULL;
+    }
     return record;
 }
 
@@ -330,6 +360,7 @@ void cl_hook_set_result(LONG value)
 void cl_free_hook(void *handle)
 {
     if (handle != NULL) {
+        cl_res_remove(&((cl_hook *)handle)->res);
         FreeMem(handle, (ULONG)sizeof(cl_hook));
     }
 }
@@ -342,20 +373,28 @@ typedef struct cl_utility_pool {
     APTR pool;
     ULONG live_blocks;
     int released;
+    cl_res res;   /* until the pool is really deleted */
 } cl_utility_pool;
 
 typedef struct cl_utility_block {
     cl_utility_pool *pool;
     APTR memory;
     ULONG size;
+    cl_res res;
 } cl_utility_block;
 
+void cl_free_utility_pool(void *handle);
+void cl_free_utility_block(void *handle);
+
+/* Delete a released pool once its last block is gone. A pool the program
+ * released while blocks were live keeps its record until then. */
 static void cl_utility_pool_release(cl_utility_pool *pool)
 {
     if (pool == NULL) {
         return;
     }
     if (pool->released && pool->live_blocks == 0) {
+        cl_res_remove(&pool->res);
         if (pool->pool != NULL) {
             DeletePool(pool->pool);
         }
@@ -382,6 +421,10 @@ void *cl_create_utility_pool(ULONG mem_flags, ULONG puddle_size,
         FreeMem(pool, (ULONG)sizeof *pool);
         return NULL;
     }
+    if (!cl_res_add(&pool->res, cl_free_utility_pool, pool)) {
+        cl_free_utility_pool(pool);
+        return NULL;
+    }
     return pool;
 }
 
@@ -406,6 +449,10 @@ void *cl_alloc_utility_block(void *handle, ULONG size)
     block->pool = pool;
     block->size = size;
     pool->live_blocks++;
+    if (!cl_res_add(&block->res, cl_free_utility_block, block)) {
+        cl_free_utility_block(block);
+        return NULL;
+    }
     return block;
 }
 
@@ -454,6 +501,7 @@ void cl_free_utility_block(void *handle)
     if (block == NULL) {
         return;
     }
+    cl_res_remove(&block->res);
     pool = block->pool;
     if (pool != NULL && pool->pool != NULL) {
         FreePooled(pool->pool, block->memory, block->size);
@@ -498,7 +546,10 @@ typedef struct cl_args {
     UBYTE *source;
     ULONG source_size;          /* exact allocation size of `source` */
     LONG count;
+    cl_res res;
 } cl_args;
+
+void cl_free_args(void *handle);
 
 /* Count and classify a simple comma-separated ReadArgs template. */
 static LONG cl_args_parse(const char *template, UBYTE *kinds, LONG max)
@@ -558,6 +609,7 @@ static void cl_args_discard(cl_args *args)
     if (args == NULL) {
         return;
     }
+    cl_res_remove(&args->res);
     if (args->rdargs != NULL) {
         FreeArgs(args->rdargs);
         if (args->owns_rdargs) {
@@ -609,7 +661,8 @@ void *cl_read_args(char *template, LONG slots)
     args->kinds = kinds;
     args->count = slots;
     args->rdargs = ReadArgs((STRPTR)template, args->slots, NULL);
-    if (args->rdargs == NULL) {
+    if (args->rdargs == NULL ||
+        !cl_res_add(&args->res, cl_free_args, args)) {
         cl_args_discard(args);
         return NULL;
     }
@@ -680,7 +733,8 @@ void *cl_read_args_from(char *template, LONG slots, APTR source,
     args->rdargs->RDA_Source.CS_Length = (LONG)length;
     args->rdargs->RDA_Source.CS_CurChr = 0;
     args->rdargs->RDA_Flags = RDAF_NOPROMPT;
-    if (ReadArgs((STRPTR)template, args->slots, args->rdargs) == NULL) {
+    if (ReadArgs((STRPTR)template, args->slots, args->rdargs) == NULL ||
+        !cl_res_add(&args->res, cl_free_args, args)) {
         cl_args_discard(args);
         return NULL;
     }
@@ -766,7 +820,10 @@ typedef struct cl_eclock {
     struct TimeRequest *request;
     struct EClockVal last;
     ULONG frequency;
+    cl_res res;
 } cl_eclock;
+
+void cl_free_eclock(void *handle);
 
 void *cl_eclock_open(void)
 {
@@ -786,6 +843,10 @@ void *cl_eclock_open(void)
                    &clock->request->tr_node, 0) != 0) {
         FreeMem(clock->request, (ULONG)sizeof(struct TimeRequest));
         FreeMem(clock, (ULONG)sizeof *clock);
+        return NULL;
+    }
+    if (!cl_res_add(&clock->res, cl_free_eclock, clock)) {
+        cl_free_eclock(clock);
         return NULL;
     }
     return clock;
@@ -831,6 +892,7 @@ void cl_free_eclock(void *handle)
     if (clock == NULL) {
         return;
     }
+    cl_res_remove(&clock->res);
     if (clock->request != NULL) {
         CloseDevice(&clock->request->tr_node);
         FreeMem(clock->request, (ULONG)sizeof(struct TimeRequest));
@@ -849,10 +911,7 @@ struct Library *LowLevelBase;
 
 static int cl_lowlevel_open(void)
 {
-    if (LowLevelBase == NULL) {
-        LowLevelBase = OpenLibrary((STRPTR)"lowlevel.library", 40);
-    }
-    return LowLevelBase != NULL;
+    return cl_lib_open(&LowLevelBase, "lowlevel.library", 40) != NULL;
 }
 
 ULONG cl_lowlevel_read(ULONG port)
@@ -903,17 +962,15 @@ UBYTE cl_lowlevel_decode(ULONG raw)
 
 typedef struct cl_region {
     struct Region *region;
+    cl_res res;
 } cl_region;
+
+void cl_free_region(void *handle);
 
 static int cl_region_open(void)
 {
-    if (GfxBase == NULL) {
-        GfxBase = (struct GfxBase *)OpenLibrary((STRPTR)"graphics.library", 37);
-    }
-    if (LayersBase == NULL) {
-        LayersBase = OpenLibrary((STRPTR)"layers.library", 37);
-    }
-    return GfxBase != NULL && LayersBase != NULL;
+    return cl_lib_open(&GfxBase, "graphics.library", 37) != NULL &&
+           cl_lib_open(&LayersBase, "layers.library", 37) != NULL;
 }
 
 void *cl_region_new(void)
@@ -932,6 +989,10 @@ void *cl_region_new(void)
         FreeMem(handle, (ULONG)sizeof *handle);
         return NULL;
     }
+    if (!cl_res_add(&handle->res, cl_free_region, handle)) {
+        cl_free_region(handle);
+        return NULL;
+    }
     return handle;
 }
 
@@ -942,6 +1003,7 @@ void cl_free_region(void *handle)
     if (region == NULL) {
         return;
     }
+    cl_res_remove(&region->res);
     if (region->region != NULL) {
         DisposeRegion(region->region);
     }
@@ -1068,15 +1130,17 @@ typedef struct cl_dt {
     LONG height;
     LONG depth;
     LONG colors;
+    cl_res res;
 } cl_dt;
+
+void cl_dispose_dt_object(void *handle);
 
 static int cl_datatypes_open(void)
 {
     if (DataTypesBase == NULL) {
-        DataTypesBase = OpenLibrary((STRPTR)"datatypes.library", 40);
         /* The datatype class list is populated by AddDataTypes; give the
          * library a moment before the first class lookup. */
-        if (DataTypesBase != NULL) {
+        if (cl_lib_open(&DataTypesBase, "datatypes.library", 40) != NULL) {
             Delay(5);
         }
     }
@@ -1138,6 +1202,10 @@ void *cl_dt_open_picture(char *path)
             handle->colors = 1L << handle->depth;
         }
     }
+    if (!cl_res_add(&handle->res, cl_dispose_dt_object, handle)) {
+        cl_dispose_dt_object(handle);
+        return NULL;
+    }
     return handle;
 }
 
@@ -1148,6 +1216,7 @@ void cl_dispose_dt_object(void *handle)
     if (object == NULL) {
         return;
     }
+    cl_res_remove(&object->res);
     if (object->object != NULL) {
         DisposeDTObject(object->object);
     }

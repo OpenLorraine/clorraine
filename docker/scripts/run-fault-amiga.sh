@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Run the fifteen runtime-fault programs on both hosted Amiga profiles under
-# vamos.
+# Run the runtime-fault programs on both hosted Amiga profiles under vamos:
+# fifteen on both profiles, plus one for the 2.0+ surface on hosted-amiga only.
 #
 # Each program must compile with zero diagnostics on hosted-amiga (libnix 2.0)
 # and hosted-amiga-13 (libnix 1.3), build warning-free with the m68k GCC
@@ -68,6 +68,11 @@ CASES=(
     "assert-after-acquire|examples/robustness/fault-cleanup/assert-after-acquire.clo|error E11213: assertion failed"
 )
 
+# Cases for the 2.0+ surface, which only hosted-amiga carries.
+CASES_20=(
+    "utility-fault|examples/robustness/fault-cleanup/utility-fault.clo|error E11211: index out of range"
+)
+
 if [ ! -x "${CLC}" ]; then
     echo "run-fault-amiga: compiler not found: ${CLC}" >&2
     exit 2
@@ -77,7 +82,11 @@ status=0
 for profile_entry in "${PROFILES[@]}"; do
     profile="${profile_entry%%|*}"
     crt="${profile_entry#*|}"
-    for entry in "${CASES[@]}"; do
+    cases=("${CASES[@]}")
+    if [ "${profile}" = "hosted-amiga" ]; then
+        cases+=("${CASES_20[@]}")
+    fi
+    for entry in "${cases[@]}"; do
         name="${entry%%|*}"
         rest="${entry#*|}"
         source="${rest%%|*}"
@@ -125,6 +134,6 @@ done
 if [ "${status}" -ne 0 ]; then
     echo "run-fault-amiga: FAILED" >&2
 else
-    echo "run-fault-amiga: all fifteen faults match on hosted-amiga and hosted-amiga-13"
+    echo "run-fault-amiga: all faults match (16 on hosted-amiga, 15 on hosted-amiga-13)"
 fi
 exit "${status}"

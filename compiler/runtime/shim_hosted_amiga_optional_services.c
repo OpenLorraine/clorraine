@@ -8,6 +8,7 @@
 #include <clib/locale_protos.h>
 #include <rexx/storage.h>
 #include <rexx/rxslib.h>
+#include <rexx/errors.h>
 #include <clib/rexxsyslib_protos.h>
 #include <devices/clipboard.h>
 #include <devices/serial.h>
@@ -46,7 +47,10 @@ typedef struct cl_commodity {
     char *name;
     char *title;
     char *description;
+    cl_res res;
 } cl_commodity;
+
+void cl_commodity_close(void *handle);
 
 static void cl_commodity_free_strings(cl_commodity *commodity)
 {
@@ -72,10 +76,7 @@ void *cl_commodity_open(char *name, char *title, char *description,
     if (name == NULL || port == NULL) {
         return NULL;
     }
-    if (CxBase == NULL) {
-        CxBase = OpenLibrary((STRPTR)"commodities.library", 37);
-    }
-    if (CxBase == NULL) {
+    if (cl_lib_open(&CxBase, "commodities.library", 37) == NULL) {
         return NULL;
     }
     commodity = (cl_commodity *)AllocMem(
@@ -112,6 +113,10 @@ void *cl_commodity_open(char *name, char *title, char *description,
         FreeMem(commodity, (ULONG)sizeof *commodity);
         return NULL;
     }
+    if (!cl_res_add(&commodity->res, cl_commodity_close, commodity)) {
+        cl_commodity_close(commodity);
+        return NULL;
+    }
     return commodity;
 }
 
@@ -122,6 +127,7 @@ void cl_commodity_close(void *handle)
     if (commodity == NULL) {
         return;
     }
+    cl_res_remove(&commodity->res);
     if (commodity->broker != NULL) {
         DeleteCxObjAll(commodity->broker);
     }
@@ -135,17 +141,16 @@ void cl_commodity_close(void *handle)
 
 typedef struct cl_locale {
     struct Locale *locale;
+    cl_res res;
 } cl_locale;
+
+void cl_locale_close(void *handle);
 
 void *cl_locale_open(char *name)
 {
     cl_locale *handle;
 
-    if (LocaleBase == NULL) {
-        LocaleBase = (struct LocaleBase *)OpenLibrary(
-            (STRPTR)"locale.library", 38);
-    }
-    if (LocaleBase == NULL) {
+    if (cl_lib_open(&LocaleBase, "locale.library", 38) == NULL) {
         return NULL;
     }
     handle = (cl_locale *)AllocMem((ULONG)sizeof *handle, MEMF_ANY | MEMF_CLEAR);
@@ -158,6 +163,10 @@ void *cl_locale_open(char *name)
         FreeMem(handle, (ULONG)sizeof *handle);
         return NULL;
     }
+    if (!cl_res_add(&handle->res, cl_locale_close, handle)) {
+        cl_locale_close(handle);
+        return NULL;
+    }
     return handle;
 }
 
@@ -168,6 +177,7 @@ void cl_locale_close(void *handle)
     if (locale == NULL) {
         return;
     }
+    cl_res_remove(&locale->res);
     if (locale->locale != NULL) {
         CloseLocale(locale->locale);
     }
@@ -233,7 +243,10 @@ void *cl_locale_date_format(void *handle)
 typedef struct cl_rexx_message {
     struct RexxMsg *message;
     int owns;
+    cl_res res;   /* while the program holds the wrapper */
 } cl_rexx_message;
+
+void cl_rexx_delete(void *handle_void);
 
 /* CreateRexxMsg stores the extension and host pointers without copying them,
  * but cl_rexx_send releases the wrapper before the reply arrives. Keep the
@@ -247,13 +260,32 @@ typedef struct cl_rexx_lifetime {
 
 static cl_rexx_lifetime *cl_rexx_lifetimes;
 
+/* Mark an ARexx command that will never run as failed before it is replied. */
+static void cl_rexx_fail(struct RexxMsg *message)
+{
+    message->rm_Result1 = RC_FATAL;
+    message->rm_Result2 = 0;
+}
+
+/* The exit reply of a foreign message still queued on one of the program's
+ * ports: an ARexx command among them reports a failure instead of RC 0. The
+ * length is checked before any RexxMsg field beyond the plain Message is
+ * read. */
+static void cl_rexx_exit_reply_filter(struct Message *message)
+{
+    if (message->mn_Length >= sizeof(struct RexxMsg) &&
+        IsRexxMsg((struct RexxMsg *)message)) {
+        cl_rexx_fail((struct RexxMsg *)message);
+    }
+}
+
 static int cl_rexx_open(void)
 {
-    if (RexxSysBase == NULL) {
-        RexxSysBase = (struct RxsLib *)OpenLibrary(
-            (STRPTR)"rexxsyslib.library", 36);
+    if (cl_lib_open(&RexxSysBase, "rexxsyslib.library", 36) == NULL) {
+        return 0;
     }
-    return RexxSysBase != NULL;
+    cl_exit_reply_filter = cl_rexx_exit_reply_filter;
+    return 1;
 }
 
 /* Returns a received message when it has a reply port. A message without one
@@ -365,6 +397,64 @@ static void cl_rexx_release_packet(struct RexxMsg *message,
     cl_rexx_free_lifetime(record);
 }
 
+/* The exit release of a packet this program created and handed to a port. If
+ * it is queued on one of the program's own ports, nobody else can reply it,
+ * so it is taken back and freed. Otherwise a foreign task holds it and may
+ * still reply it: the packet, its strings, and its reply port stay
+ * allocated. */
+static void cl_release_rexx_in_flight(void *handle)
+{
+    struct RexxMsg *message = (struct RexxMsg *)handle;
+    int own;
+
+    Forbid();
+    own = cl_own_ports_hold(&message->rm_Node.mn_Node);
+    if (own) {
+        Remove(&message->rm_Node.mn_Node);
+    }
+    Permit();
+    if (own) {
+        cl_rexx_release_packet(message, cl_rexx_take_lifetime(message));
+    } else {
+        cl_port_keep(message->rm_Node.mn_ReplyPort);
+    }
+}
+
+/* Record that one of the program's own packets is leaving for a port. When
+ * the record cannot be made, the reply port is kept at exit instead, which
+ * leaks it but never frees it under a foreign holder. */
+static void cl_rexx_hand_off(struct RexxMsg *message)
+{
+    if (cl_rexx_has_lifetime(message) &&
+        !cl_res_track(cl_release_rexx_in_flight, message)) {
+        cl_port_keep(message->rm_Node.mn_ReplyPort);
+    }
+}
+
+/* The exit release of a wrapper the program holds. A command received from
+ * another program never ran, so it is replied as failed; everything else is
+ * released as the drop would. */
+static void cl_release_rexx_message(void *handle_void)
+{
+    cl_rexx_message *handle = (cl_rexx_message *)handle_void;
+
+    if (!handle->owns && handle->message != NULL &&
+        !cl_rexx_has_lifetime(handle->message)) {
+        cl_rexx_fail(handle->message);
+    }
+    cl_rexx_delete(handle);
+}
+
+/* Record a wrapper the program now holds, undoing it when that fails. */
+static void *cl_rexx_recorded(cl_rexx_message *handle)
+{
+    if (!cl_res_add(&handle->res, cl_release_rexx_message, handle)) {
+        cl_rexx_delete(handle);
+        return NULL;
+    }
+    return handle;
+}
+
 void *cl_rexx_create(void *reply_port, char *extension, char *host)
 {
     cl_rexx_message *handle;
@@ -404,7 +494,7 @@ void *cl_rexx_create(void *reply_port, char *extension, char *host)
     cl_rexx_lifetimes = lifetime;
     handle->message = lifetime->message;
     handle->owns = 1;
-    return handle;
+    return cl_rexx_recorded(handle);
 }
 
 void cl_rexx_delete(void *handle_void)
@@ -414,6 +504,7 @@ void cl_rexx_delete(void *handle_void)
     if (handle == NULL) {
         return;
     }
+    cl_res_remove(&handle->res);
     if (handle->message != NULL) {
         cl_rexx_lifetime *record = cl_rexx_take_lifetime(handle->message);
         if (record != NULL) {
@@ -466,7 +557,9 @@ void cl_rexx_send(void *port, void *handle_void)
     if (handle == NULL) {
         return;
     }
+    cl_res_remove(&handle->res);
     if (handle->message != NULL && port != NULL) {
+        cl_rexx_hand_off(handle->message);
         PutMsg((struct MsgPort *)port, (struct Message *)handle->message);
         FreeMem(handle, (ULONG)sizeof *handle);
         return;
@@ -503,15 +596,18 @@ void *cl_rexx_receive(void *port)
         cl_rexx_return(message);
         return NULL;
     }
+    /* One of the program's own packets is back: no port holds it now. */
+    cl_res_untrack(cl_release_rexx_in_flight, message);
     handle = (cl_rexx_message *)AllocMem(
         (ULONG)sizeof *handle, MEMF_ANY | MEMF_CLEAR);
     if (handle == NULL) {
+        cl_rexx_hand_off(message);
         cl_rexx_return(message);
         return NULL;
     }
     handle->message = message;
     handle->owns = 0;
-    return handle;
+    return cl_rexx_recorded(handle);
 }
 
 void cl_rexx_reply(void *handle_void)
@@ -521,7 +617,11 @@ void cl_rexx_reply(void *handle_void)
     if (handle == NULL) {
         return;
     }
+    cl_res_remove(&handle->res);
     if (handle->message != NULL) {
+        if (handle->message->rm_Node.mn_ReplyPort != NULL) {
+            cl_rexx_hand_off(handle->message);
+        }
         cl_rexx_return(handle->message);
     }
     FreeMem(handle, (ULONG)sizeof *handle);
@@ -534,6 +634,7 @@ void cl_rexx_reclaim(void *handle_void)
     if (handle == NULL) {
         return;
     }
+    cl_res_remove(&handle->res);
     if (handle->message != NULL) {
         cl_rexx_lifetime *record = cl_rexx_take_lifetime(handle->message);
         if (record != NULL) {
@@ -599,7 +700,10 @@ LONG cl_rexx_arg(void *handle_void, LONG index, APTR buffer, ULONG length)
 typedef struct cl_clipboard {
     struct IOClipReq *request;
     struct MsgPort *port;
+    cl_res res;
 } cl_clipboard;
+
+void cl_clipboard_close(void *handle);
 
 void *cl_clipboard_open(LONG unit)
 {
@@ -635,6 +739,10 @@ void *cl_clipboard_open(LONG unit)
         FreeMem(clipboard, (ULONG)sizeof *clipboard);
         return NULL;
     }
+    if (!cl_res_add(&clipboard->res, cl_clipboard_close, clipboard)) {
+        cl_clipboard_close(clipboard);
+        return NULL;
+    }
     return clipboard;
 }
 
@@ -645,6 +753,7 @@ void cl_clipboard_close(void *handle)
     if (clipboard == NULL) {
         return;
     }
+    cl_res_remove(&clipboard->res);
     if (clipboard->request != NULL) {
         CloseDevice((struct IORequest *)clipboard->request);
         FreeMem(clipboard->request, (ULONG)sizeof(struct IOClipReq));
@@ -723,16 +832,23 @@ BOOL cl_clipboard_clear(void *handle)
 typedef struct cl_serial {
     struct IOExtSer *request;
     struct MsgPort *port;
+    cl_res res;
 } cl_serial;
 
 typedef struct cl_parallel {
     struct IOExtPar *request;
     struct MsgPort *port;
+    cl_res res;
 } cl_parallel;
+
+void cl_serial_close(void *handle);
+void cl_parallel_close(void *handle);
+void cl_printer_close(void *handle);
 
 typedef struct cl_printer {
     struct IOStdReq *request;
     struct MsgPort *port;
+    cl_res res;
 } cl_printer;
 
 void *cl_serial_open(LONG unit, ULONG baud)
@@ -775,6 +891,10 @@ void *cl_serial_open(LONG unit, ULONG baud)
         FreeMem(serial, (ULONG)sizeof *serial);
         return NULL;
     }
+    if (!cl_res_add(&serial->res, cl_serial_close, serial)) {
+        cl_serial_close(serial);
+        return NULL;
+    }
     return serial;
 }
 
@@ -785,6 +905,7 @@ void cl_serial_close(void *handle)
     if (serial == NULL) {
         return;
     }
+    cl_res_remove(&serial->res);
     if (serial->request != NULL) {
         CloseDevice((struct IORequest *)serial->request);
         FreeMem(serial->request, (ULONG)sizeof(struct IOExtSer));
@@ -867,6 +988,10 @@ void *cl_parallel_open(LONG unit, ULONG flags)
         FreeMem(parallel, (ULONG)sizeof *parallel);
         return NULL;
     }
+    if (!cl_res_add(&parallel->res, cl_parallel_close, parallel)) {
+        cl_parallel_close(parallel);
+        return NULL;
+    }
     return parallel;
 }
 
@@ -877,6 +1002,7 @@ void cl_parallel_close(void *handle)
     if (parallel == NULL) {
         return;
     }
+    cl_res_remove(&parallel->res);
     if (parallel->request != NULL) {
         CloseDevice((struct IORequest *)parallel->request);
         FreeMem(parallel->request, (ULONG)sizeof(struct IOExtPar));
@@ -934,6 +1060,10 @@ void *cl_printer_open(LONG unit)
         FreeMem(printer, (ULONG)sizeof *printer);
         return NULL;
     }
+    if (!cl_res_add(&printer->res, cl_printer_close, printer)) {
+        cl_printer_close(printer);
+        return NULL;
+    }
     return printer;
 }
 
@@ -944,6 +1074,7 @@ void cl_printer_close(void *handle)
     if (printer == NULL) {
         return;
     }
+    cl_res_remove(&printer->res);
     if (printer->request != NULL) {
         CloseDevice((struct IORequest *)printer->request);
         FreeMem(printer->request, (ULONG)sizeof(struct IOStdReq));
@@ -977,14 +1108,14 @@ LONG cl_printer_write(void *handle, APTR data, ULONG length)
 typedef struct cl_nv_data {
     APTR data;
     ULONG size;
+    cl_res res;
 } cl_nv_data;
+
+void cl_nv_free(void *handle_void);
 
 static int cl_nv_open(void)
 {
-    if (NVBase == NULL) {
-        NVBase = OpenLibrary((STRPTR)"nonvolatile.library", 40);
-    }
-    return NVBase != NULL;
+    return cl_lib_open(&NVBase, "nonvolatile.library", 40) != NULL;
 }
 
 void *cl_nv_get(char *app, char *item)
@@ -1006,6 +1137,10 @@ void *cl_nv_get(char *app, char *item)
     }
     handle->data = data;
     handle->size = SizeNVData(data);
+    if (!cl_res_add(&handle->res, cl_nv_free, handle)) {
+        cl_nv_free(handle);
+        return NULL;
+    }
     return handle;
 }
 
@@ -1016,6 +1151,7 @@ void cl_nv_free(void *handle_void)
     if (handle == NULL) {
         return;
     }
+    cl_res_remove(&handle->res);
     if (handle->data != NULL) {
         FreeNVData(handle->data);
     }

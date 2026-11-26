@@ -3304,16 +3304,69 @@ static int cl_port_holds(struct MsgPort *port, struct Node *node)
     return 0;
 }
 
-/* True when `message` is queued on a port the program still owns. The caller
+/* True when `node` is queued on a port the program still owns. The caller
  * holds Forbid. */
-static int cl_own_port_holds(cl_message *message)
+int cl_own_ports_hold(struct Node *node)
 {
     cl_res *record;
 
     for (record = cl_res_head; record != NULL; record = record->next) {
         if (record->release == cl_release_msg_port &&
-            cl_port_holds((struct MsgPort *)record->handle,
-                          &message->msg.mn_Node)) {
+            cl_port_holds((struct MsgPort *)record->handle, node)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* True when `message` is queued on a port the program still owns. The caller
+ * holds Forbid. */
+static int cl_own_port_holds(cl_message *message)
+{
+    return cl_own_ports_hold(&message->msg.mn_Node);
+}
+
+/* Ports that must outlive the program: a message it sent through another
+ * module (an ARexx packet) names one as its reply port while a foreign task
+ * still holds that message. A full set keeps every port, which leaks but
+ * never frees a port a foreign task may reply to. */
+#define CL_KEPT_PORTS_MAX 8
+static struct MsgPort *cl_kept_ports[CL_KEPT_PORTS_MAX];
+static ULONG cl_kept_count;
+static UBYTE cl_kept_overflow;
+
+/* True when the exit must leave `port` allocated. */
+static int cl_port_kept(struct MsgPort *port);
+
+/* Keep `port` allocated at exit. The exit release of the message that still
+ * needs it calls this, which runs before the port's own release because the
+ * message was sent after the port was created. */
+void cl_port_keep(struct MsgPort *port)
+{
+    if (port == NULL || (!cl_kept_overflow && cl_port_kept(port))) {
+        return;
+    }
+    if (cl_kept_count < CL_KEPT_PORTS_MAX) {
+        cl_kept_ports[cl_kept_count++] = port;
+    } else {
+        cl_kept_overflow = 1;
+    }
+}
+
+/* Set by a module whose foreign messages need a result before the exit
+ * replies them (an ARexx command that never ran must report a failure). */
+static void (*cl_exit_reply_filter)(struct Message *message);
+
+/* True when the exit must leave `port` allocated. */
+static int cl_port_kept(struct MsgPort *port)
+{
+    ULONG index;
+
+    if (cl_kept_overflow) {
+        return 1;
+    }
+    for (index = 0; index < cl_kept_count; index++) {
+        if (cl_kept_ports[index] == port) {
             return 1;
         }
     }
@@ -3323,14 +3376,18 @@ static int cl_own_port_holds(cl_message *message)
 /* The exit release of a port. Own messages queued on it are freed first: the
  * program owns both ends, so nobody else can reply them. An own message queued
  * on another port the program still owns, whose reply port is this one, is
- * freed for the same reason. Any other own message that names this port as its
- * reply port is held by a foreign task, which may still reply it, so the port
- * and that message stay allocated. */
+ * freed for the same reason. Every foreign message still queued goes back to
+ * its sender, which frees it (Workbench also unlocks the icons an AppMessage
+ * carried). Any own message that names this port as its reply port and is
+ * held by a foreign task may still be replied, so that port stays allocated,
+ * as does a port another module kept. A kept port is taken out of the public
+ * list and stops signalling, because its task is about to end. */
 static void cl_release_msg_port(void *handle)
 {
     struct MsgPort *port = (struct MsgPort *)handle;
     struct Node *node;
     struct Node *next;
+    struct Message *foreign;
     cl_message *message;
     cl_message *following;
     int keep = 0;
@@ -3358,10 +3415,29 @@ static void cl_release_msg_port(void *handle)
             keep = 1;
         }
     }
-    Permit();
-    if (!keep) {
+    while ((foreign = GetMsg(port)) != NULL) {
+        if (foreign->mn_Node.ln_Type == NT_MESSAGE &&
+            foreign->mn_ReplyPort != NULL && foreign->mn_ReplyPort != port) {
+            if (cl_exit_reply_filter != NULL) {
+                cl_exit_reply_filter(foreign);
+            }
+            ReplyMsg(foreign);
+        }
+    }
+    keep = keep || cl_port_kept(port);
+    if (keep) {
+        if (port->mp_Node.ln_Name != NULL) {
+            RemPort(port);
+        }
+        port->mp_Flags = PA_IGNORE;
+        port->mp_SigTask = NULL;
+        FreeSignal((LONG)port->mp_SigBit);
+    } else {
+        /* Still under Forbid, so no sender can find a public port between
+         * the drain and its removal. */
         DeletePort(port);
     }
+    Permit();
 }
 
 /* Record a new port, deleting it again when it cannot be recorded. */

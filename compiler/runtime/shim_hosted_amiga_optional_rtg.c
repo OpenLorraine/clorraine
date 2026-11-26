@@ -22,22 +22,22 @@ typedef struct cl_rtg_screen {
     struct Rectangle dclip;
     char *title;
     ULONG mode;
+    cl_res res;
 } cl_rtg_screen;
 
 typedef struct cl_rtg_bitmap {
     struct BitMap *bitmap;
     struct RastPort rp;
+    cl_res res;
 } cl_rtg_bitmap;
+
+void cl_rtg_close_screen(void *handle_void);
+void cl_rtg_free_bitmap(void *handle_void);
 
 static int cl_rtg_open(void)
 {
-    if (P96Base == NULL) {
-        P96Base = OpenLibrary((STRPTR)"Picasso96API.library", 2);
-    }
-    if (GfxBase == NULL) {
-        GfxBase = (struct GfxBase *)OpenLibrary((STRPTR)"graphics.library", 33);
-    }
-    return P96Base != NULL && GfxBase != NULL;
+    return cl_lib_open(&P96Base, "Picasso96API.library", 2) != NULL &&
+           cl_lib_open(&GfxBase, "graphics.library", 33) != NULL;
 }
 
 static int cl_rtg_valid_size(LONG width, LONG height, LONG depth)
@@ -187,6 +187,10 @@ void *cl_rtg_open_screen(LONG width, LONG height, LONG depth, char *title)
     }
     handle->screen = screen;
     handle->mode = mode;
+    if (!cl_res_add(&handle->res, cl_rtg_close_screen, handle)) {
+        cl_rtg_close_screen(handle);
+        return NULL;
+    }
     return handle;
 }
 
@@ -197,6 +201,7 @@ void cl_rtg_close_screen(void *handle_void)
     if (handle == NULL) {
         return;
     }
+    cl_res_remove(&handle->res);
     if (handle->screen != NULL) {
         if (!p96CloseScreen(handle->screen)) {
             /* Closing failed; the screen may still reference the title and
@@ -287,6 +292,10 @@ void *cl_rtg_alloc_bitmap(LONG width, LONG height, LONG depth)
     handle->bitmap = bitmap;
     InitRastPort(&handle->rp);
     handle->rp.BitMap = bitmap;
+    if (!cl_res_add(&handle->res, cl_rtg_free_bitmap, handle)) {
+        cl_rtg_free_bitmap(handle);
+        return NULL;
+    }
     return handle;
 }
 
@@ -297,6 +306,7 @@ void cl_rtg_free_bitmap(void *handle_void)
     if (handle == NULL) {
         return;
     }
+    cl_res_remove(&handle->res);
     if (handle->bitmap != NULL) {
         p96FreeBitMap(handle->bitmap);
     }

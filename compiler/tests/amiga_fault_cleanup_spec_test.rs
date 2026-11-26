@@ -191,10 +191,15 @@ fn is_leak_line(line: &str) -> bool {
 /// Builds `probe_name` on both profiles, runs it, and asserts the fault line,
 /// the fault exit code, and that nothing was left behind.
 fn assert_faults_cleanly(probe_name: &str, first_line: &str) {
+    assert_faults_cleanly_on(probe_name, first_line, &PROFILES);
+}
+
+/// The same check on the given profiles only.
+fn assert_faults_cleanly_on(probe_name: &str, first_line: &str, profiles: &[(&str, &str)]) {
     if !sdk_present() {
         return;
     }
-    for (profile, crt) in PROFILES {
+    for &(profile, crt) in profiles {
         let tag = format!("{}-{profile}", probe_name.trim_end_matches(".clo"));
         let scratch = ScratchDir::new(&tag);
         let binary = build(&scratch, &tag, profile, crt, &probe(probe_name), Build::Debug);
@@ -254,6 +259,17 @@ fn a_replied_own_message_is_freed_when_the_program_faults() {
 #[test]
 fn an_opened_library_is_closed_when_the_program_faults() {
     assert_faults_cleanly("library-fault.clo", "error E11211: index out of range");
+}
+
+// The 2.0+ optional surface: a tag list, a date stamp, and a semaphore are
+// live at a fault and must all be freed. Only hosted-amiga carries it.
+#[test]
+fn utility_objects_are_freed_when_the_program_faults() {
+    assert_faults_cleanly_on(
+        "utility-fault.clo",
+        "error E11211: index out of range",
+        &[("hosted-amiga", "nix20")],
+    );
 }
 
 // A panic skips every drop, but a live lock must still be released.

@@ -1,0 +1,25 @@
+// Fault-exit cleanup probe for the 2.0+ optional surface: a tag list, a date
+// stamp, and a semaphore are live when an index goes out of range. The runtime
+// must free all three, so vamos reports no orphan memory.
+module robustness.fault_cleanup.utility_fault;
+
+import { TagList, DateStamp, newTagList, currentDateStamp } from std.amiga.utility;
+import { Semaphore, createSemaphore } from std.amiga.semaphore;
+
+func main(): i32 {
+    let tags: TagList? = newTagList(4);
+    if (tags == null) {
+        return 1;
+    }
+    let stamp: DateStamp? = currentDateStamp();
+    if (stamp == null) {
+        return 2;
+    }
+    let semaphore: Semaphore? = createSemaphore();
+    if (semaphore == null) {
+        return 3;
+    }
+    let xs: u32[2] = [1, 2];
+    let i: usize = 5;
+    return i32(xs[i]);   // error E11211: index out of range
+}

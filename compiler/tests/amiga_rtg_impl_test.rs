@@ -101,7 +101,7 @@ func main(): i32 {
 fn the_rtg_shim_pins_the_native_p96_calls() {
     let shim = shim();
     for needle in [
-        "OpenLibrary((STRPTR)\"Picasso96API.library\", 2)",
+        "cl_lib_open(&P96Base, \"Picasso96API.library\", 2)",
         "CL_P96_RD_NumberOfBoards",
         "p96GetRTGDataTagList",
         "CL_P96_BIDTAG_NominalWidth",
@@ -206,7 +206,7 @@ fn the_rtg_missing_library_guard_returns_zero() {
     for needle in [
         "if (!cl_rtg_open()) {",
         "return 0;",
-        "P96Base == NULL",
+        "cl_lib_open(&P96Base, \"Picasso96API.library\", 2) != NULL",
         "cl_rtg_open_screen",
     ] {
         assert_contains("rtg-guard", &shim, needle);

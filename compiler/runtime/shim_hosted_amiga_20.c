@@ -14,10 +14,23 @@ struct Library *IconBase;
 /* Open icon.library 37 once and publish its base. */
 static int cl_icon_open(void)
 {
-    if (IconBase == NULL) {
-        IconBase = OpenLibrary((STRPTR)"icon.library", 37);
+    return cl_lib_open(&IconBase, "icon.library", 37) != NULL;
+}
+
+/* The exit release of a DiskObject the program holds. */
+static void cl_release_disk_object(void *handle)
+{
+    FreeDiskObject((struct DiskObject *)handle);
+}
+
+/* Record a fresh DiskObject, freeing it again when it cannot be recorded. */
+static void *cl_disk_object_recorded(struct DiskObject *object)
+{
+    if (object != NULL && !cl_res_track(cl_release_disk_object, object)) {
+        FreeDiskObject(object);
+        return NULL;
     }
-    return IconBase != NULL;
+    return (void *)object;
 }
 
 /* Read <name>.info into a fresh DiskObject, or NULL. */
@@ -26,7 +39,7 @@ void *cl_get_disk_object(char *name)
     if (name == NULL || !cl_icon_open()) {
         return NULL;
     }
-    return (void *)GetDiskObject((STRPTR)name);
+    return cl_disk_object_recorded(GetDiskObject((STRPTR)name));
 }
 
 /* Write <name>.info from a DiskObject. The caller keeps the icon alive. */
@@ -42,6 +55,7 @@ BOOL cl_put_disk_object(char *name, void *icon)
 void cl_free_disk_object(void *icon)
 {
     if (icon != NULL) {
+        cl_res_untrack(cl_release_disk_object, icon);
         FreeDiskObject((struct DiskObject *)icon);
     }
 }
@@ -52,7 +66,7 @@ void *cl_get_def_disk_object(LONG kind)
     if (kind < WBDISK || kind > WBAPPICON || !cl_icon_open()) {
         return NULL;
     }
-    return (void *)GetDefDiskObject(kind);
+    return cl_disk_object_recorded(GetDefDiskObject(kind));
 }
 
 /* The icon's Workbench type, or 0 for a null handle. */
@@ -84,10 +98,8 @@ struct Library *WorkbenchBase;
 /* Open workbench.library 37 and icon.library 37 once. */
 static int cl_workbench_open(void)
 {
-    if (WorkbenchBase == NULL) {
-        WorkbenchBase = OpenLibrary((STRPTR)"workbench.library", 37);
-    }
-    return WorkbenchBase != NULL && cl_icon_open();
+    return cl_lib_open(&WorkbenchBase, "workbench.library", 37) != NULL &&
+           cl_icon_open();
 }
 
 /* Copy a title for a Workbench record. The caller frees it with the same
@@ -110,13 +122,18 @@ typedef struct cl_app_icon {
     struct DiskObject *object;
     char *title;
     ULONG title_size;
+    cl_res res;
 } cl_app_icon;
 
 typedef struct cl_app_menu_item {
     struct AppMenuItem *item;
     char *title;
     ULONG title_size;
+    cl_res res;
 } cl_app_menu_item;
+
+void cl_remove_app_icon(void *handle);
+void cl_remove_app_menu_item(void *handle);
 
 /* Register an AppIcon with a default image at a pinned position. The record
  * owns the title copy and the DiskObject until removal. */
@@ -167,6 +184,10 @@ void *cl_add_app_icon(void *port_handle, char *title, ULONG id,
     record->object = object;
     record->title = title_copy;
     record->title_size = title_size;
+    if (!cl_res_add(&record->res, cl_remove_app_icon, record)) {
+        cl_remove_app_icon(record);
+        return NULL;
+    }
     return record;
 }
 
@@ -178,6 +199,7 @@ void cl_remove_app_icon(void *handle)
     if (record == NULL) {
         return;
     }
+    cl_res_remove(&record->res);
     if (record->icon != NULL) {
         /* The Workbench removal call returns pointer residue rather than a
          * usable BOOL; follow the Workbench example and free the owned
@@ -224,6 +246,10 @@ void *cl_add_app_menu_item(void *port_handle, char *title, ULONG id,
     }
     record->title = title_copy;
     record->title_size = title_size;
+    if (!cl_res_add(&record->res, cl_remove_app_menu_item, record)) {
+        cl_remove_app_menu_item(record);
+        return NULL;
+    }
     return record;
 }
 
@@ -235,6 +261,7 @@ void cl_remove_app_menu_item(void *handle)
     if (record == NULL) {
         return;
     }
+    cl_res_remove(&record->res);
     if (record->item != NULL) {
         (void)RemoveAppMenuItem(record->item);
     }
@@ -244,16 +271,30 @@ void cl_remove_app_menu_item(void *handle)
     FreeMem(record, (ULONG)sizeof *record);
 }
 
-/* Wait for the next AppMessage on a port. */
+/* The exit release of an AppMessage the program holds: Workbench owns it, so
+ * it is replied. */
+static void cl_release_app_message(void *handle)
+{
+    ReplyMsg((struct Message *)handle);
+}
+
+/* Wait for the next AppMessage on a port. A message that cannot be recorded
+ * is replied and NULL is returned. */
 void *cl_wait_app_message(void *port_handle)
 {
     struct MsgPort *port = (struct MsgPort *)port_handle;
+    struct Message *message;
 
     if (port == NULL) {
         return NULL;
     }
     (void)WaitPort(port);
-    return (void *)GetMsg(port);
+    message = GetMsg(port);
+    if (message != NULL && !cl_res_track(cl_release_app_message, message)) {
+        ReplyMsg(message);
+        return NULL;
+    }
+    return (void *)message;
 }
 
 /* AppMessage field accessors; a null message reads as zero. */
@@ -296,6 +337,7 @@ LONG cl_app_message_arg_count(void *handle)
 void cl_reply_app_message(void *handle)
 {
     if (handle != NULL) {
+        cl_res_untrack(cl_release_app_message, handle);
         ReplyMsg((struct Message *)handle);
     }
 }
@@ -320,10 +362,7 @@ void cl_string_append(void *handle, APTR src, ULONG n);
 /* Open expansion.library 37 once. */
 static int cl_expansion_open(void)
 {
-    if (ExpansionBase == NULL) {
-        ExpansionBase = OpenLibrary((STRPTR)"expansion.library", 37);
-    }
-    return ExpansionBase != NULL;
+    return cl_lib_open(&ExpansionBase, "expansion.library", 37) != NULL;
 }
 
 /* Walk FindConfigDev to the requested index; the nodes are library-owned. */
@@ -419,10 +458,7 @@ ULONG cl_card_status(void)
 /* Open keymap.library 37 once. */
 static int cl_keymap_open(void)
 {
-    if (KeymapBase == NULL) {
-        KeymapBase = OpenLibrary((STRPTR)"keymap.library", 37);
-    }
-    return KeymapBase != NULL;
+    return cl_lib_open(&KeymapBase, "keymap.library", 37) != NULL;
 }
 
 /* Map one raw key through the current keymap into an owned String, or NULL. */
@@ -455,6 +491,12 @@ void *cl_map_raw_key(UWORD code, UWORD qualifier)
     cl_string_append(text, buffer, (ULONG)length);
     return text;
 }
+/* The exit release of an AppWindow the program holds. */
+static void cl_release_app_window(void *handle)
+{
+    (void)RemoveAppWindow((struct AppWindow *)handle);
+}
+
 /* Register an AppWindow on the caller's window. The window must outlive the
  * AppWindow; the wrapper does not close it. */
 void *cl_add_app_window(void *window_handle, void *port_handle, ULONG id,
@@ -462,19 +504,27 @@ void *cl_add_app_window(void *window_handle, void *port_handle, ULONG id,
 {
     const cl_window *window = (const cl_window *)window_handle;
     struct MsgPort *port = (struct MsgPort *)port_handle;
+    struct AppWindow *app_window;
 
     if (window == NULL || window->window == NULL || port == NULL
         || !cl_workbench_open()) {
         return NULL;
     }
-    return (void *)AddAppWindowA(id, user_data, window->window, port, NULL);
+    app_window = AddAppWindowA(id, user_data, window->window, port, NULL);
+    if (app_window != NULL &&
+        !cl_res_track(cl_release_app_window, app_window)) {
+        (void)RemoveAppWindow(app_window);
+        return NULL;
+    }
+    return (void *)app_window;
 }
 
 /* Remove an AppWindow; null-safe. */
 void cl_remove_app_window(void *handle)
 {
     if (handle != NULL) {
-        (void)RemoveAppWindow((struct AppWindow *)handle);
+        cl_res_untrack(cl_release_app_window, handle);
+        cl_release_app_window(handle);
     }
 }
 

@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-26 18:08
-> **Progress**: 25/55 tasks (45%)
+> **Last Updated**: 2026-11-26 22:21
+> **Progress**: 35/55 tasks (64%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -60,6 +60,8 @@ behaviour.
 > a fault on `hosted-amiga` deletes ports still lent to an AppIcon, AppWindow, AppMenuItem,
 > commodity broker, or pending ARexx packet, because those holders register only in Phase 3.
 > Phases 1 and 2 are committed locally; nothing is pushed or released until Phase 3 passes.
+> **Lifted 2026-11-26:** Phase 3 registered every suffix holder and passed review and the full
+> `make verify` leg set; the preflight commit and Phases 1–3 were pushed together.
 
 Rules for every task:
 - Source, tests, and doc comments restate rationale in plain language. They never cite AR/ST/ASM/
@@ -161,34 +163,35 @@ Rules for every task:
 
 ## Phase 3: 2.0+ and optional suffix kinds
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill)_
+> **Phase baseline tree**: 707f28ae3af2159344f95fae004d2ed64f7afe3c (HEAD `63387158`)
+> **Scope mode**: strict · **Expected modification set**: `compiler/runtime/shim_hosted_amiga*.c`, `compiler/tests/amiga_fault_cleanup_{spec,impl}_test.rs`, `compiler/tests/amiga_workbench_impl_test.rs`, `compiler/tests/amiga_rtg_impl_test.rs`, `examples/robustness/fault-cleanup/utility-fault.clo`, `docker/scripts/run-fault-amiga.sh`, this plan folder, `plans/00-roadmap.md`
 > **Reasoning**: high — mechanical registration across five files, following the phase-1 rules.
 
 ### Step 3.1: Specification tests
 
 **Reference**: [07](07-testing-strategy.md) ST-19 · AR-7
 
-- [ ] 3.1.1 [spec-author] Write the ST-19 probe, its spec-test case, and its run-fault case (`hosted-amiga` only) — `examples/robustness/fault-cleanup/utility-fault.clo`, `compiler/tests/amiga_fault_cleanup_spec_test.rs`, `docker/scripts/run-fault-amiga.sh`
-- [ ] 3.1.2 Red phase: run the ST-19 case; record the leak line
+- [x] 3.1.1 [spec-author] Write the ST-19 probe, its spec-test case, and its run-fault case (`hosted-amiga` only) — `examples/robustness/fault-cleanup/utility-fault.clo`, `compiler/tests/amiga_fault_cleanup_spec_test.rs`, `docker/scripts/run-fault-amiga.sh` ✅ (completed: 2026-11-26 18:12; utility-fault.clo emits clean on hosted-amiga; spec case and run-fault case (hosted-amiga only) added)
+- [x] 3.1.2 Red phase: run the ST-19 case; record the leak line ✅ (completed: 2026-11-26 18:12; Red: spec case and run-fault case both fail on hosted-amiga with one 'mem_alloc:WARNING: orphan' (112 bytes); the other 30 run-fault cases pass)
 
 ### Step 3.2: Implementation
 
 **Reference**: [03-02 §2.0+ suffix, §Optional suffixes, §Library bases](03-02-registration-sites.md) · [03-01 §Messages in flight](03-01-exit-registry.md#messages-in-flight) · AR-1, AR-9, AR-15
 
-- [ ] 3.2.1 Register the 2.0+ kinds and route their bases through `cl_lib_open` — `compiler/runtime/shim_hosted_amiga_20.c`
-- [ ] 3.2.2 Register the `_optional.c` kinds and route its bases through `cl_lib_open` (`UtilityBase` per 03-01 §Library bases) — `compiler/runtime/shim_hosted_amiga_optional.c`
-- [ ] 3.2.3 Register the UI and net kinds and their bases — `compiler/runtime/shim_hosted_amiga_optional_ui.c`, `compiler/runtime/shim_hosted_amiga_optional_net.c`
-- [ ] 3.2.4 Register the services kinds and their bases; apply the ARexx in-flight rule, including the base-shim "port still in use" mark that keeps a pending packet's reply port (03-01 §Messages in flight) — `compiler/runtime/shim_hosted_amiga_optional_services.c`, `compiler/runtime/shim_hosted_amiga.c`
-- [ ] 3.2.5 Register the RTG kinds and their bases — `compiler/runtime/shim_hosted_amiga_optional_rtg.c`
-- [ ] 3.2.6 Green phase: ST-19, ST-1..ST-9, and ST-3b pass
+- [x] 3.2.1 Register the 2.0+ kinds and route their bases through `cl_lib_open` — `compiler/runtime/shim_hosted_amiga_20.c` ✅ (completed: 2026-11-26 18:28; cargo test --workspace (no fail-fast) 4434 passed)
+- [x] 3.2.2 Register the `_optional.c` kinds and route its bases through `cl_lib_open` (`UtilityBase` per 03-01 §Library bases) — `compiler/runtime/shim_hosted_amiga_optional.c` ✅ (completed: 2026-11-26 18:28; cargo test --workspace (no fail-fast) 4434 passed)
+- [x] 3.2.3 Register the UI and net kinds and their bases — `compiler/runtime/shim_hosted_amiga_optional_ui.c`, `compiler/runtime/shim_hosted_amiga_optional_net.c` ✅ (completed: 2026-11-26 18:28; cargo test --workspace (no fail-fast) 4434 passed)
+- [x] 3.2.4 Register the services kinds and their bases; apply the ARexx in-flight rule, including the base-shim "port still in use" mark that keeps a pending packet's reply port (03-01 §Messages in flight) — `compiler/runtime/shim_hosted_amiga_optional_services.c`, `compiler/runtime/shim_hosted_amiga.c` ✅ (completed: 2026-11-26 18:28; cargo test --workspace (no fail-fast) 4434 passed)
+- [x] 3.2.5 Register the RTG kinds and their bases — `compiler/runtime/shim_hosted_amiga_optional_rtg.c` ✅ (completed: 2026-11-26 18:28; cargo test --workspace (no fail-fast) 4434 passed)
+- [x] 3.2.6 Green phase: ST-19, ST-1..ST-9, and ST-3b pass ✅ (completed: 2026-11-26 18:28; ST-19 and ST-1..ST-9, ST-3b pass (spec 10/10); `make run-fault-amiga` 16 on hosted-amiga, 15 on hosted-amiga-13; the base shim gained `cl_port_keep` and a node-based `cl_own_ports_hold` for the ARexx in-flight rule (03-01 §Messages in flight))
 
 ### Step 3.3: Implementation tests and hardening
 
-- [ ] 3.3.1 Write impl tests that every suffix acquire site registers and every base site uses `cl_lib_open`; update only the intentionally changed pins — `compiler/tests/amiga_fault_cleanup_impl_test.rs`, `compiler/tests/amiga_workbench_impl_test.rs`
-- [ ] 3.3.2 Phase gate: `make check`, `make run-fault-amiga`, `make corpus-amiga`, and the 2.0+ gates (`make sdk-a600-services sdk-a1200-workbench sdk-a600-addons sdk-a600-ks31-addons sdk-a1200-ks30-addons sdk-a1200-addons sdk-a1200-rtg sdk-a4000-rtg-piv`)
+- [x] 3.3.1 Write impl tests that every suffix acquire site registers and every base site uses `cl_lib_open`; update only the intentionally changed pins — `compiler/tests/amiga_fault_cleanup_impl_test.rs`, `compiler/tests/amiga_workbench_impl_test.rs`, `compiler/tests/amiga_rtg_impl_test.rs` ✅ (completed: 2026-11-26 18:29; 22 impl cases; updated only the intended pins: base opens now go through cl_lib_open (icon, expansion, keymap, Picasso96) and the AppMessage fetch records its message (amiga_workbench_impl_test.rs, amiga_rtg_impl_test.rs))
+- [x] 3.3.2 Phase gate: `make check`, `make run-fault-amiga`, `make corpus-amiga`, and the 2.0+ gates (`make sdk-a600-services sdk-a1200-workbench sdk-a600-addons sdk-a600-ks31-addons sdk-a1200-ks30-addons sdk-a1200-addons sdk-a1200-rtg sdk-a4000-rtg-piv`) ✅ (completed: 2026-11-26 18:39; `make check` 4437 passed; `make run-fault-amiga` 16/15; `make corpus-amiga` GCC and vbcc warning-free; sdk-a600-services, sdk-a1200-workbench, sdk-a600-addons, sdk-a600-ks31-addons, sdk-a1200-ks30-addons, sdk-a1200-addons, sdk-a1200-rtg, sdk-a4000-rtg-piv all green). Review fix (SR-001..003, RV-001): the port's exit release drains and replies foreign messages (ARexx commands fail with RC_FATAL), a kept port is taken out of the public list and stops signalling, and `cl_port_keep` skips duplicates; `cargo test --workspace` 4437, run-fault, corpus, the A500 fault and exec gates, and all eight 2.0+ gates green again
 
 **Deliverables**:
-- [ ] ST-19 green; the 2.0+ gates unchanged
+- [x] ST-19 green; the 2.0+ gates unchanged
 
 **Test slices**: vamos fault cleanup (task), run-fault leg (release)
 **Verify (gate)**: as 3.3.2
