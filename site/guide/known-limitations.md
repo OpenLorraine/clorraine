@@ -15,16 +15,19 @@ edge cases and their workarounds, is
 | Limitation | Impact | Guidance |
 |---|---|---|
 | Developer preview | Interfaces, the installer, and platform support may change | Use it for experiments and feedback, not production work |
-| Linux x86_64 only | v1.2.0 installs on Linux x86_64 only; WSL2 and Remote-WSL are not claimed | Windows and macOS are on the way |
+| Linux x86_64 only | v1.2.0 installs on Linux x86_64 only; WSL2 and Remote-WSL are not claimed | Windows 11 ships with the next release ([quick start](/guide/quick-start#install-on-windows)); macOS is on the way |
 | Host floor | glibc 2.38+; Ubuntu 24.04 is the minimum baseline | Ubuntu 22.04 cannot run the rc24 host tools |
 | Toolchain and emulator | rc24 only; FS-UAE 3.2.0+; a licensed Kickstart 3.1 A1200 ROM for Amiga runs | KS3.0 is untested; AROS is manual-only and not an acceptance path |
 | Emulator runs end after 90 seconds | `clorraine run --emulator` stops a program that has not finished, Amiga boot included | Programs that run forever, such as the showcase demos, play [in the browser](/examples/) |
 | No Workbench in the emulator run | The FS-UAE run boots straight into your program, without a Workbench screen | Programs that open windows on Workbench need a Workbench setup of your own |
-| VS Code extension is not in a marketplace | The extension comes from the release | The Linux installer installs it when VS Code is detected |
+| VS Code extension is not in a marketplace | The extension comes from the release | The installers install it when VS Code is detected |
+| Windows: host floor | Windows 11 x64; Windows 10 and PowerShell 7 are untested; ARM64 is refused | Use Windows 11 x64 with Windows PowerShell 5.1 |
+| Windows: execution policy | Scripts do not run by default; Group Policy takes precedence over the bypass | Run the installer with the one-time `-ExecutionPolicy Bypass` |
+| Windows: administrator step | Installing rc24 asks for UAC approval once | Approve it, or pass `-Toolchain` with an existing rc24 |
 | Windows: Clang debug builds | Clang rejects the emitted C under `-Werror` | Use GCC (w64devkit or MSYS2 UCRT64) or set `CLORRAINE_CC` |
 | Windows: SSH logons | The rc24 compiler does not start from an SSH logon | Run the CLI in the signed-in desktop session |
-| Windows: interrupted emulator runs | Ctrl+C leaves the FS-UAE window and `%TEMP%\clorraine-emulator-*` | Close the window and delete the folder |
-| Windows: path shapes | UNC workspaces, paths over 260 characters, and commas in `%TEMP%` are unsupported | Use a local folder with a short path |
+| Windows: interrupted emulator runs | Ctrl+C leaves the FS-UAE window and `%TMP%\clorraine-emulator-*` | Close the window and delete the folder |
+| Windows: path shapes | UNC workspaces, paths over 260 characters, and a comma in the `%TMP%` path are unsupported | Use a local folder with a short path |
 | Windows: unsigned binaries | SmartScreen or Defender may ask before the first run | Compare the downloads with the release `SHA256SUMS` first |
 | Host-only CI | The GitHub Actions runner does not execute the Amiga legs | Run `make verify` locally for full acceptance |
 | Amiga gates need licensed media | Advanced Workbench gates cannot run on a bare machine | Supply your own media; no ROM or Workbench image is distributed |

@@ -68,3 +68,17 @@
 | RV-710 | 7 | MINOR | tools/setup/acceptance.py | fixed |
 | RV-711 | 7 | MINOR | tools/setup/package.sh | fixed |
 | RV-712 | 7 | MINOR | tools/setup/acceptance.ps1 | fixed |
+| DR-801 | 8 | CRITICAL | docs, README.md, site | fixed (user ruling, AR-63) |
+| DR-802 | 8 | MAJOR | docs, site, tools/setup/install.ps1 | fixed |
+| DR-803 | 8 | MAJOR | docs, site, tools/setup/install.ps1 | fixed |
+| DR-804 | 8 | MINOR | docs, site, tools/setup/install.ps1 | fixed |
+| DR-805 | 8 | MINOR | docs, site, tools/setup/install.ps1 | fixed |
+| DR-806 | 8 | MINOR | docs, site, tools/setup/install.ps1 | fixed |
+| DR-807 | 8 | MINOR | docs, site, tools/setup/install.ps1 | fixed |
+| DR-808 | 8 | MINOR | docs, site, tools/setup/install.ps1 | fixed |
+| DR-809 | 8 | MINOR | docs, site, tools/setup/install.ps1 | fixed |
+| DR-810 | 8 | MINOR | docs, site, tools/setup/install.ps1 | fixed |
+| DR-811 | 8 | MINOR | docs, site, tools/setup/install.ps1 | fixed |
+| DR-812 | 8 | MINOR | docs, site, tools/setup/install.ps1 | fixed |
+| DR-813 | 8 | MINOR | docs, site, tools/setup/install.ps1 | fixed |
+| DR-814 | 8 | MINOR | docs, site, tools/setup/install.ps1 | fixed |

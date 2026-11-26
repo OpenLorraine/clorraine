@@ -27,7 +27,7 @@ Internal planning records are not published here.
 
 | Item | Why it matters |
 |---|---|
-| Windows and macOS installers | On the way; v1.2.0 is Linux x86_64 only |
+| Windows and macOS installers | Windows 11 in the next release; macOS on the way; v1.2.0 is Linux x86_64 only |
 | VS Code extension in the marketplace | Install the editor support without the Linux installer |
 | Clearer NDK setup and diagnostics | Make the Amiga boundary easier to understand |
 | Broader host-platform testing and CI | Catch platform-specific issues before release |

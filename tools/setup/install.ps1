@@ -178,7 +178,8 @@ Options:
   -VSCode               install the VS Code extension when detected
   -NoVSCode             skip VS Code detection and install
   -Uninstall            remove the active version link and the PATH entry
-  -Purge                with -Uninstall, also remove versions and the config
+  -Purge                with -Uninstall, also remove versions, examples,
+                        the downloaded FS-UAE, and the config
   -Help                 show this help
 
 Run it with a one-time bypass of the execution policy:
@@ -845,7 +846,7 @@ function Invoke-Uninstall([string]$Root, [bool]$AlsoPurge) {
         Write-Ok "removed the Clorraine versions, examples, and $config"
     }
     Write-Line '  The rc24 toolchain and any FS-UAE you installed yourself are kept.'
-    Write-Line '  Remove rc24 under Settings > Apps > Installed apps (m68k-amigaos-gcc).'
+    Write-Line '  Remove rc24 under Settings > Apps > Installed apps (amiga-gcc version 16.2-rc24).'
 }
 
 # --- The installed CLI -------------------------------------------------------

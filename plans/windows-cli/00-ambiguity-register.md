@@ -68,7 +68,7 @@
 | 60 | Technical (runtime) | The elevated step's mismatch exit 3 (03-04, ST-54) is also Inno Setup's own "fatal error preparing" code, so a tampered setup cannot be told apart from a setup failure (Phase 6 security review SA-004) | Own codes outside Inno's 0-8 range / keep 3 and word the message for both | Codes 101 mismatch, 102 staging name taken, 103 untrusted admin folder, 104 other error (see AR-60 resolution); 03-04 and ST-54 updated | ✅ Resolved |
 | 61 | Technical (runtime) | Which existing `Program Files\Clorraine` the elevated step trusts: an owner check alone passes a folder other accounts may change, and the reviewer proposed also trusting the elevated user's own SID (Phase 6 security re-review SA-006) | Owner and access-list check, fail closed with a repair hint / also trust the current user SID | Owner must be Administrators, SYSTEM, or TrustedInstaller; no allow rule with write-type rights for any other account; the current user is not trusted; 103 names the `icacls /setowner` repair (see AR-61 resolution) | ✅ Resolved |
 | 62 | Technical (runtime) | The Windows evidence record's exact JSON shape and how the producer obtains the rc24 and FS-UAE pins, which 03-05 names but does not spell out | Fixed shape below; pins from the installer text after the registration/config confirm use / re-download both files to hash them | Shape and pin source per the AR-62 resolution | ✅ Resolved |
-| 63 | Technical (runtime) | The Windows docs need an install URL, but v1.2.0 is published with Linux assets only and AR-3 leaves the carrying release to release time | Version-neutral `releases/latest/download/` URLs and a "next release" note / a guessed version / no command until release | `releases/latest/download/` URLs; pages say Windows ships with the first release after v1.2.0 (see AR-63 resolution) | ✅ Resolved |
+| 63 | Technical (runtime) | The Windows docs need an install URL, but v1.2.0 is published with Linux assets only and AR-3 leaves the carrying release to release time; GitHub's `latest` never resolves to a prerelease (Phase 8 docs review DR-801) | Versioned URLs filled in at release / `latest` URLs with a full-release requirement / v1.2.0 URLs | User ruling 2026-11-26: versioned at release; the docs write `vX.Y.Z` until then (see AR-63 resolution) | ✅ Resolved |
 
 ## Coverage Map
 
@@ -384,25 +384,19 @@ Root invocation ID: exec-windows-cli-20261126-1938
 Reopen triggers: a reviewer requires a byte-level hash of the installed setup
 ```
 
-**AR-63 (runtime, auto-design; within AR-3 and 03-05 §Documentation):**
+**AR-63 (reopened by the Phase 8 docs review; user ruling 2026-11-26):**
 
 ```text
-Authority: AI — delegated by --auto-design
-Eligibility: wording of documentation W17 requires; the release choice itself stays with the
-  user (AR-3)
-Objective: Windows docs that are accurate whether merged before or after the release
+Authority: user — the URL form depends on how the release is published, which AR-3 keeps
+  with the user
 Decision: the Windows install and verify commands use
-  https://github.com/OpenLorraine/clorraine/releases/latest/download/<asset>; the README,
-  quick start, status page, guide, and limitations say Windows support ships with the first
-  release after v1.2.0. The Linux v1.2.0 commands are unchanged
-Evidence: tag v1.2.0 exists on origin; its release has no Windows assets
-Rejected alternatives: naming v1.3.0 or v1.2.1 (pre-empts AR-3); omitting the command
-  (fails 03-05 and W17)
-Strongest counterargument: until the release, the `latest` URLs resolve to v1.2.0, which has
-  no install.ps1
-Confidence: High
-Hardening: no challenger; the "next release" wording is removed with the release edits
-Policy version: 1
-Root invocation ID: exec-windows-cli-20261126-1938
-Reopen triggers: the user picks the release, or a release is cut without the Windows assets
+  https://github.com/OpenLorraine/clorraine/releases/download/vX.Y.Z/<asset>, the same form as
+  the Linux v1.2.0 commands; until the release the pages write the version as vX.Y.Z and say
+  Windows ships with the first release after v1.2.0. At release, vX.Y.Z is replaced with the
+  release tag in README.md, docs/windows-cli.md, and site/guide/quick-start.md, and the
+  "next release" wording is removed
+Evidence: v1.2.0 is a prerelease; releases/latest resolves to v1.1.2 (GitHub's latest skips
+  prereleases), so the earlier releases/latest/download/ choice would 404 for a prerelease
+Superseded: the AI-delegated choice of releases/latest/download/ URLs
+Reopen triggers: the release is published under a scheme without versioned asset URLs
 ```

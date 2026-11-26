@@ -134,11 +134,11 @@ Use `clorraine emit hello.clo` to read the generated C.
 
 ## Install on Windows
 
-Windows 11 x64 support ships with the first release after v1.2.0. In Windows
-PowerShell (not as administrator):
+Windows 11 x64 support ships with the first release after v1.2.0; `vX.Y.Z` below
+is that release. In Windows PowerShell (not as administrator):
 
 ```powershell
-curl.exe -fsSLo clorraine-install.ps1 https://github.com/OpenLorraine/clorraine/releases/latest/download/install.ps1; powershell -ExecutionPolicy Bypass -File .\clorraine-install.ps1
+curl.exe -fsSLo clorraine-install.ps1 https://github.com/OpenLorraine/clorraine/releases/download/vX.Y.Z/install.ps1; powershell -ExecutionPolicy Bypass -File .\clorraine-install.ps1
 ```
 
 The installer runs the same five steps for your Windows account. The

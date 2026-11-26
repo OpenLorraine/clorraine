@@ -47,10 +47,11 @@ has the details, including checksum verification.
 
 ## Install on Windows
 
-Windows 11 x64, from the next release on. In Windows PowerShell:
+Windows 11 x64, from the next release on (`vX.Y.Z` below is that release). In
+Windows PowerShell:
 
 ```powershell
-curl.exe -fsSLo clorraine-install.ps1 https://github.com/OpenLorraine/clorraine/releases/latest/download/install.ps1; powershell -ExecutionPolicy Bypass -File .\clorraine-install.ps1
+curl.exe -fsSLo clorraine-install.ps1 https://github.com/OpenLorraine/clorraine/releases/download/vX.Y.Z/install.ps1; powershell -ExecutionPolicy Bypass -File .\clorraine-install.ps1
 ```
 
 The same five steps install the CLI for your account; only the rc24
