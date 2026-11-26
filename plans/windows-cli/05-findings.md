@@ -19,3 +19,5 @@
 | SR-001 | 3 | MINOR | compiler/src/clorraine/emulator/storage.rs | fixed |
 | SR-002 | 3 | MINOR | compiler/src/clorraine/emulator/mod.rs | fixed |
 | SR-003 | 3 | MINOR | compiler/src/clorraine/platform.rs | accepted |
+| RV-001 | 4 | MINOR | tools/vscode/src/actions.ts | fixed |
+| RV-002 | 4 | MINOR | tools/vscode/src | accepted |

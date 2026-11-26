@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-26 20:58
-> **Progress**: 30/75 tasks (40%)
+> **Last Updated**: 2026-11-26 21:08
+> **Progress**: 31/75 tasks (41%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -175,11 +175,11 @@ on Linux in this worktree; Windows runs go through the remote helper (AR-5, AR-2
 ### Step 4.3: Implementation tests and hardening
 
 - [x] 4.3.1 Write impl tests — `compiler/tests/windows_cli_impl_test.rs`, `tools/vscode/test/windows.impl.test.ts` ✅ (completed: 2026-11-26 20:58) — Rust impl 24/24, extension impl 6/6
-- [ ] 4.3.2 Phase gate — `make check IMAGE=clorraine-sdk:windows-cli` and `make vscode-check`
+- [x] 4.3.2 Phase gate — `make check IMAGE=clorraine-sdk:windows-cli` and `make vscode-check` ✅ (completed: 2026-11-26 21:08) — check 161 suites; vscode-check 184 pass, 1 skip, packaged client 1/1
 
 **Deliverables**:
-- [ ] ST-31 – ST-37 hold
-- [ ] All verification passing
+- [x] ST-31 – ST-37 hold
+- [x] All verification passing
 
 **Verify (gate)**: `make check IMAGE=clorraine-sdk:windows-cli` and `make vscode-check`
 
@@ -321,7 +321,7 @@ on Linux in this worktree; Windows runs go through the remote helper (AR-5, AR-2
 - [ ] 9.1.2 Run the installer with the spike's rc24 registration present and confirm it is reused (AR-50)
 - [ ] 9.1.3 Uninstall the spike rc24 with its own uninstaller; create the standard user `Clorraine Test` and hand the user its password (AR-49)
 - [ ] 9.1.4 With the user signed in as `Clorraine Test` and approving UAC: run `acceptance.ps1`; collect the record
-- [ ] 9.1.5 The user confirms the UAC prompt and a Build/Run in FS-UAE from VS Code (ST-38); record both in the evidence
+- [ ] 9.1.5 The user confirms the UAC prompt and a Build/Run in FS-UAE from VS Code (ST-38); record both in the evidence — the editor check uses an entry with at least one imported dependency, a dirty dependency that is refused before the build, and one diagnostic shown in the editor (Phase 4 review)
 - [ ] 9.1.6 Validate the record — `make acceptance-check EVIDENCE=… CANDIDATE=…` (ST-73)
 - [ ] 9.1.7 Final Linux gate — `make verify`
 

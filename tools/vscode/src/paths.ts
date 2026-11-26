@@ -2,12 +2,13 @@
  * Host path rules shared by discovery and the Build/Run actions. Nothing here
  * imports the editor API, so the rules run in a plain Node test on any host.
  */
+import * as fs from "node:fs";
 import * as path from "node:path";
 
 /**
  * The spelling two paths are compared in. Windows file names ignore case and
- * accept either separator, and the language server, `fs.realpathSync`, and
- * the editor can differ in the drive letter's case, so a Windows path is
+ * accept either separator, and the language server, `realPath`, and the
+ * editor can differ in the drive letter's case, so a Windows path is
  * normalized and lowercased. Other hosts compare the exact bytes.
  * @example comparablePath("C:/A/b.clo", "win32") === "c:\\a\\b.clo"
  */
@@ -51,4 +52,17 @@ export function installedToolPath(
     return path.win32.join(local, "Programs", "Clorraine", "current", "bin", executableName(name, platform));
   }
   return path.posix.join(home, ".local", "bin", name);
+}
+
+/**
+ * Resolves `value` the way the language server does. On Windows the server
+ * asks the system for the final path, which also follows `subst` and mapped
+ * drives and short 8.3 names; the native resolver does the same, so both
+ * sides agree on which file a path names. Elsewhere symbolic links are
+ * resolved as before.
+ * @throws When the path does not exist or cannot be resolved.
+ * @example realPath("/tmp/link/a.clo", "linux")
+ */
+export function realPath(value: string, platform: NodeJS.Platform = process.platform): string {
+  return platform === "win32" ? fs.realpathSync.native(value) : fs.realpathSync(value);
 }
