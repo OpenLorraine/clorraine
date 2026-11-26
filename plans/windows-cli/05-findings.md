@@ -88,3 +88,4 @@
 | RV-903 | 9 | MINOR | tools/setup/install.ps1 | fixed |
 | RV-904 | 9 | MINOR | tools/setup/install.ps1 | fixed |
 | RV-905 | 9 | MINOR | compiler/src/clorraine/environment.rs | accepted: needs a hand-edited config; exit 2 with the reason |
+| AC-902 | 9 | MAJOR | compiler/src/clorraine (platform, setup, build, emulator/storage) | fixed |

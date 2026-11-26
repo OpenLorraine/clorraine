@@ -563,6 +563,29 @@ fn should_refuse_a_toolchain_root_with_a_space_on_windows_only() {
         .unwrap_or_else(|error| panic!("Linux keeps accepting the root: {}", error.message));
 }
 
+/// The rc24 compiler's helper programs (`cc1`, `as`, `collect2`) live outside
+/// its `bin` folder but load a DLL that only `bin` holds, so on Windows every
+/// toolchain program starts with its own folder first on `PATH`. A bare
+/// program name and every Linux command keep the caller's `PATH` unchanged.
+#[test]
+fn should_put_a_windows_tool_folder_first_on_path_and_leave_linux_alone() {
+    use clc::clorraine::platform::tool_search_path;
+    let gcc = r"C:\ProgramData\Clorraine\amiga-gcc-16.2-rc24\bin\m68k-amigaos-gcc.exe";
+    assert_eq!(
+        tool_search_path(HostOs::Windows, OsStr::new(gcc), Some(OsStr::new(r"C:\Windows;C:\Tools"))),
+        Some(OsString::from(r"C:\ProgramData\Clorraine\amiga-gcc-16.2-rc24\bin;C:\Windows;C:\Tools"))
+    );
+    assert_eq!(
+        tool_search_path(HostOs::Windows, OsStr::new("C:/tc/bin/m68k-amigaos-gcc.exe"), None),
+        Some(OsString::from("C:/tc/bin"))
+    );
+    assert_eq!(tool_search_path(HostOs::Windows, OsStr::new("gcc"), Some(OsStr::new(r"C:\Windows"))), None);
+    assert_eq!(
+        tool_search_path(HostOs::Unix, OsStr::new("/opt/rc24/bin/m68k-amigaos-gcc"), Some(OsStr::new("/usr/bin"))),
+        None
+    );
+}
+
 #[test]
 fn should_quote_words_for_the_host_shell() {
     assert_eq!(shell_word(HostOs::Windows, "my app"), "\"my app\"");
