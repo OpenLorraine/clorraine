@@ -1,6 +1,6 @@
 ## Ambiguity Register: Windows CLI and installer
 
-> **Status**: ✅ GATE PASSED — all 53 items resolved; AR-54 – AR-59 added and resolved during execution
+> **Status**: ✅ GATE PASSED — all 53 items resolved; AR-54 – AR-60 added and resolved during execution
 > **Last Updated**: 2026-11-26 18:30
 > **Evidence**: `spikes/08-windows-cli/README.md`
 
@@ -65,6 +65,7 @@
 | 57 | Technical (runtime) | A `#line` path containing `??` forms a C trigraph under `-std=c99` and fails the strict build (pre-existing; found by the Phase 2 review), which W12's "valid C string literal" excludes | Escape every `?` that follows a `?` as `\?` / leave it (Windows forbids `?` in file names) | Escape every `?` that follows a `?` (see AR-57 resolution) | ✅ Resolved |
 | 58 | Technical (runtime) | The 64 MiB read limit for the FS-UAE executable (03-02, ST-23) rejects the pinned FS-UAE 3.2.35 `fs-uae.exe`, which is 69,273,425 bytes, so W11's PE version read fails on the real host | Raise the limit to 256 MiB / stream-scan the file with no full read / read only the resource section | Raise the limit to 256 MiB (see AR-58 resolution); 03-02 and ST-23 updated | ✅ Resolved |
 | 59 | Technical (runtime) | 03-04 names four test seams (`Invoke-Download`, `Invoke-ElevatedSetup`, `Get-Rc24Registration`, the PATH key), but ST-40, ST-46, ST-47, ST-58, ST-61, and ST-63 also stub the host architecture, OS build, interactivity, console capability, the extracted version check, and the compiler probe, and every case needs a callable entry point | Name the extra seams and an `Invoke-Installer` entry point that returns the exit code / run every case as a separate script with environment overrides | Named seams and `Invoke-Installer` (see AR-59 resolution) | ✅ Resolved |
+| 60 | Technical (runtime) | The elevated step's mismatch exit 3 (03-04, ST-54) is also Inno Setup's own "fatal error preparing" code, so a tampered setup cannot be told apart from a setup failure (Phase 6 security review SA-004) | Own codes outside Inno's 0-8 range / keep 3 and word the message for both | Codes 101 mismatch, 102 staging name taken, 103 untrusted admin folder, 104 other error (see AR-60 resolution); 03-04 and ST-54 updated | ✅ Resolved |
 
 ## Coverage Map
 
@@ -299,4 +300,25 @@ Hardening: no challenger; internal, reversible
 Policy version: 1
 Root invocation ID: exec-windows-cli-20261126-1938
 Reopen triggers: a seam needed by Phase 6 cases is missing
+```
+
+**AR-60 (runtime, auto-design; reopens the elevated exit codes in 03-04 and ST-54):**
+
+```text
+Authority: AI — delegated by --auto-design
+Eligibility: failure-reporting mechanism inside AR-34; the behaviour (a mismatch never runs the
+  setup) is unchanged
+Objective: the installer tells a tampered or mismatched setup apart from a setup that failed
+Decision: the elevated step returns 101 (copy mismatch), 102 (staging name taken), 103 (Program
+  Files\Clorraine is a link or not owned by Administrators/SYSTEM/TrustedInstaller), 104 (any
+  other error); the setup's own exit code otherwise. ST-54 expects 101 for the mismatch
+Evidence: Inno Setup documents exit codes 0-8 (3 = fatal error preparing, 4 = fatal error
+  installing); the Phase 6 security review (SA-004)
+Rejected alternatives: keeping 3 with a message covering both causes (hides tampering)
+Strongest counterargument: a documented spec value changes after the spec tests were written
+Confidence: High
+Hardening: no challenger; security reviewer recommended the change
+Policy version: 1
+Root invocation ID: exec-windows-cli-20261126-1938
+Reopen triggers: an upstream setup that uses codes above 100
 ```
