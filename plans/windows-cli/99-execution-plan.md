@@ -2,7 +2,7 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-26 22:11
+> **Last Updated**: 2026-11-26 22:24
 > **Progress**: 49/75 tasks (65%)
 > **CodeOps Artifact Schema**: 1
 
@@ -253,15 +253,15 @@ on Linux in this worktree; Windows runs go through the remote helper (AR-5, AR-2
 
 ## Phase 7: Packaging and acceptance evidence
 
-> **Phase baseline tree**: _(recorded by exec-plan)_
+> **Phase baseline tree**: 6414b5a28ed38bc0013bd7cd672082a0cba04432
 > **Reasoning**: high — release asset names become public URLs; evidence is the only Windows gate
 
 ### Step 7.1: Specification tests
 
 **Reference**: 03-05 §Candidate, §Acceptance evidence · ST-64 – ST-72 · AR-33, AR-46
 
-- [ ] 7.1.1 [spec-author] Write ST-64 – ST-69 — `tools/setup/tests/windows-dist.spec.test.sh`; ST-70 – ST-72 — `tools/setup/tests/acceptance_windows_spec.py`; apply the two supersessions in 07 §Supersession
-- [ ] 7.1.2 Run them and confirm they fail (red)
+- [x] 7.1.1 [spec-author] Write ST-64 – ST-69 — `tools/setup/tests/windows-dist.spec.test.sh`; ST-70 – ST-72 — `tools/setup/tests/acceptance_windows_spec.py`; apply the two supersessions in 07 §Supersession ✅ (2026-11-26 22:24; the five-asset supersession applies to every three-asset fixture in `dist.spec.test.sh`; `acceptance_spec.py` needed no edit — no case pins "linux only" or the constant version positively; the Linux fixture record is that suite's own)
+- [x] 7.1.2 Run them and confirm they fail (red) ✅ (2026-11-26 22:24; both dist suites fail on the unknown `--windows-stage`; 7/8 Windows acceptance cases fail, the Linux fixture case passes by design)
 
 ### Step 7.2: Implementation
 
