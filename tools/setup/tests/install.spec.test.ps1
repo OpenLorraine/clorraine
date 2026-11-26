@@ -337,6 +337,8 @@ Test-Case 'should refuse a zip entry that climbs out of the version folder befor
     $result = Invoke-Case -Installer $installer -CaseRoot $root `
         -Arguments @('-Archive', $zip, '-Checksums', $sums, '-Prefix', $prefix, '-NoToolchain')
     Assert-That ($result.Code -eq 1) "exit $($result.Code)"
+    # The installer's own check refuses the entry; tar.exe never runs.
+    Assert-That ($result.All -match 'archive contains an unsafe entry') ("not refused before extraction: " + $result.All)
     $escaped = @(Get-ChildItem -LiteralPath $root -Recurse -Force -Filter 'evil.txt' -ErrorAction SilentlyContinue)
     Assert-That ($escaped.Count -eq 0) ('evil.txt was written: ' + (($escaped | ForEach-Object { $_.FullName }) -join ', '))
     Assert-That (-not (Test-Path (Join-Path $prefix 'versions\9.1.0-*'))) 'a version folder was created'

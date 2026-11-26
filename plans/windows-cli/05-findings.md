@@ -21,3 +21,14 @@
 | SR-003 | 3 | MINOR | compiler/src/clorraine/platform.rs | accepted |
 | RV-001 | 4 | MINOR | tools/vscode/src/actions.ts | fixed |
 | RV-002 | 4 | MINOR | tools/vscode/src | accepted |
+| RV-001 | 5 | MAJOR | tools/setup/install.ps1 | fixed |
+| RV-002 | 5 | MAJOR | tools/setup/tests/install.spec.test.ps1 | fixed |
+| RV-003 | 5 | MINOR | tools/setup/install.ps1 | fixed |
+| RV-004 | 5 | MINOR | tools/setup/install.ps1 | fixed |
+| RV-005 | 5 | MINOR | tools/setup/install.ps1 | fixed |
+| SA-001 | 5 | MAJOR | tools/setup/install.ps1 | fixed |
+| SA-002 | 5 | MINOR | tools/setup/install.ps1 | fixed |
+| SA-003 | 5 | MINOR | tools/setup/install.ps1 | fixed |
+| SA-004 | 5 | MINOR | tools/setup/install.ps1 | fixed |
+| SA-005 | 5 | MINOR | tools/setup/install.ps1 | fixed |
+| SA-006 | 5 | MINOR | tools/setup/install.ps1 | fixed |

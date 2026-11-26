@@ -111,6 +111,110 @@ Test-Case 'should reject a missing file, an extra file, and a second top folder'
     }
 }
 
+Test-Case 'should reject a link entry and a repeated entry' {
+    $dir = New-Dir 'zip-types'
+    $link = Join-Path $dir 'link.zip'
+    Add-Type -AssemblyName System.IO.Compression
+    $stream = [IO.File]::Open($link, 'CreateNew')
+    $zip = New-Object IO.Compression.ZipArchive($stream, [IO.Compression.ZipArchiveMode]::Create)
+    foreach ($name in Get-ValidNames) {
+        $entry = $zip.CreateEntry($name)
+        $writer = $entry.Open(); $writer.WriteByte(65); $writer.Dispose()
+        # A Unix symbolic link (type 0xA000 in the high half of the attributes).
+        if ($name -like '*/bin/clorraine.exe') { $entry.ExternalAttributes = 0xA1FF -shl 16 }
+    }
+    $zip.Dispose(); $stream.Dispose()
+    Assert-That ((Get-StopCode { Test-CandidateZip $link }) -eq 1) 'accepted a link entry'
+    $repeated = New-Zip (Join-Path $dir 'repeated.zip') ((Get-ValidNames) + 'clorraine-9.1.0-x86_64-windows/README.md')
+    Assert-That ((Get-StopCode { Test-CandidateZip $repeated }) -eq 1) 'accepted a repeated entry'
+    $case = New-Zip (Join-Path $dir 'case.zip') ((Get-ValidNames) + 'clorraine-9.1.0-x86_64-windows/readme.md')
+    Assert-That ((Get-StopCode { Test-CandidateZip $case }) -eq 1) 'accepted a name differing only in case'
+}
+
+Test-Case 'should refuse an extracted tree with an extra file, a missing file, or a link' {
+    $outside = New-Dir 'tree-outside'
+    foreach ($shape in 'extra', 'missing', 'link') {
+        $staging = New-Dir "tree-$shape"
+        $top = Join-Path $staging 'clorraine-9.1.0-x86_64-windows'
+        foreach ($file in $script:CandidateFiles) {
+            $path = Join-Path $top $file.Replace('/', '\')
+            New-Item -ItemType Directory -Force -Path (Split-Path -Parent $path) | Out-Null
+            Set-Content -LiteralPath $path 'x'
+        }
+        switch ($shape) {
+            'extra' { Set-Content -LiteralPath (Join-Path $top 'bin\version.dll') 'x' }
+            'missing' { Remove-Item -LiteralPath (Join-Path $top 'NOTICE') }
+            'link' { New-Item -ItemType Junction -Path (Join-Path $top 'bin\more') -Target $outside | Out-Null }
+        }
+        Assert-That ((Get-StopCode { Test-ExtractedTree $staging 'clorraine-9.1.0-x86_64-windows' }) -eq 1) "accepted the $shape tree"
+    }
+    $good = New-Dir 'tree-good'
+    foreach ($file in $script:CandidateFiles) {
+        $path = Join-Path $good ('clorraine-9.1.0-x86_64-windows\' + $file.Replace('/', '\'))
+        New-Item -ItemType Directory -Force -Path (Split-Path -Parent $path) | Out-Null
+        Set-Content -LiteralPath $path 'x'
+    }
+    Assert-That ($null -eq (Get-StopCode { Test-ExtractedTree $good 'clorraine-9.1.0-x86_64-windows' })) 'refused a good tree'
+}
+
+# --- Command line and prefix -------------------------------------------------
+
+Test-Case 'should report an unknown option as a usage error' {
+    Assert-That ((Invoke-Installer -Unistall 6>$null 2>$null) -eq 2) 'Invoke-Installer accepted -Unistall'
+    $powershell = Join-Path $PSHOME 'powershell.exe'
+    $child = Invoke-Native $powershell @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command',
+        "`$env:CLORRAINE_INSTALL_LIB = `$null; & '$Template' -NoToolchian; exit `$LASTEXITCODE")
+    Assert-That ($child.Code -eq 2) "the script exited $($child.Code): $($child.Err)"
+    Assert-That ($child.Err -match "unknown option '-NoToolchian'") $child.Err
+}
+
+Test-Case 'should refuse a percent sign in the prefix' {
+    Assert-That ((Get-StopCode { Resolve-Prefix 'C:\x%TEMP%y' }) -eq 1) 'accepted a percent sign'
+}
+
+Test-Case 'should give new private folders an access list of their own' {
+    $path = New-PrivateTemp 'impl-acl'
+    try {
+        $acl = Get-Acl -LiteralPath $path
+        Assert-That ($acl.AreAccessRulesProtected) 'the folder still inherits its parent rules'
+        $me = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
+        $mine = @($acl.Access | Where-Object {
+            $_.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]) -eq $me -and
+            $_.FileSystemRights -band [System.Security.AccessControl.FileSystemRights]::FullControl })
+        Assert-That ($mine.Count -ge 1) 'the current user has no full control'
+        $others = @($acl.Access | Where-Object {
+            $sid = $_.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value
+            $sid -ne $me.Value -and $sid -ne 'S-1-5-18' -and $sid -ne 'S-1-5-32-544' })
+        Assert-That ($others.Count -eq 0) ('other principals: ' + (($others | ForEach-Object { $_.IdentityReference }) -join ', '))
+    } finally { Remove-TreeSafe $path }
+}
+
+# --- Purge -------------------------------------------------------------------
+
+Test-Case 'should purge only what the installer created and keep the user files beside it' {
+    $root = New-Dir 'purge-mixed'
+    $versions = New-Dir 'purge-mixed\versions'
+    New-Dir 'purge-mixed\versions\9.1.0-0123456789ab\bin' | Out-Null
+    New-Dir 'purge-mixed\versions\.tmp-0123456789ab' | Out-Null
+    New-Dir 'purge-mixed\versions\mine' | Out-Null
+    Set-Content -LiteralPath (Join-Path $versions 'mine\notes.txt') 'keep'
+    $examples = New-Dir 'purge-mixed\examples'
+    Set-Content -LiteralPath (Join-Path $examples 'hello.clo') 'x'
+    Set-Content -LiteralPath (Join-Path $examples 'hello-amiga.clo') 'x'
+    Set-Content -LiteralPath (Join-Path $examples 'keep.txt') 'keep'
+    $userFsUae = New-Dir 'purge-mixed-user-fs-uae'
+    New-Dir 'purge-mixed-user-fs-uae\3.2.35' | Out-Null
+    Set-Content -LiteralPath (Join-Path $userFsUae '3.2.35\fs-uae.exe') 'user'
+    New-Item -ItemType Junction -Path (Join-Path $root 'fs-uae') -Target $userFsUae | Out-Null
+    Remove-InstallerData $root
+    Assert-That (-not (Test-Path (Join-Path $versions '9.1.0-0123456789ab'))) 'the version folder remains'
+    Assert-That (-not (Test-Path (Join-Path $versions '.tmp-0123456789ab'))) 'the staging folder remains'
+    Assert-That (Test-Path (Join-Path $versions 'mine\notes.txt')) 'a user folder in versions was removed'
+    Assert-That (-not (Test-Path (Join-Path $examples 'hello.clo'))) 'hello.clo remains'
+    Assert-That (Test-Path (Join-Path $examples 'keep.txt')) 'a user file in examples was removed'
+    Assert-That (Test-Path (Join-Path $userFsUae '3.2.35\fs-uae.exe')) 'purge followed the fs-uae junction'
+}
+
 # --- Checksums and quoting ---------------------------------------------------
 
 Test-Case 'should read a unique checksum line in text or binary form and refuse duplicates' {
