@@ -1,0 +1,20 @@
+# WS8 classification schemes (probes 800 and 810), fixed before the analysis (AR #18).
+# Sources: 03-03 WS8-03 (each assertion checks a value, a diagnostic code, only
+# "compiles", or only "no panic"; five tests per checklist area; no test run or edited),
+# WS8-06 (pinned-text tests), WS8-07 (classes: miscompile, memory safety, invalid C,
+# false accept, false reject, performance, platform; recurring = at least 3 DEF rows
+# across at least 2 plans).
+# The schemes are the class definitions in each script's docstring; the sample is
+# deterministic (SHA-256 order of FILE::TEST within each area).
+# Red check (task 8.1.2), chosen by reading before the classifiers run:
+#   800: a test that compares program stdout must classify `value`; a test whose only
+#        check is front-end acceptance must classify `compiles` (the two tests are
+#        named in the falsifiability log of findings/WS8-test-integrity.md).
+#   810: DEF-13 ("`for (borrow e in xs)` double-frees a droppable element") must be
+#        memory-safety and DEF-22 ("Fixed-array value assignment emits invalid C") must
+#        be invalid-c.
+# Every class assignment used in a finding is read by hand; a misclassified row is
+# corrected in the analysis and the correction counted (scheme accuracy is reported).
+expect: script
+--- output
+800: value / compiles for the two red-check tests; 810: memory-safety / invalid-c

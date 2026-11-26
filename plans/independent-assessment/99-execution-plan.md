@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-26 01:59
-> **Progress**: 68/95 tasks (71%)
+> **Last Updated**: 2026-11-26 02:01
+> **Progress**: 69/95 tasks (72%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -333,7 +333,7 @@ this plan's folder and the roadmap; 03-01 §Ground rules)
 
 ## Phase 8: WS8 Test integrity and defect history
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill)_
+> **Phase baseline tree**: c82eff3b53508afca999d39553d3860bb83f30ba
 > **Reasoning**: high — cross-cutting analysis over the WS1–WS7 results and the DEF ledger (AR #19)
 
 ### Step 8.1: Probe specification
@@ -341,7 +341,7 @@ this plan's folder and the roadmap; 03-01 §Ground rules)
 **Reference**: 03-03 §WS8 · AR #18
 **Objective**: The assertion classification scheme and the DEF classification scheme fixed before analysis.
 
-- [ ] 8.1.1 Write the static assertion-classification scheme (WS8-03) and the DEF classification scheme (WS8-07 classes, components, and the recurring threshold) under `probes/WS8/`; commit them, local only
+- [x] 8.1.1 Write the static assertion-classification scheme (WS8-03) and the DEF classification scheme (WS8-07 classes, components, and the recurring threshold) under `probes/WS8/`; commit them, local only ✅ (completed: 2026-11-26 02:01)
 - [ ] 8.1.2 Red check: the assertion scheme separates a known value-asserting test from a known compiles-only test, and the DEF scheme puts two hand-picked rows of different kinds in different classes; log in `findings/WS8-test-integrity.md`
 
 ### Step 8.2: Analysis
