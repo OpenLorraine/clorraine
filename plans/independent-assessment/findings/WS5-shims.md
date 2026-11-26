@@ -105,7 +105,7 @@ Runs 2026-11-25 (vamos logs under `build/tmp/assessment/WS5/`, FS-UAE output und
 
 - **Severity**: Critical
 - **Confidence**: verified
-- **Lens**: A1200 shipped (`savePublicScreen`); A500 and A1200 (`showAlert`, code reading)
+- **Lens**: A1200 shipped (`savePublicScreen`, reproduced); A500 (`showAlert`, reproduced in Phase 9 on A500/KS1.3); A1200 (`showAlert`, code reading)
 - **Location**: `compiler/runtime/shim_hosted_amiga.c:1295` (`struct IntuitionBase *IntuitionBase = NULL;`), `:1307-1311` and `:1600-1604` (the only opens: screen and Workbench-window creation), `:2617-2641` (`cl_show_alert` → `DisplayAlert`), `shim_hosted_amiga_20.c:484-496` (`cl_save_public_screen` → `LockPubScreen`), at e24a8752
 - **Checklist item**: WS5-02, WS5-04
 - **Author session**: ses_dec1f5b4dffeG1pq3Qx6rPrRPn

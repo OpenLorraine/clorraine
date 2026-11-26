@@ -9,15 +9,16 @@
 
 **Verdict.** Clorraine's design holds where it matters most for an Amiga compiler: its
 scalar code is as good as hand-written C on the 68000 (six of eight benchmarks within the
-10% line or faster, `.text` within +1–8% of C), the ownership model keeps every host probe
+10% line or faster, `.text` within +1–8% of C), the ownership model keeps every ownership probe
 clean under AddressSanitizer (UBSan reports only the value-position `++` overflow,
 ASM-WS3-003), and the standard library's pure
 modules survive malformed input. The baseline is **not release-grade for safety**: 58
 findings survive independent verification — **12 Critical, 19 Major, 21 Minor, 6
 Opportunity** — including two silent miscompiles of valid programs (call arguments run
 right to left; temporaries release at function exit) and six AmigaOS runtime defects that
-crash, hang, or corrupt a real machine (all reproduced on FS-UAE, the fault-exit crash on
-both the A500/KS1.3 and the A1200/KS3.1).
+crash, hang, or corrupt a real machine (five reproduced on FS-UAE as a crash or hang — the
+fault-exit crash on both the A500/KS1.3 and the A1200/KS3.1; the sixth, ASM-WS5-006, is a
+probable use-after-free from code reading).
 
 **Top ten surviving findings** (§4 has all 58):
 
@@ -25,7 +26,7 @@ both the A500/KS1.3 and the A1200/KS3.1).
 |---|----|----------|---------|
 | 1 | [ASM-WS5-001](findings/WS5-shims.md) | Critical | A runtime fault exits with OS registrations still installed: a VBlank server is left pointing into the unloaded program |
 | 2 | [ASM-WS1-002](findings/WS1-semantic-core.md) | Critical | Call arguments with side effects are evaluated right to left |
-| 3 | [ASM-WS2-001](findings/WS2-ownership.md) | Critical | Owned temporaries drop at the end of the enclosing scope, not at the end of their statement |
+| 3 | [ASM-WS2-001](findings/WS2-ownership.md) | Critical | Owned temporaries drop at function exit, not at the end of their statement |
 | 4 | [ASM-WS5-004](findings/WS5-shims.md) | Critical | `drawText` writes unclipped text through a screen `RastPort` that has no layer |
 | 5 | [ASM-WS5-005](findings/WS5-shims.md) | Critical | A runtime fault inside a worker task runs libnix `printf` and `exit()` from a plain Exec task |
 | 6 | [ASM-WS5-002](findings/WS5-shims.md) | Critical | `savePublicScreen` and `showAlert` call Intuition through a NULL `IntuitionBase` and crash the machine |
@@ -38,8 +39,9 @@ both the A500/KS1.3 and the A1200/KS3.1).
 optimizes the emitted scalar code as well as the C references; the two measured gaps are
 lowering shapes of runtime-library calls — the generic template builder (`strings` +32.6%
 net instructions on the A500) and the `Array` API through runtime calls and one-element views
-(`container` +38.5%). One targeted lowering closes most of each (−23.8% and about −30%,
-patched-C probes 413, 411+412); an IR optimizer would duplicate GCC.
+(`container` +38.5%). One targeted lowering closes most of each (−23.8% with patch 413;
+−23.0% and −7.1% with patches 412 and 411, measured separately; record
+`findings/records/WS4-patches.log`); an IR optimizer would duplicate GCC.
 
 **Headline overhead against equivalent C** (net 68000 instructions; record
 `findings/records/WS0-matrix.json`):
@@ -91,6 +93,8 @@ parallel): Phase 0 0:42, Phase 1 0:35, Phase 2 0:13, Phase 3 0:59, Phase 4 0:47,
 - WS5-13 — the verifier's open-count detector could not fire even on a seeded leak of ROM
   libraries, so ASM-WS5-013 stays `probable`.
 - Probe 520 — the freestanding link check was not seeded with a libc reference.
+- WS7-03 — the cause of the 68020 probe build's `container` regression is not attributed
+  (the attribution script runs the A500 lens only).
 - Removed during Phase 9: the A500/KS1.3 lens of WS5 (the verifier ran 541/542 and an
   alert probe on the A500), the public-port detector (a `SysBase->PortList` count), and the
   unshown machine crash of ASM-WS5-001 (reproduced on both machines).
@@ -152,28 +156,28 @@ Severity Critical · lens all · effort M · verified · verdict confirmed (Crit
 
 any call whose arguments include two or more calls with side effects (I/O reads, allocators, counters, iterators, hardware reads) runs them in the opposite order to the source on every shipped profile; the result is a silent miscompile. Example: `copy(readByte(f), readByte(f))` swaps the two bytes.
 
-**3. [ASM-WS2-001](findings/WS2-ownership.md) — Owned temporaries drop at the end of the enclosing scope, not at the end of their statement**  
+**3. [ASM-WS2-001](findings/WS2-ownership.md) — Owned temporaries drop at function exit, not at the end of their statement**  
 Severity Critical (Phase 9: was Major) · lens all (host verified; the lowering is profile-independent) · effort L · verified · verdict upgraded Major→Critical
 
 Owned temporaries are released at function exit (or when the same statement runs again), not at the end of their statement as spec/03 and spec/17 require. A `File` written through a temporary is still open and unflushed when the same function reopens it, so the read returns 0 bytes instead of 5 on host and hosted-amiga (probe 260). Any program that relies on a temporary's deleter running at statement end — closing, flushing, releasing a lock — behaves wrongly.
 
 **4. [ASM-WS5-004](findings/WS5-shims.md) — `drawText` writes unclipped text through a screen `RastPort` that has no layer**  
-Severity Critical · lens A500, A1200 shipped · effort S · probable · verdict confirmed (Critical; confidence probable→verified)
+Severity Critical · lens A500, A1200 shipped · effort S · verified · verdict confirmed (Critical; confidence probable→verified)
 
 a safe program that draws text near the screen edge (a scroller, a status line with a long string, an off-by-one y) overwrites chip memory — other bitplanes, copper lists, or another program's data. Memory unsafety from the safe surface.
 
 **5. [ASM-WS5-005](findings/WS5-shims.md) — A runtime fault inside a worker task runs libnix `printf` and `exit()` from a plain Exec task**  
-Severity Critical · lens A500, A1200 shipped · effort M · probable · verdict confirmed (Critical; confidence probable→verified)
+Severity Critical · lens A500, A1200 shipped · effort M · verified · verdict confirmed (Critical; confidence probable→verified)
 
 a worker that divides by zero crashes the machine instead of reporting a fault; the user cannot honor the "no DOS" rule because the compiler adds the DOS call.
 
 **6. [ASM-WS5-002](findings/WS5-shims.md) — `savePublicScreen` and `showAlert` call Intuition through a NULL `IntuitionBase` and crash the machine**  
-Severity Critical · lens A1200 shipped (`savePublicScreen`); A500 and A1200 (`showAlert`, code reading) · effort S · verified · verdict confirmed (Critical, verified)
+Severity Critical · lens A1200 shipped (`savePublicScreen`, reproduced); A500 (`showAlert`, reproduced in Phase 9 on A500/KS1.3); A1200 (`showAlert`, code reading) · effort S · verified · verdict confirmed (Critical, verified)
 
 any program that calls `savePublicScreen` (the Workbench capture API) or `showAlert` before opening a screen or window crashes the machine. `showAlert` with no window is the natural "fatal error" path of a CLI tool.
 
 **7. [ASM-WS5-016](findings/WS5-shims.md) — The clipboard read never finishes the read protocol**  
-Severity Critical (Phase 9: was Major) · lens A1200 shipped · effort S · probable · verdict upgraded Major→Critical (confidence probable→verified)
+Severity Critical (Phase 9: was Major) · lens A1200 shipped · effort S · verified · verdict upgraded Major→Critical (confidence probable→verified)
 
 After `clipboardRead`, a `clipboardWrite` on the same handle never returns on an A1200 with Kickstart 3.1 — the read never finishes the clipboard read protocol, so the device holds writes off. A program that reads, then writes the clipboard hangs.
 
@@ -284,10 +288,10 @@ Severity Major · lens vbcc leg of hosted-amiga (build-only validity leg) · eff
 
 a program with a large dispatch `switch` (a bytecode interpreter, a key or event table) cannot be built with the vbcc leg in reasonable time; the GCC legs are unaffected.
 
-**29. [ASM-WS7-002](findings/WS7-performance.md) — Compile time grows faster than quadratically for call-heavy and generic code**  
+**29. [ASM-WS7-002](findings/WS7-performance.md) — Compile time grows about quadratically for call-heavy and generic code**  
 Severity Major · lens host (`clc` itself) · effort M · verified · verdict confirmed (Major; measurement verified, attribution probable and reproduced)
 
-Compile time grows about quadratically on average (above quadratic on the top doubling) for stdlib-call-heavy and generic code: 8,000 such functions take 45–93 s against 0.4 s for 8,000 one-line functions. Name resolution in the ownership pass, instance de-duplication, and codegen's `resolve_function` fallback scan linear lists inside per-call and per-instance loops. Today's examples compile in milliseconds; large programs and the language server degrade first.
+Compile time grows about quadratically on average (above quadratic on the top doubling) for stdlib-call-heavy and generic code: 8,000 such functions take 45.5 s (author run, `findings/records/WS7-runs.log`; 92.7 s in the loaded verifier run, `verification/verdicts-9.2.5.md`) against 0.4 s for 8,000 one-line functions. Name resolution in the ownership pass, instance de-duplication, and codegen's `resolve_function` fallback scan linear lists inside per-call and per-instance loops. Today's examples compile in milliseconds; large programs and the language server degrade first.
 
 **30. [ASM-WS4-002](findings/WS4-code-quality.md) — `Array<T>` push and get cost 39% more instructions than equivalent C on the A500**  
 Severity Major · lens A500 shipped -O2 (also A500 -Os +57.8%, A1200 shipped +38.8%, 68020 probe +64.9%) · effort M · verified · verdict confirmed (Major, verified)
@@ -316,7 +320,7 @@ Severity Minor · lens all · effort S · verified · verdict confirmed (Minor, 
 
 a program the spec rejects compiles and runs memory-safely; portability of sources to a conforming compiler is the only cost.
 
-**35. [ASM-WS2-003](findings/WS2-ownership.md) — Move, copy, and drop decisions are re-derived at about 240 sites in two stages with different predicates**  
+**35. [ASM-WS2-003](findings/WS2-ownership.md) — Move, copy, and drop decisions are re-derived at about 230 sites in two stages with different predicates**  
 Severity Minor · lens all · effort XL · probable · verdict confirmed (Minor, probable)
 
 Move, copy, and drop decisions are made in the ownership pass and re-derived in codegen with a different predicate (`codegen/drop.rs:283` against `own.rs:675`), at about 230 sites in two stages. The split has already produced recorded defects (DEF-56/57/59/61); every new expression shape must be taught to both stages.
@@ -404,7 +408,7 @@ Invalid C, route-specific false accepts, and unsequenced-effect miscompiles recu
 **52. [ASM-WS8-004](findings/WS8-test-integrity.md) — The Amiga shims never run under a sanitizer, and UBSan covers a third of the ASan suites**  
 Severity Minor · lens host (sanitizer legs); A500/A1200 (the unsanitized shims) · effort M · verified · verdict confirmed (Minor, verified)
 
-the 22 WS5 findings were invisible to the existing checks; the host-leg UB of ASM-WS3-003 and ASM-WS5-021 sits in the UBSan gap.
+The Amiga shims (10,404 lines) never run under AddressSanitizer or UBSan, and UBSan covers 12 suites against ASan's 38. This gap explains why the 23 WS5 findings were invisible to the existing checks; many of them are OS-protocol errors that no sanitizer would catch, so the remedy is behavioral gates as much as sanitizers.
 
 ### Opportunity
 
@@ -421,7 +425,7 @@ each mutable module table with a constant initializer costs its size twice (the 
 **55. [ASM-WS4-005](findings/WS4-code-quality.md) — Every Amiga program links libamiga DOS stubs and `CreatePort` it does not use**  
 Severity Opportunity · lens A500 shipped -O2 · effort M · verified · verdict confirmed (Opportunity, verified), magnitude corrected
 
-a fixed ~0.8 KB per program; small, but it is the whole fixed overhead over C.
+Every Amiga program links libamiga DOS stubs and `CreatePort` it does not use: about 440 B of the 776 B fixed `.text` gap of the calibration program over C (Phase 9, `verification/verdicts-9.2.3.md`).
 
 **56. [ASM-WS4-006](findings/WS4-code-quality.md) — `-O3` and `-flto` beat the shipped release flags on the A500**  
 Severity Opportunity · lens A500 (hosted-amiga-13, nix13, -m68000) and the 68020 probe build (labelled) · effort S · verified · verdict confirmed (Opportunity, verified)
@@ -445,25 +449,29 @@ none on a shipped profile; it would matter if a 68020 variant were added.
 | T1 — No record of OS resources | The shims acquire interrupt servers, tasks, ports, screens, locks, and library bases without a registry, so a fault exit (`exit(20)`) and some normal exits release nothing; one fault path serves every execution context | ASM-WS5-001, ASM-WS5-005, ASM-WS5-013, ASM-WS5-020, ASM-WS5-006 |
 | T2 — OS protocols assumed, not followed | Wrappers call AmigaOS APIs without the protocol their autodocs require (opening the library first, clipping, finishing a read, IFF clips, sprite data format, condition codes, layout, `WaitBlit`, resource ownership) | ASM-WS5-002, ASM-WS5-004, ASM-WS5-007, ASM-WS5-008, ASM-WS5-009, ASM-WS5-010, ASM-WS5-012, ASM-WS5-016, ASM-WS5-017, ASM-WS5-018, ASM-WS5-023, ASM-WS5-019 |
 | T3 — Effects and lifetimes left to C | Effectful subexpressions stay inside C expressions whose order C leaves unspecified, and owned temporaries are bound to function-level slots instead of statement-scoped ones (WS8-08 cause 4) | ASM-WS1-002, ASM-WS2-001, ASM-WS3-003, ASM-WS8-003 |
-| T4 — C composed from strings | The emitter builds C text per shape (712 `format!` sites); names, nesting depth, and line mapping are not guarded by a typed C representation (WS8-08 cause 2) | ASM-WS3-001, ASM-WS3-002, ASM-WS3-005, ASM-WS3-006, ASM-WS3-008, ASM-WS7-001, ASM-WS8-003 |
+| T4 — C composed from strings | The emitter builds C text per shape (712 `format!` sites); names, nesting depth, and line mapping are not guarded by a typed C representation (WS8-08 cause 2) | ASM-WS3-001, ASM-WS3-002, ASM-WS3-005, ASM-WS3-006, ASM-WS3-008, ASM-WS8-003 |
 | T5 — Checks bound to one route | A rule is enforced on the route that was tested (inferred type arguments, an annotated literal, a local's field) and missed on the others (WS8-08 cause 3) | ASM-WS1-001, ASM-WS1-005, ASM-WS2-002, ASM-WS6-002, ASM-WS8-003 |
 | T6 — Two drop authorities | Ownership decisions are re-derived in codegen with a different predicate (WS8-08 cause 1) | ASM-WS2-003 |
 | T7 — Unbounded compiler work | Recursive descent on the main-thread stack and linear lookups inside per-call loops | ASM-WS1-004, ASM-WS7-002 |
 | T8 — Tests that cannot see the defect | The fuzzer never generates calls, owned values, generics, or module data; gates assert weak properties; Amiga shims never run under a sanitizer | ASM-WS8-001, ASM-WS8-002, ASM-WS8-004, ASM-WS0-001 |
 
-T1 and T2 together explain all six WS5 Criticals; T3–T5 are the three recurring DEF classes
-(miscompile 51, invalid C 118, false accept 100 rows; `findings/records/WS8-defs.tsv`) and
-are still producing Criticals at the baseline.
+T1 and T2 together explain all six WS5 Criticals. T3–T5 match three of the recurring DEF
+classes (miscompile 51, invalid C 118, false accept 100 rows; `findings/records/WS8-defs.tsv`;
+T5 also holds one false reject, ASM-WS6-002) and are still producing Criticals at the
+baseline; T6 matches the memory-safety class (163 rows). ASM-WS7-001 (module fills) is a
+performance blow-up outside these classes and is closed by R12.
 
 ## 6. Performance
 
 **Matrix** (§1 table; record `findings/records/WS0-matrix.json`, `measure.py`, every cell's
-output checked). `.text` net of calibration is within +1.2% to +8.4% of C on every lens.
+output checked). `.text` net of calibration is within +1.2% to +8.4% of C on every shipped lens (+8.6% on
+the 68020 probe build).
 -Os on the A500 makes `container` worse (+57.8%) and `lookup` better (−30.3%).
 
 **Attribution (WS4)** — `vamos -B` traces mapped through the link map
 (`findings/records/WS4-attribution.log`): `strings`' extra cost is `cl_string_concat`'s
-part loop and `__udivsi3` in `cl_format_u32` (patch 530: −40.9% of net, ASM-WS5-022);
+part loop and `__udivsi3` in `cl_format_u32` (patch 530: −40.9% of net, ASM-WS5-022,
+record `findings/records/WS5-runs.log`);
 `container`'s is `cl_buffer_reserve` per `push` and the one-element `get` view.
 
 **Patched-C estimates** (`findings/records/WS4-patches.log`): inline template builder
@@ -483,11 +491,13 @@ numbers (§8, unranked).
 static, at most 10% of 512 KB — except a module-level fill, which costs about 8 bytes of
 code per element (a 64 KB table needs 548 KB, ASM-WS7-001).
 
-**Compile time** (`findings/records/WS7-runs.log`, probe 710; Phase 0
-`findings/records/assessment-baseline-compile.json`): one-line functions scale near
-linearly (exponent 0.9–1.2); locals 1.76–1.86, closures 1.66–1.91, stdlib-call-heavy
-functions 2.2–2.9, generic instantiations 1.9–2.5; 8,000 call-heavy functions take 45–93 s
-under load against 0.3–0.4 s for one-liners (ASM-WS7-002). Peak RSS grows linearly. vbcc's
+**Compile time** (probe 710; author run `findings/records/WS7-runs.log`, top-doubling
+exponents; verifier run at load average 7–8 `verification/verdicts-9.2.5.md`; Phase 0
+`findings/records/assessment-baseline-compile.json`): one-line functions 1.21 (author) /
+0.94 (verifier); locals 1.76 / 1.86; closures 1.91 / 1.66; stdlib-call-heavy functions 2.37 /
+2.94 (2.22 averaged over 1,000→8,000); generic instantiations 2.45 / 2.12 (1.85 averaged).
+8,000 call-heavy functions take 45.5 s in the author's run (92.7 s in the loaded verifier
+run) against 0.3–0.4 s for one-liners (ASM-WS7-002). Peak RSS grows linearly. vbcc's
 own compile time grows about cubically with `switch` size (ASM-WS3-007).
 
 ## 7. Quick wins
@@ -535,7 +545,7 @@ Opportunities with at least 5% measured gain in net instructions or `.text`:
 | [ASM-WS5-022](findings/WS5-shims.md) | `strings` −40.9% net instructions, A500 (patch 530) | integer formatting with a 16-bit divide |
 | [ASM-WS4-003](findings/WS4-code-quality.md) | −16,652 B `.text` on `sieve` (patch 417) | a fault writer without `printf` |
 | [ASM-WS4-006](findings/WS4-code-quality.md) | `-O3`: `strings` −25.1%, `container` −18.3% (record `WS4-flags.log`) | release flags |
-| [ASM-WS4-005](findings/WS4-code-quality.md) | 440 B of the calibration program's 5,900 B `.text` (7.5%) | unused libamiga stubs and `CreatePort` |
+| [ASM-WS4-005](findings/WS4-code-quality.md) | 440 B of the calibration program's 5,900 B `.text` (7.5%; `verification/verdicts-9.2.3.md`) | unused libamiga stubs and `CreatePort` |
 
 ## 8. Remediation roadmap
 
@@ -545,18 +555,18 @@ entry is a `make-plan` input; its theme parent issue is linked in the appendix o
 
 | # | Plan slug | Goal | Closes | Depends on | Effort |
 |---|-----------|------|--------|------------|--------|
-| R1 | `amiga-fault-exit-cleanup` | Release every OS registration on every exit: a shim resource registry walked by the fault path and an exit hook; worker-task faults handled in the task | ASM-WS5-001, ASM-WS5-005, ASM-WS5-013, ASM-WS5-020 | — | L |
-| R2 | `evaluation-order-and-temporaries` | Sequence effects in source order and release temporaries at statement end: lower effectful subexpressions into ordered temporaries (A-normal form) and give owned temporaries statement scope | ASM-WS1-002, ASM-WS2-001, ASM-WS3-003 | — | L |
+| R1 | `amiga-fault-exit-cleanup` | Release every OS registration on every exit: a shim resource registry walked by the fault path and an exit hook; worker-task faults handled in the task; a Ctrl-C break surface in the blocking waits | ASM-WS5-001, ASM-WS5-005, ASM-WS5-013, ASM-WS5-020 | — | L |
+| R2 | `evaluation-order-and-temporaries` | Sequence effects in source order and release temporaries at statement end: lower effectful subexpressions into ordered temporaries (A-normal form), give owned temporaries statement scope, and emit value-position `++`/`--` through the unsigned form | ASM-WS1-002, ASM-WS2-001, ASM-WS3-003 | — | L |
 | R3 | `c-name-integrity` | Escape every C99 keyword and header/NDK macro name and separate generic-instance symbols from module functions | ASM-WS3-001, ASM-WS3-002, ASM-WS3-005, ASM-WS3-006 | — | S |
-| R4 | `front-end-limits-and-checks` | Bound `clc`'s recursion, report E10305 on every instantiation route, and range-check inferred literals | ASM-WS1-004, ASM-WS1-005, ASM-WS1-001, ASM-WS2-002, ASM-WS1-003 | — | M |
+| R4 | `front-end-limits-and-checks` | Bound `clc`'s recursion, report E10305 on every instantiation route, range-check inferred literals, reject field moves out of call results (E10026), and document `embed` as staged with its promised diagnostic | ASM-WS1-004, ASM-WS1-005, ASM-WS1-001, ASM-WS2-002, ASM-WS1-003 | — | M |
 | R5 | `amiga-shim-crash-safety` | Fix the shim paths that crash or hang a real machine: open Intuition on demand, clip screen text, finish the clipboard read protocol, track borrowed clip regions and guide messages | ASM-WS5-002, ASM-WS5-004, ASM-WS5-016, ASM-WS5-006 | R1 (shares the registry) | M |
 | R6 | `typed-c-emission` | Emit through a typed C representation that escapes names, bounds nesting, maps lines, and makes invalid shapes unrepresentable | ASM-WS8-003, ASM-WS3-008 | R3 | XL |
 | R7 | `single-drop-authority` | Make the ownership pass the only place that decides moves and drops; codegen emits recorded drops only | ASM-WS2-003 | R2 | XL |
 | R8 | `test-and-gate-integrity` | Extend the fuzzer to calls, owned values, generics, module data, and identifiers; make gates assert behavior (walker system state, independent goldens); keep the `vamos` leak detector and FS-UAE walker as standing gates | ASM-WS8-001, ASM-WS8-002, ASM-WS8-004, ASM-WS0-001 | — | M |
-| R9 | `amiga-shim-protocol-fixes` | Follow the AmigaOS protocols the remaining shim wrappers skip | ASM-WS5-007, ASM-WS5-008, ASM-WS5-009, ASM-WS5-010, ASM-WS5-012, ASM-WS5-017, ASM-WS5-018, ASM-WS5-023, ASM-WS5-003, ASM-WS5-011, ASM-WS5-014, ASM-WS5-015, ASM-WS5-019, ASM-WS5-021 | R5 | M |
+| R9 | `amiga-shim-protocol-fixes` | Follow the AmigaOS protocols the remaining shim wrappers skip | ASM-WS5-007, ASM-WS5-008, ASM-WS5-009, ASM-WS5-010, ASM-WS5-012, ASM-WS5-017, ASM-WS5-018, ASM-WS5-023, ASM-WS5-003, ASM-WS5-011, ASM-WS5-014, ASM-WS5-015, ASM-WS5-019, ASM-WS5-021 | R5 | L |
 | R10 | `stdlib-conformance` | Report read errors, give `str` its `slice`, unify NaN text, and bring the appendix in line with the exports | ASM-WS6-001, ASM-WS6-002, ASM-WS6-003, ASM-WS6-004, ASM-WS6-005, ASM-WS3-004 | — | M |
-| R11 | `vbcc-leg-limits` | Keep large dispatch code within vbcc's limits: flat `else if` emission and a bounded `switch` shape | ASM-WS3-008, ASM-WS3-007 | R6 (or standalone) | S |
-| R12 | `initializer-and-runtime-size` | Lower module fills like local fills and constant tables as initialized statics; a fault writer without `printf`; drop unused libamiga stubs | ASM-WS7-001, ASM-WS4-004, ASM-WS4-003, ASM-WS4-005 | — | S |
+| R11 | `vbcc-leg-limits` | Keep large dispatch code within vbcc's limits: flat `else if` emission and a bounded `switch` shape | ASM-WS3-008, ASM-WS3-007 | R6 (or standalone) | M |
+| R12 | `initializer-and-runtime-size` | Lower module fills like local fills and constant tables as initialized statics; a fault writer without `printf`; drop unused libamiga stubs | ASM-WS7-001, ASM-WS4-004, ASM-WS4-003, ASM-WS4-005 | — | M |
 | R13 | `runtime-call-lowering` | Close the two measured gaps: inline template builder, `Array` push/get lowering, 16-bit integer formatting; revisit release flags | ASM-WS4-001, ASM-WS4-002, ASM-WS5-022, ASM-WS4-006, ASM-WS7-003 | — | M |
 | R14 | `compile-time-scaling` | Index names and instances once per module/program so compile time stays near linear | ASM-WS7-002 | — | M |
 
@@ -646,7 +656,7 @@ From `findings/WS6-stdlib.md`:
 `assessment-baseline-bench.json`, `assessment-baseline-compile.json`,
 `assessment-baseline-flags.json`, `WS1-results.json`, `WS1-contrast.json`,
 `WS1-gating.log`, `WS1-robustness.log`, `WS2-results.json`, `WS3-*`, `WS4-attribution.log`,
-`WS4-flags.log`, `WS4-patches.log`, `WS4-size.log`, `WS5-results.json`,
+`WS4-flags.log`, `WS4-patches.log`, `WS4-size.log`, `WS2-contrast.json`, `WS5-results.json`,
 `WS5-contrast.json`, `WS5-runs.log`, `WS6-results.json`, `WS6-contrast.json`,
 `WS6-runs.log`, `WS7-runs.log`, `WS8-assertions.tsv`, `WS8-defs.tsv`; the Phase 0 emission
 record `findings/WS0-emission-record.tsv`; verifier reports `verification/verdicts-9.2.*.md`.
@@ -718,10 +728,10 @@ and `probes/WS5/verify-9.2.4/`.
 | ASM-WS5-022 | Opportunity | n/a | — |
 | ASM-WS7-003 | Opportunity | n/a | — |
 
-## ST-10 checklist
+### ST-10 checklist
 
-- [ ] The ten sections of 03-04 are present
-- [ ] The ranked findings in §4 are exactly the surviving ledger rows of `05-findings.md`
-- [ ] No finding appears in §1, §4, §5, or §7 unless it is surviving
+- [x] The ten sections of 03-04 are present (review RV, task 10.3.1)
+- [x] The ranked findings in §4 are exactly the surviving ledger rows of `05-findings.md` (58 = 58)
+- [x] No finding appears in §1, §4, §5, or §7 unless it is surviving (none refuted or merged)
 - [ ] Every surviving Critical/Major has a DEF row in `plans/00-roadmap.md`, and every finding-derived DEF row added by this plan maps to a surviving finding
-- [ ] Every measured quantity cites its measurement record (ST-12)
+- [x] Every measured quantity cites its measurement record (ST-12; RV-006 resolved)

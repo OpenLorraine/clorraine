@@ -18,11 +18,11 @@ when it changed). DEF IDs and GitHub issue numbers are filled in Phase 10.
 | [ASM-WS1-002](findings/WS1-semantic-core.md) | Call arguments with side effects are evaluated right to left | Critical | verified | all | ses_dec1f5b4dffe | confirmed | ses_dea9a6131ffe | M | — | — |
 | [ASM-WS1-004](findings/WS1-semantic-core.md) | `clc` aborts with a stack overflow on moderately deep nesting | Critical | verified | host (the compiler process; every profile is affected) | ses_dec1f5b4dffe | confirmed | ses_dea9a6131ffe | M | — | — |
 | [ASM-WS1-005](findings/WS1-semantic-core.md) | Polymorphic recursion with explicit type arguments hangs `clc` instead of E10305 | Critical | verified | host (the compiler process; every profile is affected) | ses_dec1f5b4dffe | confirmed | ses_dea9a6131ffe | S | — | — |
-| [ASM-WS2-001](findings/WS2-ownership.md) | Owned temporaries drop at the end of the enclosing scope, not at the end of their statement | Critical (was Major) | verified | all (host verified; the lowering is profile-independent) | ses_dec1f5b4dffe | upgraded Major→Critical | ses_dea9a612affe | L | — | — |
+| [ASM-WS2-001](findings/WS2-ownership.md) | Owned temporaries drop at function exit, not at the end of their statement | Critical (was Major) | verified | all (host verified; the lowering is profile-independent) | ses_dec1f5b4dffe | upgraded Major→Critical | ses_dea9a612affe | L | — | — |
 | [ASM-WS3-001](findings/WS3-codegen.md) | Locals named like C keywords or C/NDK macros make the emitted C invalid | Critical | verified | all | ses_dec1f5b4dffe | confirmed | ses_dea9a6112ffe | S | — | — |
 | [ASM-WS3-002](findings/WS3-codegen.md) | A module function can collide with a generic instance symbol | Critical | verified | all | ses_dec1f5b4dffe | confirmed | ses_dea9a6112ffe | S | — | — |
 | [ASM-WS5-001](findings/WS5-shims.md) | A runtime fault exits with OS registrations still installed: a VBlank server is left pointing into the unloaded program | Critical | verified | A500, A1200 shipped (shared code) | ses_dec1f5b4dffe | confirmed | ses_dea9a6107ffe | L | — | — |
-| [ASM-WS5-002](findings/WS5-shims.md) | `savePublicScreen` and `showAlert` call Intuition through a NULL `IntuitionBase` and crash the machine | Critical | verified | A1200 shipped (`savePublicScreen`); A500 and A1200 (`showAle | ses_dec1f5b4dffe | confirmed | ses_dea9a6107ffe | S | — | — |
+| [ASM-WS5-002](findings/WS5-shims.md) | `savePublicScreen` and `showAlert` call Intuition through a NULL `IntuitionBase` and crash the machine | Critical | verified | A1200 `savePublicScreen` and A500 `showAlert` reproduced; A12 | ses_dec1f5b4dffe | confirmed | ses_dea9a6107ffe | S | — | — |
 | [ASM-WS5-004](findings/WS5-shims.md) | `drawText` writes unclipped text through a screen `RastPort` that has no layer | Critical | verified | A500, A1200 shipped | ses_dec1f5b4dffe | confirmed | ses_dea9a6107ffe | S | — | — |
 | [ASM-WS5-005](findings/WS5-shims.md) | A runtime fault inside a worker task runs libnix `printf` and `exit()` from a plain Exec task | Critical | verified | A500, A1200 shipped | ses_dec1f5b4dffe | confirmed | ses_dea9a6107ffe | M | — | — |
 | [ASM-WS5-006](findings/WS5-shims.md) | Safe handles let a borrowed OS object outlive its owner: clip regions and AmigaGuide messages | Critical | probable | A1200 shipped (`hosted-amiga` modules) | ses_dec1f5b4dffe | confirmed | ses_dea9a6107ffe | M | — | — |
@@ -45,11 +45,11 @@ when it changed). DEF IDs and GitHub issue numbers are filled in Phase 10.
 | [ASM-WS6-001](findings/WS6-stdlib.md) | `readFile` reports a read error exactly like end of file | Major | verified | host (reproduced); A500, A1200 shipped (the same `fread` cod | ses_dec1f5b4dffe | confirmed | ses_dea9a6131ffe | S | — | — |
 | [ASM-WS6-002](findings/WS6-stdlib.md) | `slice` of a `str` is rejected, although the appendix gives it the same view type | Major | verified | all | ses_dec1f5b4dffe | confirmed | ses_dea9a6131ffe | M | — | — |
 | [ASM-WS7-001](findings/WS7-performance.md) | A module-level fill emits one assignment per element: a 64 KB table needs 548 KB of code and 163 s of GCC | Major | verified | A500 (measured); A1200 shipped and host (the same emission) | ses_dec1f5b4dffe | confirmed | ses_dea685c4bffe | S | — | — |
-| [ASM-WS7-002](findings/WS7-performance.md) | Compile time grows faster than quadratically for call-heavy and generic code | Major | verified | host (`clc` itself) | ses_dec1f5b4dffe | confirmed | ses_dea685c4bffe | M | — | — |
+| [ASM-WS7-002](findings/WS7-performance.md) | Compile time grows about quadratically for call-heavy and generic code | Major | verified | host (`clc` itself) | ses_dec1f5b4dffe | confirmed | ses_dea685c4bffe | M | — | — |
 | [ASM-WS0-001](findings/WS0-baseline.md) | The flag audit's host binary floor fails on `lookup` at the baseline | Minor | verified | host | ses_dec1f5b4dffe | confirmed | ses_dea9a6131ffe | S | — | — |
 | [ASM-WS1-003](findings/WS1-semantic-core.md) | Data inclusion (`embed`) is staged out, but chapter 13 reads stable and the limitation is undocumented | Minor | verified | all | ses_dec1f5b4dffe | confirmed | ses_dea9a6131ffe | M | — | — |
 | [ASM-WS2-002](findings/WS2-ownership.md) | A field move out of a call result is accepted | Minor | verified | all | ses_dec1f5b4dffe | confirmed | ses_dea9a612affe | S | — | — |
-| [ASM-WS2-003](findings/WS2-ownership.md) | Move, copy, and drop decisions are re-derived at about 240 sites in two stages with different predicates | Minor | probable | all | ses_dec1f5b4dffe | confirmed | ses_dea9a612affe | XL | — | — |
+| [ASM-WS2-003](findings/WS2-ownership.md) | Move, copy, and drop decisions are re-derived at about 230 sites in two stages with different predicates | Minor | probable | all | ses_dec1f5b4dffe | confirmed | ses_dea9a612affe | XL | — | — |
 | [ASM-WS3-004](findings/WS3-codegen.md) | On the host profile `usize` is 32 bits, so a pointer round trip through `usize` crashes | Minor | verified | host only (the Amiga profiles are 32-bit and pass) | ses_dec1f5b4dffe | confirmed | ses_dea9a6112ffe | M | — | — |
 | [ASM-WS3-005](findings/WS3-codegen.md) | Appended runtime code inherits the last `#line`, so its diagnostics and debug lines point into `.clo` files | Minor | verified | all (visible on the Amiga profiles, whose shim suffix follow | ses_dec1f5b4dffe | confirmed | ses_dea9a6112ffe | S | — | — |
 | [ASM-WS3-006](findings/WS3-codegen.md) | The emitted C depends on how the source path is spelled and embeds absolute paths | Minor | verified | all | ses_dec1f5b4dffe | confirmed | ses_dea9a6112ffe | S | — | — |
@@ -259,4 +259,29 @@ finding's Verdict line and in `verification/verdicts-9.2.*.md`.
 
 ## Report review
 
-_(filled in Phase 10, task 10.3.1)_
+Task 10.3.1: independent `correctness-reviewer` review of `10-assessment-report.md`,
+session `ses_dea53c902ffeQZyapV1u7z3Jxh` (read-only). ST-10 structure, the 58-row ranked
+list, the grades, quick wins, roadmap coverage, and spec questions passed; 7 major and 11
+minor review findings, all resolved by the author (none changes a grade or the surviving
+set). These are review findings about the report, kept apart from the ledger.
+
+| ID | Severity | Finding | Resolution |
+|----|----------|---------|------------|
+| RV-001 | major | §1 said all six WS5 Criticals were reproduced; ASM-WS5-006 was not | §1 now says five reproduced, the sixth probable from code reading |
+| RV-002 | major | ASM-WS2-001's title kept the pre-Phase 9 "end of the enclosing scope" | Retitled "drop at function exit" in the workstream file, the ledger, and the report |
+| RV-003 | major | §4 showed `probable` for ASM-WS5-004, -005, -016, which Phase 9 raised to `verified` | The report takes confidence from the Phase 9 verdict |
+| RV-004 | major | ASM-WS4-005's summary kept "the whole fixed overhead" | Summary states 440 B of the 776 B gap, citing the verifier report |
+| RV-005 | major | §5 listed ASM-WS7-001 under T4 although Phase 9 removed it from the DEF classes | Removed from T4; noted as a performance blow-up closed by R12 |
+| RV-006 | major | Compile-time figures, the 440 B, and patch 530's gain were uncited or mis-cited | §4/§6/§7 cite `WS7-runs.log` (author run), `verdicts-9.2.5.md` (loaded run, labelled), `verdicts-9.2.3.md`, and `WS5-runs.log` |
+| RV-007 | major | R9, R11, R12 efforts were smaller than findings they close | R9 → L, R11 → M, R12 → M |
+| RV-008 | minor | ASM-WS5-002's lens said `showAlert` was code reading only | Lens records the A500/KS1.3 reproduction (workstream file and ledger) |
+| RV-009 | minor | ASM-WS7-002's title said "faster than quadratically" | Retitled "about quadratically" |
+| RV-010 | minor | ASM-WS2-003 said 240 sites in its title and 230 in the body | Both say about 230 (79 + 70 + 84) |
+| RV-011 | minor | §5 called T3–T5 "the three recurring classes" | Reworded to "three of the recurring classes", naming T6 and the false-reject member of T5 |
+| RV-012 | minor | §6 `.text` range missed the 68020 probe lens's +8.6% | "every shipped lens (+8.6% on the 68020 probe build)" |
+| RV-013 | minor | "22 WS5 findings"; sanitizer implication | 23 findings; notes protocol errors no sanitizer would catch |
+| RV-014 | minor | "about −30%" summed two separately measured patches | States −23.0% and −7.1%, measured separately |
+| RV-015 | minor | "every host probe clean under ASan" contradicted probe 371 | "every ownership probe" |
+| RV-016 | minor | Limits list missed WS7-03's unattributed cause | Added |
+| RV-017 | minor | R1, R2, R4 goals did not cover all findings they close | Goals name Ctrl-C, unsigned `++`/`--`, E10026, and the `embed` documentation |
+| RV-018 | minor | `WS2-contrast.json` missing from the records list; the ST-10 checklist formed an eleventh section | Added; the checklist is now a subsection of §10 |

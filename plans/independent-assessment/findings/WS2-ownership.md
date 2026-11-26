@@ -58,7 +58,7 @@ no leak, double free, use after free, or undefined behavior was observed on any 
 
 ## Findings
 
-### ASM-WS2-001 — Owned temporaries drop at the end of the enclosing scope, not at the end of their statement
+### ASM-WS2-001 — Owned temporaries drop at function exit, not at the end of their statement
 
 - **Severity**: Major
 - **Confidence**: verified
@@ -95,7 +95,7 @@ no leak, double free, use after free, or undefined behavior was observed on any 
 - **Phase 9 addition**: the nested-path move `let t: Tok = mk().p.a;` (spec/03 §4: nested paths are E10026) is accepted as well (verifier scratch `build/tmp/assessment/verify/ws2/p2/nested.clo`), ASan-clean.
 - **Verdict**: confirmed (Minor, verified) — verifier ses_dea9a612affe7B68nL0nJN0bQn (9.2.2): spec/03 §4 requires E10026; clc accepts; single release, ASan-clean. The nested path `mk().p.a` is accepted too (same cause).
 
-### ASM-WS2-003 — Move, copy, and drop decisions are re-derived at about 240 sites in two stages with different predicates
+### ASM-WS2-003 — Move, copy, and drop decisions are re-derived at about 230 sites in two stages with different predicates
 
 - **Severity**: Minor
 - **Confidence**: probable

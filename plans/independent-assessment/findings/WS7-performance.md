@@ -65,7 +65,7 @@ Runs 2026-11-26 (logs under `build/tmp/assessment/WS7/`; committed record
 - **Phase 9 additions**: emitter site traced by the verifier: `compiler/src/codegen/program.rs:1974`, `:2058-2085`; related to ASM-WS4-004 (both lower module initializers as run-time stores; different shapes and remedies).
 - **Verdict**: confirmed (Major, verified) — verifier ses_dea685c4bffegV12VLXpl04mC6 (9.2.5): 740 reproduces (GCC 160 s at 65,536; `.text` 547,676 B); a `[; 0]` module fill is expanded too; emitter site `codegen/program.rs:2058-2085` `emit_filled_array` (called from `emit_global_array_fill`, `:1974`), while the function path compacts (`codegen/function.rs:4337-4675`).
 
-### ASM-WS7-002 — Compile time grows faster than quadratically for call-heavy and generic code
+### ASM-WS7-002 — Compile time grows about quadratically for call-heavy and generic code
 
 - **Severity**: Major
 - **Confidence**: verified (the measurement); the attribution is `probable`
