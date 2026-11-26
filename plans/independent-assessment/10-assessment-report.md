@@ -146,298 +146,298 @@ surviving ledger row of `05-findings.md`.
 
 ### Critical
 
-**1. [ASM-WS5-001](findings/WS5-shims.md) — A runtime fault exits with OS registrations still installed: a VBlank server is left pointing into the unloaded program**  
+**1. [ASM-WS5-001](findings/WS5-shims.md) — A runtime fault exits with OS registrations still installed: a VBlank server is left pointing into the unloaded program**\
 Severity Critical · lens A500, A1200 shipped (shared code) · effort L · verified · verdict confirmed (Critical)
 
 every program that faults (index out of range, division by zero, out of memory, `assert`, `panic`) after installing an OS registration leaves it behind. For an interrupt server (`addHandler`, `addPortHandler`, and the stdlib users of the dispatcher: input, timer, video) the next program loaded into that memory turns the server into a jump into arbitrary code at 50 Hz — a crash of the whole machine. The same exit skips: worker tasks (left on the ready list in unloaded code), the custom `View` and DMACON (display not restored), windows and screens (IDCMP ports signalling a dead task), the Workbench public-screen lock, public ports (in the system list with a name in freed memory), devices with pending I/O, sprite and audio channels, DOS locks, and every `AllocMem` block (AmigaOS does not reclaim them).
 
-**2. [ASM-WS1-002](findings/WS1-semantic-core.md) — Call arguments with side effects are evaluated right to left**  
+**2. [ASM-WS1-002](findings/WS1-semantic-core.md) — Call arguments with side effects are evaluated right to left**\
 Severity Critical · lens all · effort M · verified · verdict confirmed (Critical)
 
 any call whose arguments include two or more calls with side effects (I/O reads, allocators, counters, iterators, hardware reads) runs them in the opposite order to the source on every shipped profile; the result is a silent miscompile. Example: `copy(readByte(f), readByte(f))` swaps the two bytes.
 
-**3. [ASM-WS2-001](findings/WS2-ownership.md) — Owned temporaries drop at function exit, not at the end of their statement**  
+**3. [ASM-WS2-001](findings/WS2-ownership.md) — Owned temporaries drop at function exit, not at the end of their statement**\
 Severity Critical (Phase 9: was Major) · lens all (host verified; the lowering is profile-independent) · effort L · verified · verdict upgraded Major→Critical
 
 Owned temporaries are released at function exit (or when the same statement runs again), not at the end of their statement as spec/03 and spec/17 require. A `File` written through a temporary is still open and unflushed when the same function reopens it, so the read returns 0 bytes instead of 5 on host and hosted-amiga (probe 260). Any program that relies on a temporary's deleter running at statement end — closing, flushing, releasing a lock — behaves wrongly.
 
-**4. [ASM-WS5-004](findings/WS5-shims.md) — `drawText` writes unclipped text through a screen `RastPort` that has no layer**  
+**4. [ASM-WS5-004](findings/WS5-shims.md) — `drawText` writes unclipped text through a screen `RastPort` that has no layer**\
 Severity Critical · lens A500, A1200 shipped · effort S · verified · verdict confirmed (Critical; confidence probable→verified)
 
 a safe program that draws text near the screen edge (a scroller, a status line with a long string, an off-by-one y) overwrites chip memory — other bitplanes, copper lists, or another program's data. Memory unsafety from the safe surface.
 
-**5. [ASM-WS5-005](findings/WS5-shims.md) — A runtime fault inside a worker task runs libnix `printf` and `exit()` from a plain Exec task**  
+**5. [ASM-WS5-005](findings/WS5-shims.md) — A runtime fault inside a worker task runs libnix `printf` and `exit()` from a plain Exec task**\
 Severity Critical · lens A500, A1200 shipped · effort M · verified · verdict confirmed (Critical; confidence probable→verified)
 
 a worker that divides by zero crashes the machine instead of reporting a fault; the user cannot honor the "no DOS" rule because the compiler adds the DOS call.
 
-**6. [ASM-WS5-002](findings/WS5-shims.md) — `savePublicScreen` and `showAlert` call Intuition through a NULL `IntuitionBase` and crash the machine**  
+**6. [ASM-WS5-002](findings/WS5-shims.md) — `savePublicScreen` and `showAlert` call Intuition through a NULL `IntuitionBase` and crash the machine**\
 Severity Critical · lens A1200 shipped (`savePublicScreen`, reproduced); A500 (`showAlert`, reproduced in Phase 9 on A500/KS1.3); A1200 (`showAlert`, code reading) · effort S · verified · verdict confirmed (Critical, verified)
 
 any program that calls `savePublicScreen` (the Workbench capture API) or `showAlert` before opening a screen or window crashes the machine. `showAlert` with no window is the natural "fatal error" path of a CLI tool.
 
-**7. [ASM-WS5-016](findings/WS5-shims.md) — The clipboard read never finishes the read protocol**  
+**7. [ASM-WS5-016](findings/WS5-shims.md) — The clipboard read never finishes the read protocol**\
 Severity Critical (Phase 9: was Major) · lens A1200 shipped · effort S · verified · verdict upgraded Major→Critical (confidence probable→verified)
 
 After `clipboardRead`, a `clipboardWrite` on the same handle never returns on an A1200 with Kickstart 3.1 — the read never finishes the clipboard read protocol, so the device holds writes off. A program that reads, then writes the clipboard hangs.
 
-**8. [ASM-WS3-001](findings/WS3-codegen.md) — Locals named like C keywords or C/NDK macros make the emitted C invalid**  
+**8. [ASM-WS3-001](findings/WS3-codegen.md) — Locals named like C keywords or C/NDK macros make the emitted C invalid**\
 Severity Critical · lens all · effort S · verified · verdict confirmed (Critical, verified)
 
 an accepted program emits C that no compile-matrix leg accepts. Natural C89-keyword names (`char`, `int`, `long`, `short`) are already escaped (a test pins `int`: `codegen_ownership_impl_test.rs::a_borrow_element_may_spell_a_c_keyword`); the failing names are `restrict`, `_Bool`, and macro-like names such as `EOF`, `TRUE`, `NULL`, `errno`, `stdout` — plausible in a parser or a port of C code. The failure is closed (no wrong binary runs) but the program cannot be built. (Impact narrowed in task 8.2.1.)
 
-**9. [ASM-WS1-004](findings/WS1-semantic-core.md) — `clc` aborts with a stack overflow on moderately deep nesting**  
+**9. [ASM-WS1-004](findings/WS1-semantic-core.md) — `clc` aborts with a stack overflow on moderately deep nesting**\
 Severity Critical · lens host (the compiler process; every profile is affected) · effort M · verified · verdict confirmed (Critical)
 
 generated or table-like sources (long sums, deep `else if` dispatch, nested helper calls) crash the compiler with no diagnostic; the crash also takes down `clorraine-lsp`, which runs the same analysis on every keystroke.
 
-**10. [ASM-WS1-005](findings/WS1-semantic-core.md) — Polymorphic recursion with explicit type arguments hangs `clc` instead of E10305**  
+**10. [ASM-WS1-005](findings/WS1-semantic-core.md) — Polymorphic recursion with explicit type arguments hangs `clc` instead of E10305**\
 Severity Critical · lens host (the compiler process; every profile is affected) · effort S · verified · verdict confirmed (Critical)
 
 a small, plausible generic program (a recursive container walker that wraps its element type) hangs the compiler and the language server.
 
-**11. [ASM-WS3-002](findings/WS3-codegen.md) — A module function can collide with a generic instance symbol**  
+**11. [ASM-WS3-002](findings/WS3-codegen.md) — A module function can collide with a generic instance symbol**\
 Severity Critical · lens all · effort S · verified · verdict confirmed (Critical, verified)
 
 an accepted program emits invalid C when a module's lowercase path plus an underscore-led function name spells another generic's instance symbol. The trigger needs an unusual spelling (a module named like a generic function and a function name starting with `_`), so it is rare in practice.
 
-**12. [ASM-WS5-006](findings/WS5-shims.md) — Safe handles let a borrowed OS object outlive its owner: clip regions and AmigaGuide messages**  
+**12. [ASM-WS5-006](findings/WS5-shims.md) — Safe handles let a borrowed OS object outlive its owner: clip regions and AmigaGuide messages**\
 Severity Critical · lens A1200 shipped (`hosted-amiga` modules) · effort M · probable · verdict confirmed (Critical, probable)
 
 a program the compiler accepts can make the layers library use a freed region on the next refresh, or reply a message into a closed context — use-after-free from the safe surface. The regions rule is documented, so the risk is a user mistake the type system does not catch.
 
 ### Major
 
-**13. [ASM-WS6-001](findings/WS6-stdlib.md) — `readFile` reports a read error exactly like end of file**  
+**13. [ASM-WS6-001](findings/WS6-stdlib.md) — `readFile` reports a read error exactly like end of file**\
 Severity Major · lens host (reproduced); A500, A1200 shipped (the same `fread` code) · effort S · verified · verdict confirmed (Major)
 
 a program cannot tell a failed read from the end of a file: a copier or loader stops early and reports success with truncated data (a bad floppy sector on the Amiga, a removed volume, a directory given as a file). The `std.io` doc comment groups the two ("zero or less means end of file or an error"), but no value is ever negative, so even that reading cannot be acted on. The `file-copier` corpus program follows exactly this loop.
 
-**14. [ASM-WS5-023](findings/WS5-shims.md) — `clipboardWrite` reports success for raw data that the 3.1 clipboard device discards, so `clipboardRead` never sees it**  
+**14. [ASM-WS5-023](findings/WS5-shims.md) — `clipboardWrite` reports success for raw data that the 3.1 clipboard device discards, so `clipboardRead` never sees it**\
 Severity Major · lens A1200 shipped (`hosted-amiga`, `std.amiga.clipboard`); other 2.0+ versions not tested · effort S · verified · verdict confirmed (Major, verified) with a corrected impact and root cause
 
 `clipboardWrite` returns true while a raw (non-IFF) clip is either discarded (no clip yet) or stored padded to 8 bytes (after an IFF clip exists); `clipboardRead` of raw data returns 0 or the padded clip. The clipboard device keeps only IFF clips; the known-limitations entry attributes the empty read to the test environment.
 
-**15. [ASM-WS7-001](findings/WS7-performance.md) — A module-level fill emits one assignment per element: a 64 KB table needs 548 KB of code and 163 s of GCC**  
+**15. [ASM-WS7-001](findings/WS7-performance.md) — A module-level fill emits one assignment per element: a 64 KB table needs 548 KB of code and 163 s of GCC**\
 Severity Major · lens A500 (measured); A1200 shipped and host (the same emission) · effort S · verified · verdict confirmed (Major, verified)
 
 a demo or game that declares a module-level buffer with a fill (a 16 KB sample buffer, a 10 KB bitplane, a lookup table of a constant) gets about 8 bytes of 68000 code per element and runs that code at startup; at 64 KB the image no longer fits the A500, and the C build takes minutes. A zero fill pays the same cost although the static is already zero.
 
-**16. [ASM-WS5-008](findings/WS5-shims.md) — The screen capture misreads the 2.0+ colour table, and the A1200 Workbench golden pins the wrong colours**  
+**16. [ASM-WS5-008](findings/WS5-shims.md) — The screen capture misreads the 2.0+ colour table, and the A1200 Workbench golden pins the wrong colours**\
 Severity Major · lens A1200 shipped (every 2.0+ capture); A500 unaffected (`Type == 0` branch) · effort S · verified · verdict confirmed (Major, verified)
 
 every native capture on 2.0+ records wrong colours; the `sdk-a1200-workbench` gate compares against a golden made by the same code, so it pins the defect instead of catching it.
 
-**17. [ASM-WS5-012](findings/WS5-shims.md) — GadTools: the last gadget is never attached, rendered, or freed**  
+**17. [ASM-WS5-012](findings/WS5-shims.md) — GadTools: the last gadget is never attached, rendered, or freed**\
 Severity Major · lens A1200 shipped · effort S · probable · verdict confirmed (Major; evidence now verified)
 
 every GadTools window shows one gadget fewer than the program created, and leaks it. The A600 gate counts capture colours only, so it does not catch this.
 
-**18. [ASM-WS5-007](findings/WS5-shims.md) — `cardPresent()` and `cardStatus()` remove `card.resource` from the system**  
+**18. [ASM-WS5-007](findings/WS5-shims.md) — `cardPresent()` and `cardStatus()` remove `card.resource` from the system**\
 Severity Major · lens A1200 shipped (A600/A1200 PCMCIA) · effort S · verified · verdict confirmed (Major, verified)
 
 after one call, `card.resource` is gone until reboot: the second call reports no PCMCIA, and every later `OpenResource("card.resource")` in the system fails (new users of the PCMCIA slot: carddisk, network and CF drivers being started). No crash was observed; existing users keep their pointer.
 
-**19. [ASM-WS5-009](findings/WS5-shims.md) — The interrupt servers return with the user handler's condition codes and can end the VERTB chain**  
+**19. [ASM-WS5-009](findings/WS5-shims.md) — The interrupt servers return with the user handler's condition codes and can end the VERTB chain**\
 Severity Major · lens A500, A1200 shipped · effort S · verified · verdict confirmed (Major, verified)
 
 while a Clorraine VBlank handler is installed, servers below priority 0 on the VERTB chain (and on PORTS, CIA-driven and expansion-card servers) are skipped on most frames. What runs below priority 0 depends on the system (third-party drivers, commodities); the A1200 runs in 541c did not show a visible failure.
 
-**20. [ASM-WS1-001](findings/WS1-semantic-core.md) — An inferred-type decimal literal above `i32` range is accepted and silently wraps**  
+**20. [ASM-WS1-001](findings/WS1-semantic-core.md) — An inferred-type decimal literal above `i32` range is accepted and silently wraps**\
 Severity Major · lens all · effort S · verified · verdict confirmed (Major)
 
 a program with an un-annotated large decimal constant (for example a 32-bit mask or address written in decimal) compiles and runs with a different value, or emits C that the strict build rejects; the spec requires a compile error.
 
-**21. [ASM-WS3-003](findings/WS3-codegen.md) — A value-position `++`/`--` emits signed C increment, undefined on the host and vbcc legs at the limit**  
+**21. [ASM-WS3-003](findings/WS3-codegen.md) — A value-position `++`/`--` emits signed C increment, undefined on the host and vbcc legs at the limit**\
 Severity Major · lens host; vbcc leg (both build without `-fwrapv`); the m68k GCC legs are defined by `-fwrapv` · effort S · verified · verdict confirmed (Major, verified)
 
 a program that wraps an `i32` (or `isize`) through a value-position `++`/`--` relies on undefined behavior when built on the host profile or with vbcc; an optimizing compiler may assume the wrap never happens (loop bounds, comparisons).
 
-**22. [ASM-WS6-002](findings/WS6-stdlib.md) — `slice` of a `str` is rejected, although the appendix gives it the same view type**  
+**22. [ASM-WS6-002](findings/WS6-stdlib.md) — `slice` of a `str` is rejected, although the appendix gives it the same view type**\
 Severity Major · lens all · effort M · verified · verdict confirmed (Major)
 
 text code cannot take a substring view without copying (`stringOf` of bytes is not available either: `str` from `u8[]` has no safe conversion), so parsers either copy or work on `u8[]` and lose the `str` type. A valid program per the appendix is rejected.
 
-**23. [ASM-WS5-013](findings/WS5-shims.md) — The shim's own library bases are never closed**  
+**23. [ASM-WS5-013](findings/WS5-shims.md) — The shim's own library bases are never closed**\
 Severity Major · lens A500, A1200 shipped · effort S · probable · verdict confirmed (Major, probable)
 
 each run leaves an open count on graphics, intuition, layers, and diskfont (and the 2.0+ libraries a program used): disk-loaded `diskfont.library` and the optional libraries can never be expunged, so memory is lost until reboot; for `bsdsocket.library` the per-task base is never closed, so TCP/IP stacks keep the exited task's sockets and signal bindings.
 
-**24. [ASM-WS5-017](findings/WS5-shims.md) — Layer drawing returns without `WaitBlit`, so CPU access to the same bitmap races the blitter**  
+**24. [ASM-WS5-017](findings/WS5-shims.md) — Layer drawing returns without `WaitBlit`, so CPU access to the same bitmap races the blitter**\
 Severity Major · lens A500, A1200 shipped · effort S · probable · verdict confirmed (Major, probable)
 
 a checksum or pixel read right after a layer fill can see partly drawn data; CPU writes can be overwritten by the finishing blit. Intermittent, timing-dependent wrong output.
 
-**25. [ASM-WS5-018](findings/WS5-shims.md) — Classic menus are never laid out: every menu header and item sits at the same position**  
+**25. [ASM-WS5-018](findings/WS5-shims.md) — Classic menus are never laid out: every menu header and item sits at the same position**\
 Severity Major · lens A500, A1200 shipped · effort S · probable · verdict confirmed (Major, probable)
 
 a program with two or more menus, or two or more items in a menu, shows overlapping entries; only the first is reachable. The GUI gate drives menus with Amiga-key shortcuts, which do not depend on layout.
 
-**26. [ASM-WS5-010](findings/WS5-shims.md) — The busy-pointer image has no sprite header or terminator, so sprite DMA reads past the 64-byte allocation**  
+**26. [ASM-WS5-010](findings/WS5-shims.md) — The busy-pointer image has no sprite header or terminator, so sprite DMA reads past the 64-byte allocation**\
 Severity Major · lens A500, A1200 shipped · effort S · probable · verdict confirmed (Major, probable)
 
 `setPointer` shows a corrupted pointer (first row lost, trailing garbage lines from whatever follows in chip memory). Not visible to the bitplane-only capture of the GUI gate.
 
-**27. [ASM-WS3-008](findings/WS3-codegen.md) — An `else if` chain of 127 or more arms makes vbcc crash or reject the emitted C**  
+**27. [ASM-WS3-008](findings/WS3-codegen.md) — An `else if` chain of 127 or more arms makes vbcc crash or reject the emitted C**\
 Severity Major · lens vbcc leg of hosted-amiga (`vc +aos68k -c99 -O2 -cpu=68000`); the m68k GCC and host legs accept the same unit · effort S · verified · verdict confirmed (Major, verified)
 
 a program with a long `else if` dispatch (a command parser, an opcode or key table) cannot be built on the vbcc leg; it also rules out the `if`-chain workaround for ASM-WS3-007. Build-time failure, no wrong binary.
 
-**28. [ASM-WS3-007](findings/WS3-codegen.md) — vbcc compile time grows about cubically with `switch` size**  
+**28. [ASM-WS3-007](findings/WS3-codegen.md) — vbcc compile time grows about cubically with `switch` size**\
 Severity Major · lens vbcc leg of hosted-amiga (build-only validity leg) · effort M · verified · verdict confirmed (Major, verified)
 
 a program with a large dispatch `switch` (a bytecode interpreter, a key or event table) cannot be built with the vbcc leg in reasonable time; the GCC legs are unaffected.
 
-**29. [ASM-WS7-002](findings/WS7-performance.md) — Compile time grows about quadratically for call-heavy and generic code**  
+**29. [ASM-WS7-002](findings/WS7-performance.md) — Compile time grows about quadratically for call-heavy and generic code**\
 Severity Major · lens host (`clc` itself) · effort M · verified · verdict confirmed (Major; measurement verified, attribution probable and reproduced)
 
 Compile time grows about quadratically on average (above quadratic on the top doubling) for stdlib-call-heavy and generic code: 8,000 such functions take 45.5 s (author run, `findings/records/WS7-runs.log`; 92.7 s in the loaded verifier run, `verification/verdicts-9.2.5.md`) against 0.4 s for 8,000 one-line functions. Name resolution in the ownership pass, instance de-duplication, and codegen's `resolve_function` fallback scan linear lists inside per-call and per-instance loops. Today's examples compile in milliseconds; large programs and the language server degrade first.
 
-**30. [ASM-WS4-002](findings/WS4-code-quality.md) — `Array<T>` push and get cost 39% more instructions than equivalent C on the A500**  
+**30. [ASM-WS4-002](findings/WS4-code-quality.md) — `Array<T>` push and get cost 39% more instructions than equivalent C on the A500**\
 Severity Major · lens A500 shipped -O2 (also A500 -Os +57.8%, A1200 shipped +38.8%, 68020 probe +64.9%) · effort M · verified · verdict confirmed (Major, verified)
 
 container-heavy code (lists of game objects, parsed records) pays about 40% more CPU on the 68000 than the equivalent C growable array.
 
-**31. [ASM-WS4-001](findings/WS4-code-quality.md) — Templates cost 33% more instructions than equivalent C on the A500**  
+**31. [ASM-WS4-001](findings/WS4-code-quality.md) — Templates cost 33% more instructions than equivalent C on the A500**\
 Severity Major · lens A500 shipped -O2 (also A500 -Os +19.4%, A1200 shipped +51.3%, 68020 probe +71.5%) · effort M · verified · verdict confirmed (Major, verified)
 
 every program that formats text in a loop (status lines, logs, UI labels) pays about a third more CPU on the 68000 than hand-written C for the string building.
 
 ### Minor
 
-**32. [ASM-WS0-001](findings/WS0-baseline.md) — The flag audit's host binary floor fails on `lookup` at the baseline**  
+**32. [ASM-WS0-001](findings/WS0-baseline.md) — The flag audit's host binary floor fails on `lookup` at the baseline**\
 Severity Minor · lens host · effort S · verified · verdict confirmed (Minor)
 
 `make bench-flags` exits non-zero on a clean tree, so the size/runtime floor gate is red for every run and cannot signal a real regression on the other rows; no shipped program is affected.
 
-**33. [ASM-WS1-003](findings/WS1-semantic-core.md) — Data inclusion (`embed`) is staged out, but chapter 13 reads stable and the limitation is undocumented**  
+**33. [ASM-WS1-003](findings/WS1-semantic-core.md) — Data inclusion (`embed`) is staged out, but chapter 13 reads stable and the limitation is undocumented**\
 Severity Minor · lens all · effort M · verified · verdict confirmed (Minor)
 
 every program that bakes an asset with `embed` (the spec's own sprite, palette, and level examples) is rejected on every profile; the spec suite hides the gap by excluding its golden.
 
-**34. [ASM-WS2-002](findings/WS2-ownership.md) — A field move out of a call result is accepted**  
+**34. [ASM-WS2-002](findings/WS2-ownership.md) — A field move out of a call result is accepted**\
 Severity Minor · lens all · effort S · verified · verdict confirmed (Minor, verified)
 
 a program the spec rejects compiles and runs memory-safely; portability of sources to a conforming compiler is the only cost.
 
-**35. [ASM-WS2-003](findings/WS2-ownership.md) — Move, copy, and drop decisions are re-derived at about 230 sites in two stages with different predicates**  
+**35. [ASM-WS2-003](findings/WS2-ownership.md) — Move, copy, and drop decisions are re-derived at about 230 sites in two stages with different predicates**\
 Severity Minor · lens all · effort XL · probable · verdict confirmed (Minor, probable)
 
 Move, copy, and drop decisions are made in the ownership pass and re-derived in codegen with a different predicate (`codegen/drop.rs:283` against `own.rs:675`), at about 230 sites in two stages. The split has already produced recorded defects (DEF-56/57/59/61); every new expression shape must be taught to both stages.
 
-**36. [ASM-WS3-004](findings/WS3-codegen.md) — On the host profile `usize` is 32 bits, so a pointer round trip through `usize` crashes**  
+**36. [ASM-WS3-004](findings/WS3-codegen.md) — On the host profile `usize` is 32 bits, so a pointer round trip through `usize` crashes**\
 Severity Minor · lens host only (the Amiga profiles are 32-bit and pass) · effort M · verified · verdict confirmed (Minor, verified)
 
 host-profile tests of `raw`/`usize` code (allocators, address arithmetic) crash or fail to build although the same code is correct on the target; the host profile exists for fast tests, so its divergence weakens them. No shipped lens is affected.
 
-**37. [ASM-WS3-005](findings/WS3-codegen.md) — Appended runtime code inherits the last `#line`, so its diagnostics and debug lines point into `.clo` files**  
+**37. [ASM-WS3-005](findings/WS3-codegen.md) — Appended runtime code inherits the last `#line`, so its diagnostics and debug lines point into `.clo` files**\
 Severity Minor · lens all (visible on the Amiga profiles, whose shim suffix follows the program) · effort S · verified · verdict confirmed (Minor, verified)
 
 GCC and vbcc diagnostics in runtime code, and `m68k-amigaos-gdb` stepping through it, point at nonexistent `.clo` lines, which misleads a user investigating a build failure (as in ASM-WS3-001) or a crash in the runtime.
 
-**38. [ASM-WS3-006](findings/WS3-codegen.md) — The emitted C depends on how the source path is spelled and embeds absolute paths**  
+**38. [ASM-WS3-006](findings/WS3-codegen.md) — The emitted C depends on how the source path is spelled and embeds absolute paths**\
 Severity Minor · lens all · effort S · verified · verdict confirmed (Minor, verified)
 
 builds driven with absolute paths or from different working directories are not reproducible across machines, and leak host directory names into the C and its debug info.
 
-**39. [ASM-WS5-003](findings/WS5-shims.md) — `setCurrentDir` unlocks the launcher's current-directory lock and never restores it**  
+**39. [ASM-WS5-003](findings/WS5-shims.md) — `setCurrentDir` unlocks the launcher's current-directory lock and never restores it**\
 Severity Minor (Phase 9: was Critical) · lens A500, A1200 shipped · effort S · verified · verdict downgraded Critical→Minor
 
 `setCurrentDir` unlocks the old current-directory lock. Phase 9 showed the locks stay balanced (the CLI's `CD` does the same, and libnix's startup duplicates the Workbench lock), so there is no double release; what remains is that the launching shell's directory changes after the program exits, and `vamos` reports an error at exit.
 
-**40. [ASM-WS5-011](findings/WS5-shims.md) — `FileInfoBlock`s on the stack are not guaranteed longword-aligned**  
+**40. [ASM-WS5-011](findings/WS5-shims.md) — `FileInfoBlock`s on the stack are not guaranteed longword-aligned**\
 Severity Minor (Phase 9: was Major) · lens A500, A1200 shipped · effort S · probable · verdict downgraded Major→Minor
 
 Three DOS helpers keep a `FileInfoBlock` on the stack, which the `Examine` autodoc requires to be longword-aligned. GCC keeps the frames at multiples of four and the block fills the frame, so the misalignment is not shown; the rule is followed by accident, not by construction.
 
-**41. [ASM-WS5-014](findings/WS5-shims.md) — Device buffers are not in chip memory on the 1.3 profile, which pre-V36 trackdisk requires**  
+**41. [ASM-WS5-014](findings/WS5-shims.md) — Device buffers are not in chip memory on the 1.3 profile, which pre-V36 trackdisk requires**\
 Severity Minor · lens A500 with expansion memory (not the stock 512 KB A500 lens, which has only chip RAM) · effort S · probable · verdict confirmed (Minor, probable)
 
 on an A500 with trapdoor or fast RAM, disk reads land in the wrong memory and writes put garbage on the disk (data loss). The stock A500 lens is unaffected, so the severity comes from the shipped lens (Minor); for real 1.3 machines with memory expansion it is a data-loss defect.
 
-**42. [ASM-WS5-015](findings/WS5-shims.md) — Commodity brokers are never activated**  
+**42. [ASM-WS5-015](findings/WS5-shims.md) — Commodity brokers are never activated**\
 Severity Minor (Phase 9: was Major) · lens A1200 shipped · effort S · probable · verdict downgraded Major→Minor
 
 Commodity brokers are created inactive and never activated, and queued messages are not drained at close. The module does not expose the input-event network, so no hotkey depends on it; the broker shows as inactive in Exchange.
 
-**43. [ASM-WS5-019](findings/WS5-shims.md) — Lower-impact shim defects (grouped)**  
+**43. [ASM-WS5-019](findings/WS5-shims.md) — Lower-impact shim defects (grouped)**\
 Severity Minor · lens as listed · effort M · probable · verdict confirmed (Minor)
 
 individually limited (wrong layout or colours, a stuck layer on low memory, an ignored tag, a reply without a result code); none is shown to corrupt memory from the safe surface except *h* (DMA reads freed chip memory until the next `MrgCop`) and *o* (hypothesis).
 
-**44. [ASM-WS5-020](findings/WS5-shims.md) — No Ctrl-C handling in any blocking shim wait**  
+**44. [ASM-WS5-020](findings/WS5-shims.md) — No Ctrl-C handling in any blocking shim wait**\
 Severity Minor · lens A500, A1200 shipped · effort M · probable · verdict confirmed (Minor, probable)
 
 a Clorraine program started from a shell cannot be interrupted with Ctrl-C while it waits for events, a device, a timer, or a worker; the user must close its window or reboot. Owned resources are released only if the program reaches its normal exit.
 
-**45. [ASM-WS5-021](findings/WS5-shims.md) — Host and freestanding shim edges: NULL `memcpy` with zero length, negative lengths, no `memmove`**  
+**45. [ASM-WS5-021](findings/WS5-shims.md) — Host and freestanding shim edges: NULL `memcpy` with zero length, negative lengths, no `memmove`**\
 Severity Minor · lens host; freestanding (provisional profile) · effort S · probable · verdict confirmed (Minor)
 
 latent; no current program is affected.
 
-**46. [ASM-WS6-003](findings/WS6-stdlib.md) — NaN prints as `-nan` on the host and `NaN` on the Amiga profiles**  
+**46. [ASM-WS6-003](findings/WS6-stdlib.md) — NaN prints as `-nan` on the host and `NaN` on the Amiga profiles**\
 Severity Minor · lens host vs. A500/A1200 shipped · effort S · verified · verdict confirmed (Minor)
 
 a host test golden for a NaN result does not match the target; a NaN's sign leaks into text on the host only.
 
-**47. [ASM-WS6-004](findings/WS6-stdlib.md) — 25 public functions, including `std.io`'s writers, have no specification entry**  
+**47. [ASM-WS6-004](findings/WS6-stdlib.md) — 25 public functions, including `std.io`'s writers, have no specification entry**\
 Severity Minor · lens all · effort M · verified · verdict confirmed (Minor)
 
 the appendix is the frozen API oracle; functions outside it have no stated ownership, nullability, or fault behavior to conform to (the `readFile` defect, ASM-WS6-001, sits in such a gap), and changes to them are not spec changes.
 
-**48. [ASM-WS6-005](findings/WS6-stdlib.md) — The appendix's Kickstart minimums and Box signatures drift from the code**  
+**48. [ASM-WS6-005](findings/WS6-stdlib.md) — The appendix's Kickstart minimums and Box signatures drift from the code**\
 Severity Minor · lens A1200 shipped (the 2.0 modules); all (spelling) · effort S · verified · verdict confirmed (Minor)
 
 on a V36 Kickstart 2.0 (early A3000 ROMs) the five modules return null while the appendix says they work; the Box rows teach a parameter spelling the grammar rejects.
 
-**49. [ASM-WS8-001](findings/WS8-test-integrity.md) — The fuzzer cannot generate the constructs where the defects are**  
+**49. [ASM-WS8-001](findings/WS8-test-integrity.md) — The fuzzer cannot generate the constructs where the defects are**\
 Severity Minor · lens all · effort M · verified · verdict confirmed (Minor, verified)
 
 the differential fuzzer guards arithmetic and layout, where few defects were found; the classes that recur (memory safety, invalid C, miscompile) are outside its reach.
 
-**50. [ASM-WS8-002](findings/WS8-test-integrity.md) — Tests and gates assert weaker properties than the behavior they cover**  
+**50. [ASM-WS8-002](findings/WS8-test-integrity.md) — Tests and gates assert weaker properties than the behavior they cover**\
 Severity Minor · lens all; A500/A1200 gates · effort M · verified · verdict confirmed (Minor, verified) with a census correction
 
 Several tests and gates assert a weaker property than the behavior they cover: drop-timing tests check leak-freedom, the fault gate checks the message but not the system state, the A1200 Workbench golden was captured by the defective capture code, and the A600 gate counts colours instead of gadgets. (About 32 spec tests check only a clean sanitizer run; most "sanitizer-only" tests also assert a computed exit code.)
 
-**51. [ASM-WS8-003](findings/WS8-test-integrity.md) — Memory-safety and invalid-C defects recur because drop and emission decisions are made per expression shape, in two stages**  
+**51. [ASM-WS8-003](findings/WS8-test-integrity.md) — Memory-safety and invalid-C defects recur because drop and emission decisions are made per expression shape, in two stages**\
 Severity Minor · lens all · effort XL · verified · verdict confirmed (Minor; counts verified, structure probable), narrowed to causes (2)–(4)
 
 Invalid C, route-specific false accepts, and unsequenced-effect miscompiles recur because emission is composed from strings per shape, semantic checks are attached to particular syntactic routes, and effects are left inside C expressions whose order C leaves unspecified (118, 100, and 51 DEF rows). The fourth cause, the second drop decision in codegen, is ASM-WS2-003.
 
-**52. [ASM-WS8-004](findings/WS8-test-integrity.md) — The Amiga shims never run under a sanitizer, and UBSan covers a third of the ASan suites**  
+**52. [ASM-WS8-004](findings/WS8-test-integrity.md) — The Amiga shims never run under a sanitizer, and UBSan covers a third of the ASan suites**\
 Severity Minor · lens host (sanitizer legs); A500/A1200 (the unsanitized shims) · effort M · verified · verdict confirmed (Minor, verified)
 
 The Amiga shims (10,404 lines) never run under AddressSanitizer or UBSan, and UBSan covers 12 suites against ASan's 38. This gap explains why the 23 WS5 findings were invisible to the existing checks; many of them are OS-protocol errors that no sanitizer would catch, so the remedy is behavioral gates as much as sanitizers.
 
 ### Opportunity
 
-**53. [ASM-WS4-003](findings/WS4-code-quality.md) — The runtime fault writer pulls 16.6 KB of `printf` and soft-float code into every checked program**  
+**53. [ASM-WS4-003](findings/WS4-code-quality.md) — The runtime fault writer pulls 16.6 KB of `printf` and soft-float code into every checked program**\
 Severity Opportunity · lens A500 shipped -O2 (every Amiga lens links the same code) · effort S · verified · verdict confirmed (Opportunity, verified)
 
 on a 512 KB A500 every program that indexes, divides, or converts a float (almost all) carries about 16 KB of formatted-output and long-double code it never uses outside a fault message; the same applies to the equivalent C written with `printf`.
 
-**54. [ASM-WS4-004](findings/WS4-code-quality.md) — A module-level table with a constant initializer occupies RAM twice**  
+**54. [ASM-WS4-004](findings/WS4-code-quality.md) — A module-level table with a constant initializer occupies RAM twice**\
 Severity Opportunity · lens A500 shipped -O2 · effort S · verified · verdict confirmed (Opportunity, verified)
 
 each mutable module table with a constant initializer costs its size twice (the template in the code hunk and the zeroed copy in RAM), which matters for sine tables, palettes, and level data on a 512 KB A500.
 
-**55. [ASM-WS4-005](findings/WS4-code-quality.md) — Every Amiga program links libamiga DOS stubs and `CreatePort` it does not use**  
+**55. [ASM-WS4-005](findings/WS4-code-quality.md) — Every Amiga program links libamiga DOS stubs and `CreatePort` it does not use**\
 Severity Opportunity · lens A500 shipped -O2 · effort M · verified · verdict confirmed (Opportunity, verified), magnitude corrected
 
 Every Amiga program links libamiga DOS stubs and `CreatePort` it does not use: about 440 B of the 776 B fixed `.text` gap of the calibration program over C (Phase 9, `verification/verdicts-9.2.3.md`).
 
-**56. [ASM-WS4-006](findings/WS4-code-quality.md) — `-O3` and `-flto` beat the shipped release flags on the A500**  
+**56. [ASM-WS4-006](findings/WS4-code-quality.md) — `-O3` and `-flto` beat the shipped release flags on the A500**\
 Severity Opportunity · lens A500 (hosted-amiga-13, nix13, -m68000) and the 68020 probe build (labelled) · effort S · verified · verdict confirmed (Opportunity, verified)
 
 users get up to a quarter fewer instructions on string- and container-heavy code with `-O3`, or about 0.5 KB smaller binaries with LTO, without source changes.
 
-**57. [ASM-WS5-022](findings/WS5-shims.md) — Integer formatting divides with libgcc's 32-bit routine on the 68000**  
+**57. [ASM-WS5-022](findings/WS5-shims.md) — Integer formatting divides with libgcc's 32-bit routine on the 68000**\
 Severity Opportunity · lens A500 · effort S · verified · verdict confirmed (Opportunity, verified)
 
 every template placeholder and `toString` of an integer on the 68000 pays for `__udivsi3` per digit; this is most of ASM-WS4-001's `strings` gap.
 
-**58. [ASM-WS7-003](findings/WS7-performance.md) — The 68020 probe build of `container` runs 21% more instructions than the 68000 build**  
+**58. [ASM-WS7-003](findings/WS7-performance.md) — The 68020 probe build of `container` runs 21% more instructions than the 68000 build**\
 Severity Opportunity · lens A1200 68020 probe build (`-m68020`, `vamos -C 68020`) — a 68020 probe build number, not a shipped-profile number · effort S · verified · verdict confirmed (Opportunity, verified)
 
 none on a shipped profile; it would matter if a 68020 variant were added.
