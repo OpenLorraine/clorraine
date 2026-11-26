@@ -26,7 +26,7 @@ use std::time::Duration;
 use super::cli::Options;
 use super::display;
 use super::environment::EnvironmentError;
-use super::platform::HostOs;
+use super::platform::{self, HostOs};
 use super::run::RunResult;
 use crate::diag::DiagnosticFormat;
 
@@ -318,9 +318,12 @@ impl Emulator {
         }
         command.env("TMPDIR", root.join("tmp"));
         // Windows programs find their temporary folder through TEMP and TMP.
+        // They get the plain `C:\...` spelling: a verbatim `\\?\` path stops
+        // working as soon as a library appends a forward-slash component.
         if HostOs::current() == HostOs::Windows {
-            command.env("TEMP", root.join("tmp"));
-            command.env("TMP", root.join("tmp"));
+            let tmp = PathBuf::from(platform::display_path(HostOs::Windows, &root.join("tmp").display().to_string()));
+            command.env("TEMP", &tmp);
+            command.env("TMP", &tmp);
         }
         command
             .stdin(Stdio::null())

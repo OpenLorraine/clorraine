@@ -45,7 +45,10 @@ impl HostOs {
 /// assert_eq!(executable_name(HostOs::Unix, "gcc"), "gcc");
 /// ```
 pub fn executable_name(os: HostOs, base: &str) -> String {
-    let has_suffix = base.len() >= 4 && base[base.len() - 4..].eq_ignore_ascii_case(".exe");
+    // Compared as bytes: the last four bytes of a non-ASCII name need not
+    // start on a character boundary.
+    let bytes = base.as_bytes();
+    let has_suffix = bytes.len() >= 4 && bytes[bytes.len() - 4..].eq_ignore_ascii_case(b".exe");
     if os == HostOs::Windows && !has_suffix {
         format!("{base}.exe")
     } else {
@@ -227,7 +230,8 @@ fn read_u32(bytes: &[u8], at: usize) -> Option<u32> {
 /// Quotes `word` for the host's shell when it is not a plain word.
 ///
 /// Unix uses POSIX single quotes; Windows wraps the word in double quotes,
-/// which both `cmd.exe` and PowerShell accept for a folder name. Control
+/// which `cmd.exe` and PowerShell both accept for a folder name with spaces
+/// (PowerShell still expands `$` and a backtick inside them). Control
 /// characters are made visible first, as in every driver message.
 pub fn shell_word(os: HostOs, word: &str) -> String {
     let plain = !word.is_empty()

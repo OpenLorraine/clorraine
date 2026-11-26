@@ -16,11 +16,12 @@ use super::super::platform::{self, HostOs};
 use super::absolute;
 
 /// The variable that names the user's temporary folder on this host, for
-/// messages about it.
+/// messages about it. Windows reads `TMP` before `TEMP`, so `TMP` is the one
+/// to change.
 fn temp_variable() -> &'static str {
     match HostOs::current() {
         HostOs::Unix => "TMPDIR",
-        HostOs::Windows => "TEMP",
+        HostOs::Windows => "TMP",
     }
 }
 

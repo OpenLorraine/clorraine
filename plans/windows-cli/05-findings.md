@@ -12,3 +12,10 @@
 | RV-003 | 2 | MINOR | compiler/runtime/shim_freestanding.c | fixed |
 | SA-001 | 2 | MINOR | compiler/src/codegen.rs | fixed |
 | EI-001 | 2 | MINOR | vbcc | accepted |
+| RV-001 | 3 | MINOR | compiler/tests/windows_cli_impl_test.rs | fixed |
+| RV-002 | 3 | MINOR | compiler/src/clorraine/setup.rs | fixed |
+| RV-003 | 3 | MINOR | compiler/src/clorraine/docgen.rs | fixed |
+| SA-002 | 3 | MINOR | compiler/src/clorraine/platform.rs | fixed |
+| SR-001 | 3 | MINOR | compiler/src/clorraine/emulator/storage.rs | fixed |
+| SR-002 | 3 | MINOR | compiler/src/clorraine/emulator/mod.rs | fixed |
+| SR-003 | 3 | MINOR | compiler/src/clorraine/platform.rs | accepted |
