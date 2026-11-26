@@ -267,8 +267,8 @@ and a starter project; see [Linux CLI](linux-cli.md).
   is not a Kickstart 1.3 test.
 - **Editor.** The installer installs the VS Code extension from the release; it
   is not in a marketplace yet.
-- **Platforms.** Windows and macOS are on the way; WSL, Remote-WSL, and ARM
-  hosts are not claimed.
+- **Platforms.** Windows is covered in section 17; macOS is on the way; WSL,
+  Remote-WSL, and ARM hosts are not claimed.
 
 ## 16. Hosted-Amiga exit cleanup and Ctrl-C limits
 
@@ -307,3 +307,31 @@ Drops are still skipped on a fault, panic, or break. The limits are:
 - **Nested exits.** When a release itself faults during the exit, libnix runs its exit list again
   and the runtime finishes the remaining releases. This relies on libnix `exit`; the vbcc leg is
   build-only and makes no runtime claim.
+
+## 17. Windows installer (developer preview, next release)
+
+Windows support ships with the first release after v1.2.0. One PowerShell
+script installs the CLI for the current user and, with approval, the rc24
+toolchain, FS-UAE, the VS Code extension, and a starter project; see
+[Windows CLI](windows-cli.md).
+
+- **Host floor.** Windows 11 x64 with Windows PowerShell 5.1 (64-bit). Windows
+  10 prints "untested" and continues; PowerShell 7 is untested; ARM64 and
+  32-bit Windows are refused.
+- **Execution policy.** The installer runs with a one-time, process-scope
+  bypass. A policy set by Group Policy cannot be bypassed, and browser
+  downloads need `Unblock-File`. Clorraine never changes the policy
+  permanently.
+- **Administrator step.** Installing rc24 runs its setup elevated once, into
+  `C:\Program Files\Clorraine`; declining the UAC prompt keeps the CLI.
+- **Host compiler.** PC builds need GCC (w64devkit or MSYS2 UCRT64) or
+  `CLORRAINE_CC`. Clang cannot build debug programs: the emitted C is not yet
+  warning-free under Clang's `-Werror`.
+- **SSH logons.** The rc24 compiler does not start from an SSH logon; run the
+  CLI in the signed-in desktop session.
+- **Interrupted emulator runs.** Ctrl+C during `run --emulator` leaves the
+  FS-UAE window open and the `%TEMP%\clorraine-emulator-*` folder behind.
+- **Paths.** Network-share (UNC) workspaces, paths longer than 260 characters,
+  and a `%TEMP%` path containing a comma are not supported.
+- **Signing.** The binaries and scripts are not code-signed; SmartScreen or
+  Defender may ask before the first run.

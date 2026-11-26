@@ -1,12 +1,13 @@
 ---
 title: Quick start
-description: "Install the Clorraine v1.2.0 developer preview on Linux with one command, create your first Amiga project, and run it in FS-UAE."
+description: "Install the Clorraine developer preview on Linux or Windows with one command, create your first Amiga project, and run it in FS-UAE."
 ---
 
 # Quick start
 
 > **Developer preview.** Clorraine v1.2.0 is a public developer preview for
-> **Linux x86_64**. Expect changes. **Windows and macOS are on the way.**
+> **Linux x86_64**. Expect changes. **Windows 11** support ships with the next
+> release; macOS is on the way.
 
 ## Install on Linux
 
@@ -131,10 +132,26 @@ clorraine run -p hosted-amiga --emulator hello.clo
 `clorraine` emits one C99 translation unit, compiles it, and runs the result.
 Use `clorraine emit hello.clo` to read the generated C.
 
-## Windows and macOS
+## Install on Windows
 
-The v1.2.0 developer preview supports Linux x86_64 only. Installers for Windows
-and macOS are on the way.
+Windows 11 x64 support ships with the first release after v1.2.0. In Windows
+PowerShell (not as administrator):
+
+```powershell
+curl.exe -fsSLo clorraine-install.ps1 https://github.com/OpenLorraine/clorraine/releases/latest/download/install.ps1; powershell -ExecutionPolicy Bypass -File .\clorraine-install.ps1
+```
+
+The installer runs the same five steps for your Windows account. The
+`-ExecutionPolicy Bypass` applies to that one PowerShell process only; never
+change the policy permanently. Installing the rc24 toolchain asks for
+administrator approval once, and declining keeps the CLI installed. PC builds
+need GCC ([w64devkit](https://github.com/skeeto/w64devkit) or MSYS2 UCRT64).
+The [Windows CLI guide](https://github.com/OpenLorraine/clorraine/blob/main/docs/windows-cli.md)
+covers verification, paths, and removal.
+
+## macOS
+
+An installer for macOS is on the way.
 
 ## If something fails
 

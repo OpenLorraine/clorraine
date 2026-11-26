@@ -9,8 +9,8 @@ description: "What works in Clorraine today, what is still in progress, and how 
 
 Clorraine is a **developer preview**. The v1.2.0 developer preview installs on
 **Linux x86_64** with [one command](/guide/quick-start). The compiler core is
-usable for the supported language and the tracked Amiga SDK surface. Windows and
-macOS are on the way.
+usable for the supported language and the tracked Amiga SDK surface. Windows 11
+support ships with the next release; macOS is on the way.
 
 This page records the state of each area and the evidence behind it. If a
 statement here disagrees with a release note, the release note wins.
@@ -29,7 +29,8 @@ statement here disagrees with a release note, the release note wins.
 | Linux x86_64 installer | <StatusBadge state="preview" label="Developer preview" /> | [One-line install](/guide/quick-start): CLI, rc24 toolchain, FS-UAE run, and a starter project; `v1.2.0` prerelease |
 | Language server | <StatusBadge state="ready" label="Installed" /> | `clorraine-lsp`, installed by the Linux installer |
 | VS Code extension | <StatusBadge state="preview" label="Developer preview" /> | Installed by the Linux installer from the release; Run in FS-UAE button; not in a marketplace yet |
-| Windows and macOS | <StatusBadge state="planned" label="On the way" /> | Linux x86_64 is the only supported platform in v1.2.0 |
+| Windows 11 x64 installer | <StatusBadge state="preview" label="Next release" /> | [PowerShell install](/guide/quick-start#install-on-windows): CLI, rc24 toolchain, FS-UAE, and a starter project; not in v1.2.0 |
+| macOS | <StatusBadge state="planned" label="On the way" /> | Linux x86_64 is the only supported platform in v1.2.0 |
 | Documentation site | <StatusBadge state="ready" label="Published" /> | [openlorraine.github.io/clorraine](https://openlorraine.github.io/clorraine/) |
 | First Light demo | <StatusBadge state="ready" label="Live" /> | [Runs in Copperline](/examples/first-light) |
 | Prism demo | <StatusBadge state="ready" label="Live" /> | [Runs in Copperline](/examples/prism) |
@@ -66,8 +67,8 @@ The detailed list is on the [verification page](/project/verification).
 
 ## What is not ready
 
-- **Platform scope.** v1.2.0 supports Linux x86_64 only. Windows and macOS are on
-  the way; WSL2 and Remote-WSL are not claimed.
+- **Platform scope.** v1.2.0 supports Linux x86_64 only. Windows 11 support ships
+  with the next release; macOS is on the way; WSL2 and Remote-WSL are not claimed.
 - **A marketplace editor extension.** The Linux installer installs the VS Code
   extension from the release; it is not in a marketplace yet.
 - **Broad platform testing.** The host CI runner is Linux. Amiga legs need the

@@ -2,7 +2,8 @@
 
 Clorraine v1.2.0 is a public **developer preview** for **Linux x86_64**. One
 command installs the CLI, the Amiga toolchain, the VS Code extension, and a
-starter project. Windows and macOS are on the way.
+starter project. Windows has its own [guide](windows-cli.md); macOS is on the
+way.
 
 ## Install
 
@@ -135,8 +136,8 @@ and the CLI config.
 
 ## Limits
 
-- Linux x86_64 only. Windows and macOS are on the way; WSL2, Remote-WSL, and
-  ARM hosts are not claimed.
+- Linux x86_64 only on Linux; see [Windows CLI](windows-cli.md) for Windows.
+  macOS is on the way; WSL2, Remote-WSL, and ARM hosts are not claimed.
 - The VS Code extension is not in a marketplace yet.
 - The full list is in [known limitations](known-limitations.md).
 
