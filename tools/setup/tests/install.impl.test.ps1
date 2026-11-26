@@ -484,6 +484,49 @@ Test-Case 'should stop before downloading when the admin folder path has a space
     Assert-That ($message -match 'contains a space') "message: $message"
 }
 
+Test-Case 'should check a folder another account creates between the lookup and the create' {
+    $dir = New-Dir 'elevate-race'
+    $admin = Join-Path $dir 'Clorraine'
+    $setup = Join-Path $dir 'never.exe'
+    [IO.File]::WriteAllText($setup, 'not run')
+    $script:RaceLookups = 0
+    $code = & {
+        # The first lookup of the admin folder reports it missing; right then
+        # another account makes it with a rule that lets everyone change it.
+        function Get-Item {
+            param([string]$LiteralPath, [switch]$Force, $ErrorAction)
+            if ($LiteralPath -eq $admin -and $script:RaceLookups -eq 0) {
+                $script:RaceLookups++
+                [void][IO.Directory]::CreateDirectory($admin)
+                $acl = Microsoft.PowerShell.Security\Get-Acl -LiteralPath $admin
+                $everyone = New-Object System.Security.Principal.SecurityIdentifier 'S-1-1-0'
+                $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule($everyone, 'Modify', 'ContainerInherit, ObjectInherit', 'None', 'Allow')))
+                Microsoft.PowerShell.Security\Set-Acl -LiteralPath $admin -AclObject $acl
+                return $null
+            }
+            Microsoft.PowerShell.Management\Get-Item -LiteralPath $LiteralPath -Force:$Force -ErrorAction SilentlyContinue
+        }
+        Invoke-ElevatedStaging -Source $setup -Bytes (Get-Item $setup).Length -Sha256 ('0' * 64) -AdminRoot $admin
+    }
+    Assert-That ($script:RaceLookups -eq 1) 'the race hook did not run'
+    Assert-That ($code -eq 103) "a folder made in the gap was used: exit $code"
+    Assert-That (@(Get-ChildItem -LiteralPath $admin -Force).Count -eq 0) 'the setup was staged in the foreign folder'
+}
+
+Test-Case 'should offer to reinstall a registered rc24 whose folder has a space' {
+    $root = New-Dir 'space-registration'
+    $result = & {
+        function Get-Rc24Registration { [pscustomobject]@{ DisplayVersion = '16.2-rc24'; InstallLocation = 'C:\Program Files\Clorraine\amiga-gcc-16.2-rc24\' } }
+        function Install-Rc24([string]$Root) { 'reinstalled' }
+        $kept = $null; $stop = $null
+        try { $kept = Select-Toolchain $root @{} $false } catch { $stop = $_.Exception.Message }
+        $replaced = Select-Toolchain $root @{ ReplaceToolchain = $true } $false
+        [pscustomobject]@{ Stop = $stop; Kept = $kept; Replaced = $replaced }
+    }
+    Assert-That ($null -eq $result.Kept -and $result.Stop -match 'uninstall amiga-gcc') "without a flag: kept=$($result.Kept) stop=$($result.Stop)"
+    Assert-That ($result.Replaced -eq 'reinstalled') "with -ReplaceToolchain: $($result.Replaced)"
+}
+
 Test-Case 'should refuse an admin folder that is a link, a file, foreign-owned, or changeable by others' {
     $dir = New-Dir 'elevate-untrusted'
     $setup = Join-Path $dir 'never.exe'
