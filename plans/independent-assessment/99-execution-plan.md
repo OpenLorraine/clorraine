@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-26 02:51
-> **Progress**: 81/95 tasks (85%)
+> **Last Updated**: 2026-11-26 03:02
+> **Progress**: 82/95 tasks (86%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -376,7 +376,7 @@ this plan's folder and the roadmap; 03-01 §Ground rules)
 
 ### Step 9.2: Verification
 
-- [ ] 9.2.1 Verify WS0, WS1, and WS6 findings and the WS1/WS6 clean samples in a fresh read-only `general` session; record verdicts with the verifier session in the workstream files
+- [x] 9.2.1 Verify WS0, WS1, and WS6 findings and the WS1/WS6 clean samples in a fresh read-only `general` session; record verdicts with the verifier session in the workstream files ✅ (completed: 2026-11-26 03:02)
 - [x] 9.2.2 Verify WS2 findings and its clean sample in a fresh session ✅ (completed: 2026-11-26 02:16)
 - [x] 9.2.3 Verify WS3 and WS4 findings and their clean samples in a fresh session ✅ (completed: 2026-11-26 02:51)
 - [x] 9.2.4 Verify WS5 findings and its clean sample in a fresh session ✅ (completed: 2026-11-26 02:43)

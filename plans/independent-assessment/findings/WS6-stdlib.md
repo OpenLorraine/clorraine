@@ -65,7 +65,7 @@ records `records/WS6-results.json`, `WS6-contrast.json`, `WS6-runs.log`).
 - **Effort**: S
 - **Related**: SQ-WS6-2 (the §4 carrier); ASM-WS6-004 (`std.io` has no appendix table)
 - **Self-refutation (6.3.1)**: no limitation or DEF row covers it; the doc comment acknowledges ambiguity but promises a "zero or less" signal that the code never produces for errors. Major (missing failure path).
-- **Verdict**: _(Phase 9)_
+- **Verdict**: confirmed (Major) — verifier ses_dea9a6131ffesU3qOxzrQQoINm (9.2.1): probe 617 reproduces on all four host lines; the Amiga lens is the same `fread` path (code reading).
 
 ### ASM-WS6-002 — `slice` of a `str` is rejected, although the appendix gives it the same view type
 
@@ -82,7 +82,7 @@ records `records/WS6-results.json`, `WS6-contrast.json`, `WS6-runs.log`).
 - **Effort**: M
 - **Related**: SQ-WS6-3 (`toCString` of a sub-view); ASM-WS1-003 (the earlier spec-vs-implementation gap class)
 - **Self-refutation (6.3.1)**: not listed in `docs/known-limitations.md`; the appendix row is explicit. Major (a wrongly rejected valid program).
-- **Verdict**: _(Phase 9)_
+- **Verdict**: confirmed (Major) — verifier ses_dea9a6131ffesU3qOxzrQQoINm (9.2.1): E10200 on all three profiles; no safe route to a `str` sub-view exists.
 
 ### ASM-WS6-003 — NaN prints as `-nan` on the host and `NaN` on the Amiga profiles
 
@@ -99,7 +99,7 @@ records `records/WS6-results.json`, `WS6-contrast.json`, `WS6-runs.log`).
 - **Effort**: S
 - **Related**: SQ-WS6-1
 - **Self-refutation (6.3.1)**: the spec does not name a spelling, so the defect is the divergence, not either spelling. Minor.
-- **Verdict**: _(Phase 9)_
+- **Verdict**: confirmed (Minor) — verifier ses_dea9a6131ffesU3qOxzrQQoINm (9.2.1): `-nan` on host, `NaN` on both Amiga profiles; finite values agree.
 
 ### ASM-WS6-004 — 25 public functions, including `std.io`'s writers, have no specification entry
 
@@ -116,7 +116,7 @@ records `records/WS6-results.json`, `WS6-contrast.json`, `WS6-runs.log`).
 - **Effort**: M
 - **Related**: ASM-WS6-001
 - **Self-refutation (6.3.1)**: maintainability and documentation debt, no behavior defect by itself. Minor.
-- **Verdict**: _(Phase 9)_
+- **Verdict**: confirmed (Minor) — verifier ses_dea9a6131ffesU3qOxzrQQoINm (9.2.1): all 25 names absent from `spec/*.md`.
 
 ### ASM-WS6-005 — The appendix's Kickstart minimums and Box signatures drift from the code
 
@@ -133,7 +133,7 @@ records `records/WS6-results.json`, `WS6-contrast.json`, `WS6-runs.log`).
 - **Effort**: S
 - **Related**: ASM-WS5-019 f (V38/V44 tags behind V37 opens)
 - **Self-refutation (6.3.1)**: V36 machines are rare; documentation precision only. Minor.
-- **Verdict**: _(Phase 9)_
+- **Verdict**: confirmed (Minor) — verifier ses_dea9a6131ffesU3qOxzrQQoINm (9.2.1): the appendix's own `asl … 2.0 (save mode 2.04)` row shows "2.0" means V36; the Box rows contradict grammar line 86.
 
 ## Spec questions
 

@@ -1,0 +1,50 @@
+<!-- Verifier report for packet 9.2.1, session ses_dea9a6131ffesU3qOxzrQQoINm, copied verbatim from build/tmp/assessment/verify/9.2.1.md -->
+# Verification 9.2.1 — WS0, WS1, WS6
+
+Verifier: independent session (read-only). Baseline `e24a8752`; pinned `build/tmp/assessment/baseline/clc`.
+Drift check `drift-check.sh plans/independent-assessment e24a8752…` → PASS before the
+reproductions (HEAD 31f1bc07) and again after them (HEAD 0a332012; other sessions committed only
+under the assessment folder in the meantime). Scratch output is under `build/tmp/assessment/verify/`
+(`ws1a`, `ws1b`, `ws1c`, `ws6a`, `robust*`, `lit/`, `perf/`, `scaling*`, `*.log`).
+
+Lenses: `.opencode/agents/semantics-reviewer.md` (evaluation order, diagnostics shape, the frozen
+oracle) and `.opencode/agents/correctness-reviewer.md` (blast radius, test integrity).
+
+## Findings
+
+| ID | verdict | reason (one line) | what you re-ran and observed |
+|----|---------|-------------------|------------------------------|
+| ASM-WS0-001 | confirmed | A documented gate fails on a clean tree with the same byte counts as the 2026-11-15 record. Nothing exempts `lookup`, and `bench-flags` is outside `check`/`verify`, so no shipped program is affected; Minor is right. | `flag_audit.main(["run","--clc",<pinned>,"--check",…])` through `build/tmp/assessment/verify/rerun.py`, with `bench.BUILD` redirected under `verify/perf` so `build/perf` is not touched. The floors check prints `host/lookup: host binary 30912 > 34880 * 85%` (88.6%); `.text` 24172→19459 (−19.5%), file −11.4%; the constructors check passes. The `repeat` check also failed, but only because another session committed during the run (`clc.git` b806bb90 ≠ 0a332012); that is an artifact of the run. Nit on the root-cause text: the 16 KB table is counted in the Berkeley "text" figure (read-only template), and `bss` 16448 is equal in both builds. |
+| ASM-WS1-001 | confirmed | spec LEX-14/LEX-15/TY-15 make `let a = 2147483648;` E10202; `check_int` (`sema/expr.rs:690-707`) checks the fit only when a context type exists. Major holds: the program is invalid, so this is a missing diagnostic with a silent wrap, not a miscompile of a valid program. C99 6.3.1.3p3 makes the conversion implementation-defined, not UB. | probe.py `--only 002`: rc=0 on host, hosted-amiga, and hosted-amiga-13 (expected E10202). Follow-up `verify/lit/lit2.clo`: C `a = 2147483648u; c = 4294967296u;`; the strict host build fails with `-Werror=overflow` on `c`; the release binary prints `-2147483648 0`. |
+| ASM-WS1-002 | confirmed | spec/04 §3 fixes argument order left to right. The emitted `cl_Probe_Main_pair(cl_Probe_Main_next(), cl_Probe_Main_next())` leaves the order to C (unspecified), and GCC evaluates right to left on every profile. This is a silent miscompile of a valid program, so Critical. The pins in `own/call.rs:409-428` and `:565-575` fire only for `contains_update` or a later statement fill. No spec text, known limitation, or plan accepts this order; DEF-278 fixed only the owning-argument shape. | probe.py `--only 021 066`, host, hosted-amiga, and hosted-amiga-13, debug and release: `2 1` (want `1 2`) and `321` (want `123`). Struct fields, array elements, operator chains, `<`, templates, and assignment target-then-value all matched the spec. Emitted C confirmed in `verify/lit/eo.c:836`; the operator line `:840` is `(u32)next() - (u32)next()`, whose operand order is also unspecified in C. |
+| ASM-WS1-003 | confirmed | Data inclusion is staged out by a user ruling (MVP AR-10/AR-12; closeout AR-23). The defect is the undocumented limitation plus the diagnostic shape. AR-12 promised `embed` "out (E90000)", but the implementation reports E10224/E10213, and a local `const` gets E10213 "only allowed in a constant context". `docs/known-limitations.md` has no `embed` entry; `compile_fail_spec_test.rs:49` excludes E10214. Minor is right. | probe.py `--only 058…064` on all three profiles: 058 → E10224; 059, 060, and 062 → E10213 (E10214 expected); 061 and 064 → E10213; 063 → E10213 as expected. `grep -i embed docs/known-limitations.md` finds nothing. |
+| ASM-WS1-004 | confirmed | A `clc` abort on any input is Critical under §Severity. `compiler/src` has no `stack_size` or depth guard (grep: only `lsp/server.rs:59` spawns a reader thread), and spec/14 states no nesting limit. | `verify/robust.py` (the committed 065 cases, 300 s per case): parens-10k/100k, blocks-10k, unary-100k, addchain-100k, ifchain-5k, and calls-10k all end with `rc=-6` and `overflowed its stack`. Threshold check: 700 nested calls pass, 800 overflow; a 1,100-term `+` chain passes, 1,250 overflows. This matches the author's bisection (758 and 1,172). |
+| ASM-WS1-005 | confirmed | spec/06 G-7 and spec/07 STR-24 cap instantiation recursion (E10305) and do not exempt explicit type arguments. `is_recursive_instantiation` (`sema/call.rs:957`) skips the explicit path on purpose ("may terminate"), and monomorphization has no backstop. A `clc` hang is Critical. | `generic-recursion` (288 B): `rc=TIMEOUT` at a 120 s bound. The identical program with an inferred call `g(w, n - 1)` → E10305 in 0.0 s, the expected contrast. |
+| ASM-WS6-001 | confirmed | The shim `Read` is plain `fread` on both host and hosted-amiga (`shim_host.c:645-648`, `shim_hosted_amiga.c:1259-1262`) and never returns a negative value. The `readFile` doc comment ("zero or less means … an error") therefore cannot be acted on, and appendix-stdlib §4 requires partial IO to carry a status. This is a missing failure path in a shim, so Major. | probe.py WS6 `--sanitize --only 617`: host debug, release, ASan, and UBSan all print `true false` (want `true true`). The directory open succeeded (otherwise `readOnce` returns −100 and the result would differ) and the read returned 0, the same as a clean EOF. The Amiga lens rests on code reading of the same `fread` path. |
+| ASM-WS6-002 | confirmed | appendix-stdlib §11 (the `str` helpers table) gives `slice(view, lo, hi)` as "view → same view type", and spec/08 classes `str` as an immutable view. `std.mem.clo:40` declares only `T[]`. The only other route (`rawStr`) needs raw pointers in application code, which X6 forbids, so a valid program is rejected: Major. (§2's `u8[]` row covers Buffer views and does not contradict §11.) | probe.py WS6 `--only 612`: `E10200 cannot convert '?[]' to 'str'` on host, hosted-amiga, and hosted-amiga-13. |
+| ASM-WS6-003 | confirmed | The spec fixes six significant digits (S2a, spec/04 line 288) but no NaN spelling, and every other value prints the same on all profiles, so this is a low-impact host-vs-target divergence: Minor. | probe.py WS6 `--sanitize --only 611`: host debug, release, ASan, and UBSan print `-nan inf -inf`; hosted-amiga and hosted-amiga-13 debug and release print `NaN inf -inf`; the finite line matches everywhere. Both shims format with `snprintf("%g")`. |
+| ASM-WS6-004 | confirmed | The measurement reproduces exactly; this is documentation and oracle debt: Minor. | Shell loop: for each of the 25 names, `grep -lw <name> spec/*.md` → 0 files, and each is `export func` in the stated module. `std.io` has no appendix-stdlib section (its only mention is a passing reference at line 422, in §13). |
+| ASM-WS6-005 | confirmed | The appendix's own row `asl … 2.0 (save mode 2.04)` shows that "2.0" means pre-2.04 (V36), yet utility, gadtools, asl, regions, and commodities open at V37 (`_optional.c:28`, `:911/:914`, `_optional_ui.c:38/:46`, `_optional_services.c:76`). The Box rows at `appendix-stdlib.md:88-92` spell `value: take T`, which contradicts grammar line 86 and the appendix's own §1 convention ("mode first"), while `std.mem.clo:75-91` uses `take value: T`. Minor (spec text). | Read `spec/appendix-amiga.md:233-252`, grepped the shim `OpenLibrary` versions, and read `spec/grammar.ebnf.md:86-87` and `stdlib/std.mem.clo:73-91`. |
+
+## Sampled clean outcomes
+
+| ID | verdict | reason / re-run |
+|----|---------|-----------------|
+| WS1-05 | confirmed | probe.py `--only 039…047`: all 45 checks pass on host, hosted-amiga, and hosted-amiga-13, debug and release (wrap/shift differentials; i8 and i16 MIN/−1 → E11210; constant div0 and MIN/−1 → E10223; constant float→int → E10202; run-time float→u8 → E11212). |
+| WS1-07 | confirmed | probe.py `--only 050 051 052`: all pass with `-Wall -Wextra -Werror` and release. `--contrast`: all three seeded builds fail with `conflicting types for 'strlen'`, so the detector works. (The amended seed is legitimate: redeclaring a `cl_*` shim name is already E11101 in `clc`.) Independent count: 419 stdlib `ffi` functions; the only non-`cl_*` names are `std.io` Open, Close, Read, and Write plus `std.mem` FreeBuffer, as claimed. |
+| WS6-03 | confirmed | `620-scaling.py` (A500 lens): seven workloads pass with ratios of 1.98–2.03 and the same marginals (22.7, 10.1, 10.1, 711.4, 318.2, 18.1, 10.1). The seeded detector timed out under the default 300 s trace limit on a loaded host (load average ≈ 21). Re-run with the trace timeout at 1,500 s through the wrapper: `seeded-quadratic` ratio 4.00, so the detector fires. |
+| WS6-07 | confirmed | `670-embedding.py`: 43 embedded modules, 43 files, 20 on 1.3, 0 reports. `--seed` reports `no-shim std.amiga.dos cl_dos_seeded_missing`. The nine `unused-shim` lines are a review list, not failures. |
+
+## Merges
+
+None. Checked against the other workstreams' headings:
+- ASM-WS1-004 and ASM-WS1-005 have distinct root causes: recursion depth on the main-thread stack versus the missing E10305 check on the explicit path.
+- ASM-WS6-001 and ASM-WS6-004 are related but distinct: `readFile` is mentioned in spec chapters, so it is not in WS6-004's list.
+- ASM-WS0-001 is a gate-specific instance; ASM-WS8-002 covers the general class and is not a duplicate.
+
+## New findings
+
+None raised. Observed but already covered or documented:
+- `locals-50k` took 151.9 s of compile time (WS7-002 territory).
+- A 100k-element module `const` array is E10224 (documented in `docs/known-limitations.md:230`).
+- A local `const … = embed(…)` gets the self-contradictory E10213 message (part of ASM-WS1-003's evidence).
