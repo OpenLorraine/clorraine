@@ -6,9 +6,10 @@
 #       earlier copy. Kickstart ROMs and ROM keys are refused: they stay on the
 #       machine that owns them.
 #   tools/setup/windows-remote.sh run HOST [--timeout SECONDS] -- COMMAND...
-#       Run COMMAND as one cmd.exe line in the signed-in desktop session of
-#       HOST (working directory %USERPROFILE%\clorraine-remote), print its
-#       output, and exit with its exit code (124 on timeout).
+#       Run COMMAND as one line of a batch file in the signed-in desktop
+#       session of HOST (working directory %USERPROFILE%\clorraine-remote),
+#       print its output, and exit with its exit code (124 on timeout). Batch
+#       rules apply: write %% for a literal % or a loop variable; ASCII only.
 #
 # HOST is an ssh destination whose login shell is Windows PowerShell, with
 # key-based authentication. This helper is a convenience for development and
@@ -19,7 +20,7 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ssh_opts=(-o BatchMode=yes -o WarnWeakCrypto=no -o ConnectTimeout=15)
 
 usage() {
-    sed -n '4,11p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' >&2
+    sed -n '4,12p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' >&2
     exit 2
 }
 
@@ -32,21 +33,26 @@ remote() {
 
 push() {
     [ $# -eq 2 ] || usage
-    local host="$1" dir="${2%/}" name
-    [ -d "$dir" ] || { echo "windows-remote: no directory $dir" >&2; exit 2; }
+    local host="$1" dir name
+    [ -d "$2" ] || { echo "windows-remote: no directory $2" >&2; exit 2; }
+    # Resolve `.`, `..`, and trailing slashes first, so the name is the real
+    # folder name and never one that points above clorraine-remote.
+    dir="$(cd "$2" && pwd)"
     name="$(basename "$dir")"
-    # The name becomes part of a remote command line, so only plain names pass.
-    [[ "$name" =~ ^[A-Za-z0-9._-]+$ ]] || {
-        echo "windows-remote: the directory name '$name' must use only letters, digits, '.', '_', '-'" >&2
+    # The name becomes part of a remote command line, so only plain names pass;
+    # a leading '.' or '-' is refused as well.
+    [[ "$name" =~ ^[A-Za-z0-9_][A-Za-z0-9._-]*$ ]] || {
+        echo "windows-remote: the directory name '$name' must start with a letter, digit, or '_' and use only letters, digits, '.', '_', '-'" >&2
         exit 2
     }
-    if find "$dir" -type f \( -iname '*.rom' -o -iname 'rom.key' \) | grep -q .; then
+    # scp follows symbolic links, so the search does too.
+    if [ -n "$(find -L "$dir" \( -iname '*.rom' -o -iname 'rom.key' \) -print -quit)" ]; then
         echo "windows-remote: refusing to copy Kickstart ROMs or ROM keys from $dir" >&2
         exit 2
     fi
     # rmdir /s removes a junction without following it into its target.
     remote "$host" "New-Item -ItemType Directory -Force -Path clorraine-remote | Out-Null; cmd /c 'if exist clorraine-remote\\$name rmdir /s /q clorraine-remote\\$name'"
-    scp -q -r "${ssh_opts[@]}" "$dir" "$host:clorraine-remote/$name"
+    scp -q -r "${ssh_opts[@]}" -- "$dir" "$host:clorraine-remote/$name"
     echo "windows-remote: copied $dir to $host:%USERPROFILE%\\clorraine-remote\\$name"
 }
 
