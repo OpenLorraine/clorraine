@@ -2,7 +2,9 @@
 
 The acceptance run writes a JSON record beside the raw output. This module checks
 the record against the exact candidate files and the repository's expected
-corpus bytes. It never downloads, builds, or runs anything. It proves the
+corpus bytes. Records are platform-keyed: a shared core plus the facts Linux
+(glibc) or Windows (build, rc24 setup, FS-UAE source, PC hello, standard
+account, in-person confirmations) adds. The version is the candidate's. It never downloads, builds, or runs anything. It proves the
 record's format and the candidate/corpus bytes, not that the recorded run
 happened; retain the raw acceptance directory and treat publication as a
 separate approval.
@@ -18,9 +20,7 @@ import sys
 from pathlib import Path
 
 HELLO = "Hello, Amiga, from Clorraine!"
-VERSION = "1.2.0"
-ARCHIVE_NAME = f"clorraine-{VERSION}-x86_64-linux.tar.gz"
-VSIX_NAME = f"clorraine-{VERSION}.vsix"
+ARCHIVE_PATTERN = re.compile(r"clorraine-(.+)-x86_64-(?:linux\.tar\.gz|windows\.zip)")
 CORPUS = [
     ("file-copier", "hosted-amiga"),
     ("string-parser", "hosted-amiga"),
@@ -29,20 +29,37 @@ CORPUS = [
     ("file-copier", "hosted-amiga-13"),
 ]
 TOOLCHAIN_TAG = "v16.2-rc24"
-TOOLCHAIN_BYTES = 69_868_548
-TOOLCHAIN_SHA256 = "b93b070ac47d2f01d126f57c03a8405f71fb470c8397b0bda51041217d25c100"
+# The rc24 pin per platform: the Linux archive and the Windows setup.
+TOOLCHAIN_PINS = {
+    "linux": (69_868_548, "b93b070ac47d2f01d126f57c03a8405f71fb470c8397b0bda51041217d25c100",
+              "the pinned rc24 archive"),
+    "windows": (48_065_003, "9dd6973539bb2d514fc1b1e6c0a107cac6f30a9c4076cf4014cbe13013c95512",
+                "the pinned rc24 Windows setup"),
+}
+FS_UAE_ZIP_BYTES = 49_123_213
+FS_UAE_ZIP_SHA256 = "b402e2802d518a085c878be96c5c0a656fa3dec57dcf0019d226f3285069063e"
 MINIMUM_GLIBC = (2, 38)
 MINIMUM_FS_UAE = (3, 2, 0)
+MINIMUM_WINDOWS_BUILD = 22_000
 HASH = re.compile(r"[0-9a-f]{64}")
 
-TOP_KEYS = {
-    "version", "platform", "architecture", "glibc", "archive", "installer",
+CORE_KEYS = {
+    "version", "platform", "architecture", "archive", "installer",
     "vsix", "toolchain", "kickstart", "fs_uae", "guest", "negative", "corpus",
     "timestamp",
 }
+TOP_KEYS = {
+    "linux": CORE_KEYS | {"glibc"},
+    "windows": CORE_KEYS | {"os_build", "host_hello", "existing_registration",
+                            "standard_account", "manual"},
+}
+ARCHIVE_SUFFIX = {"linux": "x86_64-linux.tar.gz", "windows": "x86_64-windows.zip"}
+INSTALLER_NAME = {"linux": "install.sh", "windows": "install.ps1"}
 ARCHIVE_KEYS = {"name", "sha256", "bytes"}
 VSIX_KEYS = ARCHIVE_KEYS
-INSTALLER_KEYS = {"sha256"}
+INSTALLER_KEYS = {"linux": {"sha256"}, "windows": {"name", "sha256"}}
+HOST_HELLO_KEYS = {"compiler", "result"}
+MANUAL_KEYS = {"uac_prompt_seen", "editor_build_run"}
 TOOLCHAIN_KEYS = {"tag", "sha256", "bytes"}
 KICKSTART_KEYS = {"name", "sha256"}
 GUEST_KEYS = {"status", "rc", "output", "output_sha256"}
@@ -115,10 +132,24 @@ def _candidate_file(candidate: Path, name: str, context: str) -> Path:
     return path
 
 
-def _check_candidate_archive(record: dict, candidate: Path, key: str) -> None:
-    entry = _keys(record[key], ARCHIVE_KEYS if key != "installer" else INSTALLER_KEYS,
-                  key)
-    name = _basename(entry["name"], f"{key}.name") if "name" in entry else "install.sh"
+def candidate_version(candidate: Path) -> str:
+    """The one version named by the candidate's Linux and Windows archives."""
+    versions = set()
+    if candidate.is_dir():
+        for path in candidate.iterdir():
+            match = ARCHIVE_PATTERN.fullmatch(path.name)
+            if match:
+                versions.add(match.group(1))
+    _require(len(versions) == 1,
+             f"version: the candidate must name exactly one archive version, found {sorted(versions)}")
+    return versions.pop()
+
+
+def _check_candidate_archive(record: dict, candidate: Path, key: str, platform: str) -> None:
+    keys = INSTALLER_KEYS[platform] if key == "installer" else ARCHIVE_KEYS
+    entry = _keys(record[key], keys, key)
+    name = (_basename(entry["name"], f"{key}.name") if "name" in entry
+            else INSTALLER_NAME[platform])
     path = _candidate_file(candidate, name, key)
     if "bytes" in entry:
         _require(path.stat().st_size == _integer(entry["bytes"], f"{key}.bytes"),
@@ -136,24 +167,65 @@ def _check_glibc(value: object) -> None:
     _require(version >= MINIMUM_GLIBC, f"glibc {text} is below 2.38")
 
 
-def _check_fs_uae(value: object) -> None:
-    text = _text(value, "fs_uae")
+def _check_fs_uae_version(value: object, context: str) -> None:
+    text = _text(value, context)
     match = re.match(r"(\d+)\.(\d+)(?:\.(\d+))?", text)
-    _require(match is not None, f"fs_uae has no version: {text!r}")
+    _require(match is not None, f"{context} has no version: {text!r}")
     assert match is not None
     version = (int(match.group(1)), int(match.group(2)),
                int(match.group(3) or 0))
     _require(version >= MINIMUM_FS_UAE, f"FS-UAE {text} is older than 3.2.0")
 
 
-def _check_toolchain(value: object) -> None:
+def _check_fs_uae(value: object) -> None:
+    _check_fs_uae_version(value, "fs_uae")
+
+
+def _check_windows_fs_uae(value: object) -> None:
+    """A Windows record says whether the installer downloaded FS-UAE (then
+    with the pinned zip) or used one the person already had."""
+    _require(isinstance(value, dict), "fs_uae must be an object")
+    assert isinstance(value, dict)
+    source = value.get("source")
+    _require(source in {"downloaded", "existing"},
+             "fs_uae.source must be downloaded or existing")
+    keys = {"version", "source"} | ({"sha256", "bytes"} if source == "downloaded" else set())
+    entry = _keys(value, keys, "fs_uae")
+    _check_fs_uae_version(entry["version"], "fs_uae.version")
+    if source == "downloaded":
+        _require(_integer(entry["bytes"], "fs_uae.bytes") == FS_UAE_ZIP_BYTES,
+                 f"fs_uae download must be {FS_UAE_ZIP_BYTES} bytes")
+        _require(_digest(entry["sha256"], "fs_uae.sha256") == FS_UAE_ZIP_SHA256,
+                 "fs_uae SHA-256 does not match the pinned FS-UAE zip")
+
+
+def _check_toolchain(value: object, platform: str) -> None:
+    size, sha256, label = TOOLCHAIN_PINS[platform]
     entry = _keys(value, TOOLCHAIN_KEYS, "toolchain")
     _require(_text(entry["tag"], "toolchain.tag") == TOOLCHAIN_TAG,
              f"toolchain tag must be {TOOLCHAIN_TAG}")
-    _require(_integer(entry["bytes"], "toolchain.bytes") == TOOLCHAIN_BYTES,
-             f"toolchain must be {TOOLCHAIN_BYTES} bytes")
-    _require(_digest(entry["sha256"], "toolchain.sha256") == TOOLCHAIN_SHA256,
-             "toolchain SHA-256 does not match the pinned rc24 archive")
+    _require(_integer(entry["bytes"], "toolchain.bytes") == size,
+             f"toolchain must be {size} bytes")
+    _require(_digest(entry["sha256"], "toolchain.sha256") == sha256,
+             f"toolchain SHA-256 does not match {label}")
+
+
+def _check_windows_facts(entry: dict) -> None:
+    """The Windows-only facts: build, PC hello, account, and confirmations."""
+    build = _integer(entry["os_build"], "os_build")
+    _require(build >= MINIMUM_WINDOWS_BUILD,
+             f"os_build {build} is older than Windows 11 ({MINIMUM_WINDOWS_BUILD})")
+    hello = _keys(entry["host_hello"], HOST_HELLO_KEYS, "host_hello")
+    _text(hello["compiler"], "host_hello.compiler")
+    _require(_text(hello["result"], "host_hello.result") == "ok",
+             "host_hello.result must be ok")
+    _require(entry["existing_registration"] == "reused",
+             "existing_registration must be reused")
+    _require(entry["standard_account"] == "installed",
+             "standard_account must be installed")
+    manual = _keys(entry["manual"], MANUAL_KEYS, "manual")
+    for key in sorted(MANUAL_KEYS):
+        _require(manual[key] is True, f"manual.{key} must be true")
 
 
 def _check_guest(value: object) -> None:
@@ -203,26 +275,40 @@ def check(record: object, candidate: Path, repo: Path | None = None) -> None:
     """Raises AcceptanceError unless the record proves the expected run."""
     repo = repo or Path(__file__).resolve().parents[2]
     candidate = Path(candidate)
-    entry = _keys(record, TOP_KEYS, "record")
-    _require(_text(entry["version"], "version") == VERSION,
-             f"version must be {VERSION}")
-    _require(_text(entry["platform"], "platform") == "linux",
-             "platform must be linux")
+    _require(isinstance(record, dict), "record must be an object")
+    assert isinstance(record, dict)
+    platform = record.get("platform")
+    _require(platform in TOP_KEYS, "platform must be linux or windows")
+    assert isinstance(platform, str)
+    entry = _keys(record, TOP_KEYS[platform], "record")
+    version = candidate_version(candidate)
+    _require(_text(entry["version"], "version") == version,
+             f"version must be {version}, the candidate's archive version")
     _require(_text(entry["architecture"], "architecture") == "x86_64",
              "architecture must be x86_64")
-    _check_glibc(entry["glibc"])
-    _check_candidate_archive(entry, candidate, "archive")
-    _check_candidate_archive(entry, candidate, "vsix")
-    _require(entry["archive"]["name"] == ARCHIVE_NAME,
-             f"archive name must be {ARCHIVE_NAME}")
-    _require(entry["vsix"]["name"] == VSIX_NAME,
-             f"VSIX name must be {VSIX_NAME}")
-    _check_candidate_archive(entry, candidate, "installer")
-    _check_toolchain(entry["toolchain"])
+    if platform == "linux":
+        _check_glibc(entry["glibc"])
+    _check_candidate_archive(entry, candidate, "archive", platform)
+    _check_candidate_archive(entry, candidate, "vsix", platform)
+    archive_name = f"clorraine-{version}-{ARCHIVE_SUFFIX[platform]}"
+    vsix_name = f"clorraine-{version}.vsix"
+    _require(entry["archive"]["name"] == archive_name,
+             f"archive name must be {archive_name}")
+    _require(entry["vsix"]["name"] == vsix_name,
+             f"VSIX name must be {vsix_name}")
+    _check_candidate_archive(entry, candidate, "installer", platform)
+    if "name" in entry["installer"]:
+        _require(entry["installer"]["name"] == INSTALLER_NAME[platform],
+                 f"installer name must be {INSTALLER_NAME[platform]}")
+    _check_toolchain(entry["toolchain"], platform)
     kickstart = _keys(entry["kickstart"], KICKSTART_KEYS, "kickstart")
     _basename(kickstart["name"], "kickstart.name")
     _digest(kickstart["sha256"], "kickstart.sha256")
-    _check_fs_uae(entry["fs_uae"])
+    if platform == "linux":
+        _check_fs_uae(entry["fs_uae"])
+    else:
+        _check_windows_fs_uae(entry["fs_uae"])
+        _check_windows_facts(entry)
     _check_guest(entry["guest"])
     _check_negative(entry["negative"])
     _check_corpus(entry["corpus"], repo)

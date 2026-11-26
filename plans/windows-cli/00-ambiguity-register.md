@@ -1,6 +1,6 @@
 ## Ambiguity Register: Windows CLI and installer
 
-> **Status**: ✅ GATE PASSED — all 53 items resolved; AR-54 – AR-61 added and resolved during execution
+> **Status**: ✅ GATE PASSED — all 53 items resolved; AR-54 – AR-62 added and resolved during execution
 > **Last Updated**: 2026-11-26 18:30
 > **Evidence**: `spikes/08-windows-cli/README.md`
 
@@ -67,6 +67,7 @@
 | 59 | Technical (runtime) | 03-04 names four test seams (`Invoke-Download`, `Invoke-ElevatedSetup`, `Get-Rc24Registration`, the PATH key), but ST-40, ST-46, ST-47, ST-58, ST-61, and ST-63 also stub the host architecture, OS build, interactivity, console capability, the extracted version check, and the compiler probe, and every case needs a callable entry point | Name the extra seams and an `Invoke-Installer` entry point that returns the exit code / run every case as a separate script with environment overrides | Named seams and `Invoke-Installer` (see AR-59 resolution) | ✅ Resolved |
 | 60 | Technical (runtime) | The elevated step's mismatch exit 3 (03-04, ST-54) is also Inno Setup's own "fatal error preparing" code, so a tampered setup cannot be told apart from a setup failure (Phase 6 security review SA-004) | Own codes outside Inno's 0-8 range / keep 3 and word the message for both | Codes 101 mismatch, 102 staging name taken, 103 untrusted admin folder, 104 other error (see AR-60 resolution); 03-04 and ST-54 updated | ✅ Resolved |
 | 61 | Technical (runtime) | Which existing `Program Files\Clorraine` the elevated step trusts: an owner check alone passes a folder other accounts may change, and the reviewer proposed also trusting the elevated user's own SID (Phase 6 security re-review SA-006) | Owner and access-list check, fail closed with a repair hint / also trust the current user SID | Owner must be Administrators, SYSTEM, or TrustedInstaller; no allow rule with write-type rights for any other account; the current user is not trusted; 103 names the `icacls /setowner` repair (see AR-61 resolution) | ✅ Resolved |
+| 62 | Technical (runtime) | The Windows evidence record's exact JSON shape and how the producer obtains the rc24 and FS-UAE pins, which 03-05 names but does not spell out | Fixed shape below; pins from the installer text after the registration/config confirm use / re-download both files to hash them | Shape and pin source per the AR-62 resolution | ✅ Resolved |
 
 ## Coverage Map
 
@@ -350,4 +351,34 @@ Hardening: no challenger; failure is closed and the message names the repair
 Policy version: 1
 Root invocation ID: exec-windows-cli-20261126-1938
 Reopen triggers: acceptance shows the default Program Files owner is the admin user's SID
+```
+
+**AR-62 (runtime, auto-design; details AR-46 within 03-05):**
+
+```text
+Authority: AI — delegated by --auto-design
+Eligibility: representation of facts AR-46 already fixes; no new requirement
+Objective: a Windows record that acceptance-check can validate exactly and that the producer
+  can write honestly
+Decision: Windows records hold the shared core plus os_build (integer >= 22000), installer
+  {name: install.ps1, sha256}, toolchain {tag, sha256, bytes} with the rc24 setup pin,
+  fs_uae {version, source: downloaded, sha256, bytes (zip pin)} or {version, source:
+  existing}, host_hello {compiler, result: ok}, existing_registration: reused,
+  standard_account: installed, manual {uac_prompt_seen: true, editor_build_run: true}.
+  The version is the one archive version the candidate names. acceptance.ps1 installs the
+  candidate twice (the second install must reuse rc24 without elevating), reads the rc24 and
+  FS-UAE pins from the private install.ps1 text once the HKLM registration shows 16.2-rc24
+  and the config names the unpacked FS-UAE, and records failures as values the checker
+  rejects (not-reused, administrator, false)
+Evidence: 03-05 §Acceptance evidence; the installer verifies size and SHA-256 of both
+  downloads before use and deletes them afterwards
+Rejected alternatives: re-downloading the 48 MB setup and the 49 MB zip only to hash them
+  (proves the release URLs, not what the installer ran)
+Strongest counterargument: the toolchain and FS-UAE hashes are pins, not hashes of bytes the
+  producer read
+Confidence: Medium
+Hardening: no challenger; the installer's own verification is covered by ST-54 and ST-56
+Policy version: 1
+Root invocation ID: exec-windows-cli-20261126-1938
+Reopen triggers: a reviewer requires a byte-level hash of the installed setup
 ```
