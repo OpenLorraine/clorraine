@@ -220,6 +220,61 @@ mod tests {
 
     use super::*;
 
+    /// A search directory holding executable files named `names`.
+    #[cfg(unix)]
+    fn tools_dir(tag: &str, names: &[&str]) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("clorraine-cc-{tag}-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("create the search directory");
+        for name in names {
+            let file = dir.join(name);
+            std::fs::write(&file, b"").expect("write the tool file");
+            make_executable(&file);
+        }
+        dir
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_host_compiler_is_the_first_windows_candidate_on_path() {
+        let dir = tools_dir("order", &["cc.exe", "clang.exe"]);
+        let found = resolve_host_compiler(HostOs::Windows, None, dir.as_os_str());
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(found.expect("a compiler"), OsString::from("cc"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_bare_override_is_looked_up_on_path_and_a_path_override_by_file() {
+        let dir = tools_dir("override", &["mycc", "gcc.exe"]);
+        let bare = resolve_host_compiler(HostOs::Unix, Some(OsStr::new("mycc")), dir.as_os_str());
+        let path = dir.join("mycc");
+        let by_path = resolve_host_compiler(HostOs::Unix, Some(path.as_os_str()), OsStr::new(""));
+        let windows_stem = dir.join("gcc");
+        let windows = resolve_host_compiler(HostOs::Windows, Some(windows_stem.as_os_str()), OsStr::new(""));
+        let missing = resolve_host_compiler(HostOs::Unix, Some(OsStr::new("mycc")), OsStr::new(""));
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(bare.expect("found on PATH"), OsString::from("mycc"));
+        assert_eq!(by_path.expect("found by path"), path.into_os_string());
+        assert_eq!(windows.expect("found with .exe"), windows_stem.into_os_string());
+        let error = missing.expect_err("not on an empty PATH");
+        assert_eq!((error.code, error.message.as_str()), (1, "clorraine: CLORRAINE_CC 'mycc' was not found"));
+    }
+
+    #[test]
+    fn a_missing_host_compiler_keeps_the_unix_message_and_names_gcc_on_windows() {
+        let unix = resolve_host_compiler(HostOs::Unix, None, OsStr::new("")).expect_err("none");
+        assert_eq!(unix.code, 1);
+        assert_eq!(unix.message, missing_tool_message("cc"));
+        assert_eq!(
+            unix.message,
+            "clorraine: required tool 'cc' was not found on PATH\ninstall a C compiler (cc)"
+        );
+        let windows = resolve_host_compiler(HostOs::Windows, None, OsStr::new("")).expect_err("none");
+        assert_eq!(windows.code, 1);
+        assert!(windows.message.contains("gcc, cc, or clang"), "{}", windows.message);
+        assert!(windows.message.ends_with(platform::missing_compiler_hint(HostOs::Windows)));
+    }
+
     #[test]
     fn the_marker_counts_only_when_it_is_a_file() {
         let existing = concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml");
