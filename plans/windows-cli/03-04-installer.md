@@ -109,7 +109,9 @@ Interactive mode is on when stdin and stdout are not redirected
   SHA-256 there, runs it with `/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /NOCLOSEAPPLICATIONS /SP-
   /DIR="<target>" /LOG="<staging>\setup.log"`, copies the log to
   `C:\Program Files\Clorraine\rc24-setup.log`, deletes the staging folder, and exits with the
-  setup's exit code (a mismatch exits 3 without running).
+  setup's exit code (a mismatch exits 101 without running; 102 staging name taken, 103 untrusted
+  admin folder, 104 other error; AR-60). The admin folder and the target come from the system's
+  Program Files known folder inside the elevated step, never from the environment.
 - A cancelled UAC prompt (Win32 error 1223) or a nonzero exit keeps the installed CLI, prints the
   `-Toolchain` next step, and exits 1 (AR-40).
 

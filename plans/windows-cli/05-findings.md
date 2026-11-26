@@ -37,3 +37,16 @@
 | SA-008 | 5 | MINOR | tools/setup/install.ps1 | fixed |
 | SA-009 | 5 | MINOR | tools/setup/install.ps1 | accepted |
 | SA-010 | 5 | MINOR | tools/setup/tests/install.impl.test.ps1 | fixed |
+| RV-001 | 6 | MAJOR | tools/setup/install.ps1 | fixed |
+| RV-002 | 6 | MAJOR | tools/setup/install.ps1 | fixed |
+| RV-003 | 6 | MINOR | tools/setup/install.ps1 | fixed |
+| RV-004 | 6 | MINOR | tools/setup/install.ps1 | fixed |
+| RV-005 | 6 | MINOR | tools/setup/install.ps1 | fixed |
+| RV-006 | 6 | MINOR | tools/setup/install.ps1 | fixed |
+| RV-007 | 6 | MINOR | tools/setup/install.ps1 | fixed |
+| RV-008 | 6 | MINOR | tools/setup/tests | fixed |
+| SA-001 | 6 | MAJOR | tools/setup/install.ps1 | fixed |
+| SA-002 | 6 | MAJOR | tools/setup/install.ps1 | fixed |
+| SA-003 | 6 | MAJOR | tools/setup/install.ps1 | fixed |
+| SA-004 | 6 | MINOR | tools/setup/install.ps1 | fixed |
+| SA-005 | 6 | MINOR | tools/setup/install.ps1 | fixed |

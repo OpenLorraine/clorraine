@@ -671,7 +671,7 @@ Test-Case 'should install rc24 only with -InstallToolchain when nothing is regis
     $result = Invoke-Case -Installer $fixture.Installer -CaseRoot $root -Prelude $prelude -Arguments (Get-FirstRunArguments $fixture)
     Assert-That ($result.Code -eq 0) "exit $($result.Code): $($result.All)"
     Assert-That (@(Get-Recorded $log 'download').Count -eq 0) 'downloaded without consent'
-    Assert-That ($result.All -match '-Toolchain') "no -Toolchain next step: $($result.All)"
+    Assert-That ($result.All -cmatch '-Toolchain') "no -Toolchain next step: $($result.All)"
     $result = Invoke-Case -Installer $fixture.Installer -CaseRoot $root -Prelude $prelude `
         -Arguments (Get-FirstRunArguments $fixture @('-InstallToolchain'))
     Assert-That ($result.Code -eq 0) "with -InstallToolchain: exit $($result.Code): $($result.All)"
@@ -691,7 +691,7 @@ Test-Case 'should keep the CLI and print the -Toolchain step when the UAC prompt
     $result = Invoke-Case -Installer $fixture.Installer -CaseRoot $root -Prelude $prelude `
         -Arguments (Get-FirstRunArguments $fixture @('-InstallToolchain'))
     Assert-That ($result.Code -eq 1) "exit $($result.Code)"
-    Assert-That ($result.All -match '-Toolchain') "no -Toolchain next step: $($result.All)"
+    Assert-That ($result.All -cmatch '-Toolchain') "no -Toolchain next step: $($result.All)"
     Assert-That ($null -ne (Get-JunctionTarget (Join-Path $fixture.Prefix 'current'))) 'the CLI was removed'
 }
 
@@ -721,7 +721,7 @@ Test-Case 'should verify the setup inside the admin-only folder and run it with 
     $record = Join-Path $root 'setup-args.txt'
     $call = "exit (Invoke-ElevatedStaging -AdminRoot '$admin' -Source '$setup' -Target '$target' -Bytes $bytes -Sha256 '{0}')"
     $result = Invoke-Case -Installer $installer -CaseRoot $root -Body ($call -f ('0' * 64))
-    Assert-That ($result.Code -eq 3) "mismatch exit $($result.Code): $($result.All)"
+    Assert-That ($result.Code -eq 101) "mismatch exit $($result.Code): $($result.All)"
     Assert-That (-not (Test-Path -LiteralPath $record)) 'the setup ran despite a mismatch'
     $result = Invoke-Case -Installer $installer -CaseRoot $root -Body ($call -f $sha)
     Assert-That ($result.Code -eq 0) "exit $($result.Code): $($result.All)"
@@ -802,7 +802,8 @@ Test-Case 'should choose a 512 KB KS3.1 A1200 ROM and never a 256 KB one' {
     $good = Join-Path $roms 'KICK31A1200.ROM'
     [IO.File]::WriteAllBytes($good, (New-Object byte[] 524299))
     [IO.File]::WriteAllBytes((Join-Path $roms 'kick13.rom'), (New-Object byte[] 262144))
-    $body = "`$env:CLORRAINE_KICKSTART = `$null; `$env:USERPROFILE = '$fakeHome'; `$env:PUBLIC = '$root\public'; [Console]::Out.WriteLine((Find-Kickstart '')); exit 0"
+    # The Documents folder is the fake home's too, so the real one is never read.
+    $body = "`$env:CLORRAINE_KICKSTART = `$null; `$env:USERPROFILE = '$fakeHome'; `$env:PUBLIC = '$root\public'; function Get-DocumentsFolder { '$fakeHome\Documents' }; [Console]::Out.WriteLine((Find-Kickstart '')); exit 0"
     $result = Invoke-Case -Installer $installer -CaseRoot $root -Body $body
     Assert-That (Test-SamePath $result.Out.Trim() $good) "chose '$($result.Out.Trim())'"
     Remove-Item -LiteralPath $good -Force

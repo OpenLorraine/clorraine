@@ -121,10 +121,14 @@ function Initialize-Style {
         -NoColor ([bool]$env:NO_COLOR)
 }
 
-# Removes terminal-control characters from text that came from outside.
-function Get-SafeText([string]$Text) {
+# Removes terminal-control characters (C0, DEL, and C1) from text that came
+# from outside. Tabs and line breaks are kept unless -SingleLine is given,
+# for text shown inside one line.
+function Get-SafeText([string]$Text, [switch]$SingleLine) {
     if ($null -eq $Text) { return '' }
-    return ($Text -replace '[\x00-\x08\x0B-\x1F\x7F]', '')
+    $clean = $Text -replace '[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]', ''
+    if ($SingleLine) { $clean = $clean -replace '[\t\r\n]', ' ' }
+    return $clean
 }
 
 # Writes one plain line to standard output.
@@ -258,8 +262,9 @@ function ConvertTo-NativeArgument([string]$Value) {
 # Runs a program without a shell and returns its exit code and output. The
 # streams are read asynchronously so a chatty child cannot block on a full
 # pipe.
-function Invoke-Native([string]$File, [string[]]$Arguments = @(), [string]$WorkingDirectory = '') {
+function Invoke-Native([string]$File, [string[]]$Arguments = @(), [string]$WorkingDirectory = '', [hashtable]$Environment = @{}) {
     $info = New-Object System.Diagnostics.ProcessStartInfo
+    foreach ($name in $Environment.Keys) { $info.EnvironmentVariables[$name] = [string]$Environment[$name] }
     $info.FileName = $File
     $info.Arguments = (($Arguments | ForEach-Object { ConvertTo-NativeArgument $_ }) -join ' ')
     $info.UseShellExecute = $false
@@ -740,7 +745,7 @@ function Install-Archive([string]$Root, [string]$ArchivePath) {
 }
 
 # Adds `current\bin` to the user PATH when asked (or when the person agrees),
-# or prints how to do it.
+# or prints how to do it. Returns True when the entry is on the user PATH.
 function Update-UserPath([string]$Root, [bool]$Requested, [bool]$Interactive) {
     $bin = Join-Path $Root 'current\bin'
     $add = $Requested
@@ -750,9 +755,13 @@ function Update-UserPath([string]$Root, [bool]$Requested, [bool]$Interactive) {
     if ($add) {
         Add-UserPathEntry $bin
         Write-Ok "added $bin to your user PATH (new terminals see it)"
-    } else {
+        return $true
+    }
+    $present = @((Get-UserPath).Value.Split(';') | Where-Object { Test-PathEntry $_ $bin }).Count -gt 0
+    if (-not $present) {
         Write-Line "  to run clorraine from any terminal, add $bin to your user PATH or rerun with -ModifyPath"
     }
+    return $present
 }
 
 # --- Uninstall ---------------------------------------------------------------
@@ -875,10 +884,11 @@ $script:Rc24Version = '16.2-rc24'
 $script:Rc24UninstallKey = 'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{8D184346-D038-45E9-98A1-43BFC542BE34}_is1'
 $script:Rc24RegistryHive = 'LocalMachine'
 
-# The per-machine folder the elevated step installs into.
+# The per-machine folder the elevated step installs into. Program Files comes
+# from the system's known-folder setting, never from the ProgramFiles
+# environment variable, which the standard user controls.
 function Get-Rc24AdminRoot {
-    $programs = if ($env:ProgramFiles) { $env:ProgramFiles } else { 'C:\Program Files' }
-    return Join-Path $programs 'Clorraine'
+    return Join-Path ([Environment]::GetFolderPath('ProgramFiles')) 'Clorraine'
 }
 
 # The installed amiga-gcc registration (DisplayVersion, InstallLocation), or
@@ -898,54 +908,111 @@ function Get-Rc24Registration {
     } finally { $base.Dispose() }
 }
 
+# Exit codes of the elevated step that are its own; the upstream setup uses
+# 0 to 8, so these never collide with its codes.
+$script:ElevatedMismatch = 101
+$script:ElevatedStagingTaken = 102
+$script:ElevatedUntrustedRoot = 103
+$script:ElevatedError = 104
+
 # The elevated half of the rc24 install. It runs as an administrator, so it
-# trusts nothing the standard user could have changed: it copies the setup
-# into a new staging folder inside the administrator-only AdminRoot, checks
-# the copy's size and SHA-256 there, and only then runs it silently, logging
-# into the same folder. The log is kept as AdminRoot\rc24-setup.log and the
-# staging folder is removed. Returns the setup's exit code, 3 when the copy
-# does not match, and 4 when a staging folder cannot be made. This function
-# is self-contained: Invoke-ElevatedSetup sends its text to the elevated
-# PowerShell.
-function Invoke-ElevatedStaging([string]$AdminRoot, [string]$Source, [string]$Target, [long]$Bytes, [string]$Sha256) {
+# trusts nothing the standard user could have changed. Without -AdminRoot it
+# works out Program Files\Clorraine itself from the system's known-folder
+# setting, refuses that folder when it is a link or owned by anyone but
+# Administrators, SYSTEM, or TrustedInstaller, and creates a new staging
+# folder there that only Administrators and SYSTEM can open. It copies the
+# setup in, checks the copy's size and SHA-256, and only then runs it silently,
+# logging into the staging folder. The log is kept as rc24-setup.log next to
+# the toolchain and the staging folder is removed. Returns the setup's exit
+# code, or 101 (the copy does not match), 102 (the staging name is taken), 103
+# (untrusted folder), or 104 (any other error). -AdminRoot and -Target exist
+# for tests that run without elevation. This function is self-contained:
+# Invoke-ElevatedSetup sends its text to the elevated PowerShell.
+function Invoke-ElevatedStaging([string]$Source, [long]$Bytes, [string]$Sha256, [string]$AdminRoot = '', [string]$Target = '') {
     $ErrorActionPreference = 'Stop'
-    New-Item -ItemType Directory -Force -Path $AdminRoot | Out-Null
-    $staging = Join-Path $AdminRoot ('.staging-' + [guid]::NewGuid().ToString('N').Substring(0, 12))
-    if (Test-Path -LiteralPath $staging) { return 4 }
-    New-Item -ItemType Directory -Path $staging | Out-Null
+    $harden = -not $AdminRoot
+    if ($harden) { $AdminRoot = Join-Path ([Environment]::GetFolderPath('ProgramFiles')) 'Clorraine' }
+    if (-not $Target) { $Target = Join-Path $AdminRoot 'amiga-gcc-16.2-rc24' }
+    try {
+        if ($harden) {
+            $trusted = 'S-1-5-32-544', 'S-1-5-18', 'S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464'
+            $existing = Get-Item -LiteralPath $AdminRoot -Force -ErrorAction SilentlyContinue
+            if ($null -ne $existing) {
+                if (($existing.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or -not $existing.PSIsContainer) { return 103 }
+                $owner = (Get-Acl -LiteralPath $AdminRoot).GetOwner([System.Security.Principal.SecurityIdentifier]).Value
+                if ($trusted -notcontains $owner) { return 103 }
+            } else {
+                New-Item -ItemType Directory -Path $AdminRoot | Out-Null
+            }
+        } else {
+            New-Item -ItemType Directory -Force -Path $AdminRoot | Out-Null
+        }
+        $staging = Join-Path $AdminRoot ('.staging-' + [guid]::NewGuid().ToString('N').Substring(0, 12))
+        if (Test-Path -LiteralPath $staging) { return 102 }
+        if ($harden) {
+            $security = New-Object System.Security.AccessControl.DirectorySecurity
+            $security.SetAccessRuleProtection($true, $false)
+            $inherit = [System.Security.AccessControl.InheritanceFlags]'ContainerInherit, ObjectInherit'
+            foreach ($sid in 'S-1-5-32-544', 'S-1-5-18') {
+                $principal = New-Object System.Security.Principal.SecurityIdentifier $sid
+                $security.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule($principal, 'FullControl', $inherit, 'None', 'Allow')))
+            }
+            [void][IO.Directory]::CreateDirectory($staging, $security)
+        } else {
+            New-Item -ItemType Directory -Path $staging | Out-Null
+        }
+    } catch {
+        return 104
+    }
     try {
         $setup = Join-Path $staging 'setup.exe'
         Copy-Item -LiteralPath $Source -Destination $setup
         $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $setup).Hash.ToLowerInvariant()
-        if ((Get-Item -LiteralPath $setup).Length -ne $Bytes -or $hash -ne $Sha256.ToLowerInvariant()) { return 3 }
+        if ((Get-Item -LiteralPath $setup).Length -ne $Bytes -or $hash -ne $Sha256.ToLowerInvariant()) { return 101 }
         $log = Join-Path $staging 'setup.log'
         $arguments = '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /NOCLOSEAPPLICATIONS /SP- /DIR="' + $Target + '" /LOG="' + $log + '"'
         $process = Start-Process -FilePath $setup -ArgumentList $arguments -Wait -PassThru
         if (Test-Path -LiteralPath $log) { Copy-Item -LiteralPath $log -Destination (Join-Path $AdminRoot 'rc24-setup.log') -Force }
         return $process.ExitCode
+    } catch {
+        return 104
     } finally {
-        [IO.Directory]::Delete($staging, $true)
+        try { [IO.Directory]::Delete($staging, $true) } catch { }
     }
 }
 
+# Quotes text as a PowerShell single-quoted literal, including the typographic
+# single quotes PowerShell also accepts as delimiters.
+function ConvertTo-SingleQuoted([string]$Text) {
+    return "'" + [System.Management.Automation.Language.CodeGeneration]::EscapeSingleQuotedStringContent($Text) + "'"
+}
+
 # The PowerShell text the elevated process runs: the staging function and one
-# call with the four values as single-quoted literals.
-function Get-ElevatedCommand([string]$Source, [string]$Target, [long]$Bytes, [string]$Sha256) {
-    $quote = { param($text) "'" + $text.Replace("'", "''") + "'" }
-    return 'function Invoke-ElevatedStaging {' + ${function:Invoke-ElevatedStaging}.ToString() + "}`n" +
-        'exit (Invoke-ElevatedStaging -AdminRoot ' + (& $quote (Get-Rc24AdminRoot)) + ' -Source ' + (& $quote $Source) +
-        ' -Target ' + (& $quote $Target) + " -Bytes $Bytes -Sha256 " + (& $quote $Sha256) + ')'
+# call with the source path, size, and SHA-256 as literals. The target folder
+# is not passed: the elevated side works it out. -AdminRoot is for tests that
+# run the text without elevation.
+function Get-ElevatedCommand([string]$Source, [long]$Bytes, [string]$Sha256, [string]$AdminRoot = '') {
+    $call = 'exit (Invoke-ElevatedStaging -Source ' + (ConvertTo-SingleQuoted $Source) + " -Bytes $Bytes -Sha256 " +
+        (ConvertTo-SingleQuoted $Sha256)
+    if ($AdminRoot) { $call += ' -AdminRoot ' + (ConvertTo-SingleQuoted $AdminRoot) }
+    return 'function Invoke-ElevatedStaging {' + ${function:Invoke-ElevatedStaging}.ToString() + "}`n" + $call + ')'
 }
 
 # Runs Invoke-ElevatedStaging in an elevated PowerShell behind one UAC prompt
-# and returns its exit code. Only the function's own text and the four values
-# cross the boundary. A declined prompt throws the Win32 error 1223.
+# and returns its exit code. Only the function's own text and three values
+# cross the boundary; Target is where the elevated side installs and is shown
+# in messages. The process is started directly, so a declined prompt surfaces
+# as the Win32 error 1223 inside the method's exception.
 function Invoke-ElevatedSetup([string]$Source, [string]$Target, [long]$Bytes, [string]$Sha256) {
-    $text = Get-ElevatedCommand $Source $Target $Bytes $Sha256
+    $text = Get-ElevatedCommand $Source $Bytes $Sha256
     $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($text))
-    $powershell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
-    $process = Start-Process -FilePath $powershell -Verb RunAs -Wait -PassThru `
-        -ArgumentList "-NoProfile -ExecutionPolicy Bypass -EncodedCommand $encoded"
+    $info = New-Object System.Diagnostics.ProcessStartInfo
+    $info.FileName = Join-Path ([Environment]::SystemDirectory) 'WindowsPowerShell\v1.0\powershell.exe'
+    $info.Arguments = "-NoProfile -ExecutionPolicy Bypass -EncodedCommand $encoded"
+    $info.UseShellExecute = $true
+    $info.Verb = 'runas'
+    $process = [System.Diagnostics.Process]::Start($info)
+    $process.WaitForExit()
     return $process.ExitCode
 }
 
@@ -968,6 +1035,8 @@ function Install-Rc24([string]$Root) {
         Write-Line '  Downloading the rc24 toolchain setup from AmigaPorts (48 MB)...'
         Invoke-Download $script:Rc24Url $setup $script:Rc24Bytes $script:Rc24Sha256 1200
         $target = Join-Path (Get-Rc24AdminRoot) 'amiga-gcc-16.2-rc24'
+        $log = Join-Path (Get-Rc24AdminRoot) 'rc24-setup.log'
+        $logBefore = if (Test-Path -LiteralPath $log) { (Get-Item -LiteralPath $log).LastWriteTimeUtc } else { $null }
         Write-Line '  Windows asks for administrator approval to install it for all users.'
         try {
             $code = Invoke-ElevatedSetup $setup $target $script:Rc24Bytes $script:Rc24Sha256
@@ -980,7 +1049,17 @@ function Install-Rc24([string]$Root) {
             throw
         }
         if ($code -ne 0) {
-            Write-Warn "the rc24 setup failed (exit $code); see $(Join-Path (Get-Rc24AdminRoot) 'rc24-setup.log')"
+            $reason = switch ($code) {
+                $script:ElevatedMismatch { 'the verified setup changed before it could run; nothing was installed' }
+                $script:ElevatedStagingTaken { 'the staging folder name was already taken; nothing was installed' }
+                $script:ElevatedUntrustedRoot { "$(Get-Rc24AdminRoot) is a link or not owned by Administrators; nothing was installed" }
+                $script:ElevatedError { 'the elevated step failed before the setup could run' }
+                default {
+                    $fresh = (Test-Path -LiteralPath $log) -and ($null -eq $logBefore -or (Get-Item -LiteralPath $log).LastWriteTimeUtc -ne $logBefore)
+                    if ($fresh) { "the rc24 setup failed (exit $code); see $log" } else { "the rc24 setup failed (exit $code)" }
+                }
+            }
+            Write-Warn $reason
             Write-NextSteps $Root $true
             Stop-Install 1 'the rc24 toolchain was not installed'
         }
@@ -998,7 +1077,7 @@ function Select-Toolchain([string]$Root, [hashtable]$Options, [bool]$Interactive
     $registration = Get-Rc24Registration
     if ($null -ne $registration -and $registration.DisplayVersion -eq $script:Rc24Version -and $registration.InstallLocation) {
         $existing = $registration.InstallLocation.TrimEnd('\')
-        Write-Ok "using the installed rc24 toolchain in $existing"
+        Write-Ok ("using the installed rc24 toolchain in " + (Get-SafeText $existing -SingleLine))
         return $existing
     }
     if ($null -ne $registration) {
@@ -1040,7 +1119,7 @@ $script:FsUaeExe = 'FS-UAE\Windows\x86-64\fs-uae.exe'
 function Get-ConfigValue([string]$Key) {
     $config = Join-Path $env:APPDATA 'clorraine\config'
     if (-not (Test-Path -LiteralPath $config -PathType Leaf)) { return '' }
-    foreach ($line in Get-Content -LiteralPath $config) {
+    foreach ($line in Get-Content -LiteralPath $config -Encoding UTF8) {
         if ($line.StartsWith("$Key=")) { return $line.Substring($Key.Length + 1) }
     }
     return ''
@@ -1072,6 +1151,10 @@ function Find-FsUae([string]$Explicit, [string]$Root) {
     return $null
 }
 
+# The user's Documents folder, which OneDrive may have moved away from
+# %USERPROFILE%\Documents.
+function Get-DocumentsFolder { return [Environment]::GetFolderPath('MyDocuments') }
+
 # Finds a Kickstart 3.1 A1200 ROM: -Kickstart, CLORRAINE_KICKSTART, the CLI
 # config, then the usual folders, by the usual names first and then by name
 # pattern. A found ROM must have the size of a 512 KB image; a named one is
@@ -1083,7 +1166,7 @@ function Find-Kickstart([string]$Explicit) {
     $folders = @(
         (Join-Path $env:USERPROFILE 'amiga\roms'),
         (Join-Path $env:USERPROFILE 'Documents\FS-UAE\Kickstarts'),
-        (Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'FS-UAE\Kickstarts')
+        (Join-Path (Get-DocumentsFolder) 'FS-UAE\Kickstarts')
     )
     if ($env:PUBLIC) { $folders += Join-Path $env:PUBLIC 'Documents\Amiga Files\Shared\rom' }
     $sizes = 524288, 524299
@@ -1165,17 +1248,29 @@ function Select-Emulator([string]$Root, [hashtable]$Options, [bool]$Interactive)
         }
     }
     if (-not $fsuae) { return $selection }
-    $selection.FsUae = $fsuae
-    Write-Ok "FS-UAE: $fsuae"
+    $selection.FsUae = [IO.Path]::GetFullPath($fsuae)
+    Write-Ok ('FS-UAE: ' + (Get-SafeText $selection.FsUae -SingleLine))
     $rom = Find-Kickstart ([string]$Options['Kickstart'])
     if ($Interactive) {
         if ($rom) {
-            [Console]::Out.Write("  Kickstart 3.1 A1200 ROM [$rom] (Enter to use, - to skip): ")
+            [Console]::Out.Write('  Kickstart 3.1 A1200 ROM [' + (Get-SafeText $rom -SingleLine) + '] (Enter to use, - to skip): ')
             $answer = [Console]::In.ReadLine()
             if ($answer -eq '-') { $rom = $null } elseif ($answer) { $rom = $answer }
         } else {
             [Console]::Out.Write('  Kickstart 3.1 A1200 ROM path (leave empty to skip the Amiga run): ')
             $rom = [Console]::In.ReadLine()
+        }
+        # Explorer's "Copy as path" wraps the path in double quotes.
+        if ($rom) { $rom = $rom.Trim().Trim('"') }
+    } else {
+        # As on Linux, a run without prompts uses an emulator only when the
+        # person named both the emulator and the ROM (by flag or environment)
+        # or asked for the FS-UAE download; nothing found by searching alone.
+        $namedFsUae = $Options['FsUae'] -or $env:CLORRAINE_FS_UAE -or $Options['InstallFsUae']
+        $namedRom = $Options['Kickstart'] -or $env:CLORRAINE_KICKSTART
+        if (-not ($namedFsUae -and $namedRom)) {
+            Write-Line '  pass -FsUae and -Kickstart (or set CLORRAINE_FS_UAE and CLORRAINE_KICKSTART) to run the Amiga hello'
+            return [pscustomobject]@{ FsUae = $null; Kickstart = $null }
         }
     }
     if (-not $rom) {
@@ -1261,6 +1356,7 @@ function Invoke-Hellos($Examples, $Emulator, [bool]$Interactive) {
             } else {
                 $state.Host = 'failed'
                 Write-Warn 'the PC hello did not print the expected line'
+                return $state
             }
         }
     }
@@ -1281,6 +1377,31 @@ function Invoke-Hellos($Examples, $Emulator, [bool]$Interactive) {
 }
 
 # --- VS Code and the starter ----------------------------------------------------
+
+# How to run a VS Code-family launcher without cmd.exe. The .cmd launchers
+# only set ELECTRON_RUN_AS_NODE=1 and run "<exe>" "<cli.js>" %*; doing the
+# same directly means no argument is ever parsed by cmd.exe, so a folder name
+# with & or % cannot turn into a command. Returns File, Prefix (arguments
+# before the caller's), and Environment, or $null when the launcher does not
+# have that shape.
+function Get-EditorCommand([string]$Launcher) {
+    $bin = Split-Path -Parent $Launcher
+    $text = [IO.File]::ReadAllText($Launcher)
+    $match = [regex]::Match($text, '"%~dp0\.\.\\([^"%]+\.exe)"\s+"%~dp0\.\.\\([^"%]+\\cli\.js)"')
+    if (-not $match.Success) { return $null }
+    $exe = Join-Path (Split-Path -Parent $bin) $match.Groups[1].Value
+    $cli = Join-Path (Split-Path -Parent $bin) $match.Groups[2].Value
+    if (-not (Test-Path -LiteralPath $exe -PathType Leaf) -or -not (Test-Path -LiteralPath $cli -PathType Leaf)) { return $null }
+    return [pscustomobject]@{ File = $exe; Prefix = @($cli); Environment = @{ ELECTRON_RUN_AS_NODE = '1'; VSCODE_DEV = '' } }
+}
+
+# Runs the editor's command-line interface with Arguments and returns the
+# result, or $null when the launcher cannot be run without cmd.exe.
+function Invoke-Editor([string]$Launcher, [string[]]$Arguments) {
+    $command = Get-EditorCommand $Launcher
+    if ($null -eq $command) { return $null }
+    return Invoke-Native $command.File ($command.Prefix + $Arguments) '' $command.Environment
+}
 
 # A working VS Code-family launcher (code.cmd, codium.cmd, code-insiders.cmd
 # on PATH or in the default per-user install), or $null.
@@ -1304,7 +1425,11 @@ function Install-VSCodeExtension([hashtable]$Options, [bool]$Interactive) {
         if ($Options['VSCode']) { Write-Warn "VS Code was not found; install it, then run: code --install-extension $script:VsixName" }
         return 'unavailable'
     }
-    $listed = Invoke-Native $editor @('--list-extensions')
+    $listed = Invoke-Editor $editor @('--list-extensions')
+    if ($null -eq $listed) {
+        Write-Warn "VS Code was found, but its launcher has an unexpected shape; run: code --install-extension $script:VsixName"
+        return 'failed'
+    }
     if (@($listed.Out -split "`r?`n" | Where-Object { $_.Trim() -ieq 'openlorraine.clorraine' }).Count -gt 0) {
         Write-Ok 'the Clorraine extension is already installed in VS Code'
         return 'already-installed'
@@ -1329,8 +1454,8 @@ function Install-VSCodeExtension([hashtable]$Options, [bool]$Interactive) {
             Write-Warn ('could not download the VS Code extension: ' + (Get-SafeText $_.Exception.Message))
             return 'failed'
         }
-        $result = Invoke-Native $editor @('--install-extension', $vsix)
-        if ($result.Code -eq 0) {
+        $result = Invoke-Editor $editor @('--install-extension', $vsix)
+        if ($null -ne $result -and $result.Code -eq 0) {
             Write-Ok 'installed the Clorraine extension in VS Code'
             return 'installed'
         }
@@ -1370,8 +1495,16 @@ function New-Starter([hashtable]$Options, [bool]$Interactive) {
     Write-Ok "created $dir with main.clo and a VS Code setup"
     if ($Interactive -and -not $Options['NoVSCode']) {
         $editor = Find-VSCode
-        if ($editor -and (Read-YesNo '  Open it in VS Code now? [Y/n] ' $true)) {
-            Start-Process -FilePath $editor -ArgumentList @((ConvertTo-NativeArgument $dir), (ConvertTo-NativeArgument (Join-Path $dir 'main.clo'))) -WindowStyle Hidden | Out-Null
+        $command = if ($editor) { Get-EditorCommand $editor } else { $null }
+        if ($null -ne $command -and (Read-YesNo '  Open it in VS Code now? [Y/n] ' $true)) {
+            $info = New-Object System.Diagnostics.ProcessStartInfo
+            $info.FileName = $command.File
+            $info.Arguments = (($command.Prefix + @($dir, (Join-Path $dir 'main.clo'))) | ForEach-Object { ConvertTo-NativeArgument $_ }) -join ' '
+            $info.UseShellExecute = $false
+            foreach ($name in $command.Environment.Keys) { $info.EnvironmentVariables[$name] = $command.Environment[$name] }
+            # PATH for the editor includes the CLI, so its tasks find clorraine.exe.
+            $info.EnvironmentVariables['PATH'] = (Join-Path $script:InstallRoot 'current\bin') + ';' + $env:PATH
+            [void][System.Diagnostics.Process]::Start($info)
             Write-Ok "opening VS Code: press $($script:Style.Play) Run in FS-UAE in the editor title bar"
         }
     }
@@ -1382,7 +1515,8 @@ function New-Starter([hashtable]$Options, [bool]$Interactive) {
 
 # Prints what was set up and the next commands.
 function Write-Summary($Summary) {
-    $cli = 'clorraine'
+    # The bare name works only in terminals that see the user PATH entry.
+    $cli = if ($Summary.OnPath) { 'clorraine' } else { '"' + (Join-Path $Summary.Root 'current\bin\clorraine.exe') + '"' }
     Write-Line ''
     Write-Line ($script:Style.Green + $script:Style.Bold + $script:Style.Check + ' First run complete.' + $script:Style.Reset)
     Write-Line ''
@@ -1409,7 +1543,7 @@ function Write-Summary($Summary) {
     if ($Summary.Starter) { Write-Line "  Project    $($Summary.Starter)" }
     Write-Line ''
     Write-Line ($script:Style.Bold + 'What next' + $script:Style.Reset)
-    Write-Line '  Open a new terminal so the PATH change applies, and restart VS Code.'
+    if ($Summary.OnPath) { Write-Line '  Open a new terminal so the PATH change applies, and restart VS Code.' }
     if ($Summary.Starter) {
         Write-Line "  cd `"$($Summary.Starter)`""
         Write-Line '  code .                      (open main.clo, change MESSAGE, press Run in FS-UAE)'
@@ -1561,11 +1695,11 @@ function Invoke-Main([hashtable]$Options) {
             Remove-TreeSafe $work
         }
         Write-Ok "installed Clorraine $script:Version in $folder"
-        Update-UserPath $root ([bool](& $opt 'ModifyPath')) $interactive
+        $onPath = Update-UserPath $root ([bool](& $opt 'ModifyPath')) $interactive
         $examples = Install-Examples $root
         Write-Ok "examples in $($examples.Folder)"
         $summary = [pscustomobject]@{
-            Root = $root; Toolchain = $null; Kickstart = $null
+            Root = $root; OnPath = $onPath; Toolchain = $null; Kickstart = $null
             Host = 'skipped'; Guest = 'skipped'; VSCode = 'unavailable'; Starter = $null
         }
         if (-not (& $opt 'NoToolchain')) {

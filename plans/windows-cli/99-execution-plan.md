@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-26 21:54
-> **Progress**: 48/75 tasks (64%)
+> **Last Updated**: 2026-11-26 22:11
+> **Progress**: 49/75 tasks (65%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -241,11 +241,11 @@ on Linux in this worktree; Windows runs go through the remote helper (AR-5, AR-2
 ### Step 6.3: Implementation tests and hardening
 
 - [x] 6.3.1 Write impl tests (encoded elevated command, registry parsing, ROM globbing) — `tools/setup/tests/install.impl.test.ps1` ✅ (completed: 2026-11-26 21:54) — impl 24/24; also the FS-UAE archive check
-- [ ] 6.3.2 Phase gate — `make check IMAGE=clorraine-sdk:windows-cli`; both PowerShell suites on Windows
+- [x] 6.3.2 Phase gate — `make check IMAGE=clorraine-sdk:windows-cli`; both PowerShell suites on Windows ✅ (completed: 2026-11-26 22:11) — make check 161 suites; spec 28/28, impl 27/27 after the review fixes
 
 **Deliverables**:
-- [ ] ST-50 – ST-58 hold on Windows
-- [ ] All verification passing
+- [x] ST-50 – ST-58 hold on Windows
+- [x] All verification passing
 
 **Verify (gate)**: `make check IMAGE=clorraine-sdk:windows-cli`; on Windows both PowerShell suites
 

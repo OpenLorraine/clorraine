@@ -379,8 +379,10 @@ Test-Case 'should restore the previous current link when the switch fails' {
 
 # --- Toolchain and emulator ----------------------------------------------------
 
-Test-Case 'should send the staging function and the four values through the encoded elevated command' {
-    $dir = New-Dir "elevate-o'brien"
+Test-Case 'should send the staging function and its values through the encoded elevated command' {
+    # A straight and a typographic single quote in the path: both delimit a
+    # PowerShell single-quoted literal and must be escaped.
+    $dir = New-Dir ("elevate-o'brien-" + [char]0x2019 + 'x')
     $setup = Join-Path $dir 'fake-setup.exe'
     $record = Join-Path $dir 'args.txt'
     Add-Type -OutputType ConsoleApplication -OutputAssembly $setup -TypeDefinition (@'
@@ -391,12 +393,8 @@ public static class FakeSetupImpl {
     }
 }
 '@).Replace('RECORD', $record.Replace('"', '""'))
-    $savedPrograms = $env:ProgramFiles
-    $env:ProgramFiles = Join-Path $dir 'Programs'
-    try {
-        $target = Join-Path $env:ProgramFiles "Clorraine\amiga gcc's"
-        $text = Get-ElevatedCommand $setup $target (Get-Item $setup).Length (Get-Sha256 $setup)
-    } finally { $env:ProgramFiles = $savedPrograms }
+    $admin = Join-Path $dir "Programs\Clorraine"
+    $text = Get-ElevatedCommand $setup (Get-Item $setup).Length (Get-Sha256 $setup) $admin
     $errors = $null
     [void][System.Management.Automation.Language.Parser]::ParseInput($text, [ref]$null, [ref]$errors)
     Assert-That ($errors.Count -eq 0) "the elevated command does not parse: $($errors | Select-Object -First 1)"
@@ -405,9 +403,30 @@ public static class FakeSetupImpl {
     $run = Invoke-Native $powershell @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', $encoded)
     Assert-That ($run.Code -eq 7) "the setup's exit code did not come back: $($run.Code) $($run.Err)"
     $commandLine = [IO.File]::ReadAllText($record)
-    Assert-That ($commandLine.Contains('/DIR="' + $target + '"')) "target lost its quoting: $commandLine"
-    Assert-That (Test-Path -LiteralPath (Join-Path $dir 'Programs\Clorraine')) 'the admin root was not used'
-    Assert-That (@(Get-ChildItem -LiteralPath (Join-Path $dir 'Programs\Clorraine') -Force -Filter '.staging-*').Count -eq 0) 'staging left behind'
+    $target = Join-Path $admin 'amiga-gcc-16.2-rc24'
+    Assert-That ($commandLine.Contains('/DIR="' + $target + '"')) "the target changed on the way: $commandLine"
+    Assert-That (@(Get-ChildItem -LiteralPath $admin -Force -Filter '.staging-*').Count -eq 0) 'staging left behind'
+}
+
+Test-Case 'should take Program Files from the system and not from the environment' {
+    $saved = $env:ProgramFiles
+    $env:ProgramFiles = Join-Path $SuiteRoot 'not-program-files'
+    try {
+        $root = Get-Rc24AdminRoot
+    } finally { $env:ProgramFiles = $saved }
+    $expected = Join-Path ([Environment]::GetFolderPath('ProgramFiles')) 'Clorraine'
+    Assert-That (Test-SamePath $root $expected) "the admin folder followed the environment: $root"
+    $text = Get-ElevatedCommand 'C:\x\setup.exe' 1 ('0' * 64)
+    Assert-That (-not $text.Contains('-AdminRoot') -and -not $text.Contains('-Target')) 'the elevated call passes a folder'
+}
+
+Test-Case 'should recognize a declined UAC prompt in the wrapping a .NET method call produces' {
+    $declined = New-Object System.ComponentModel.Win32Exception 1223
+    $wrapped = New-Object System.Management.Automation.MethodInvocationException('Exception calling "Start"', $declined)
+    $record = New-Object System.Management.Automation.ErrorRecord($wrapped, 'Start', 'NotSpecified', $null)
+    Assert-That (Test-DeclinedElevation $record) 'a wrapped 1223 was not recognized'
+    $other = New-Object System.Management.Automation.ErrorRecord((New-Object System.InvalidOperationException 'canceled'), 'x', 'NotSpecified', $null)
+    Assert-That (-not (Test-DeclinedElevation $other)) 'an unrelated error counted as a decline'
 }
 
 Test-Case 'should read the amiga-gcc registration and report none when it is absent' {
@@ -437,11 +456,14 @@ Test-Case 'should prefer a usual ROM name in any folder to a name pattern and sk
     $env:PUBLIC = Join-Path $fake 'public'
     $env:CLORRAINE_KICKSTART = $null
     $env:APPDATA = New-Dir 'rom-appdata'
+    function Get-DocumentsFolder { Join-Path $fake 'Documents' }
     try {
         $roms = New-Dir 'rom-home\amiga\roms'
         $kickstarts = New-Dir 'rom-home\Documents\FS-UAE\Kickstarts'
-        [IO.File]::WriteAllBytes((Join-Path $roms 'my-A1200-dump.rom'), (New-Object byte[] 524288))
+        # A matching name of the wrong size is never chosen.
         [IO.File]::WriteAllBytes((Join-Path $roms 'kick31-trimmed.rom'), (New-Object byte[] 1000))
+        Assert-That ($null -eq (Find-Kickstart '')) "chose a ROM of the wrong size: $(Find-Kickstart '')"
+        [IO.File]::WriteAllBytes((Join-Path $roms 'my-A1200-dump.rom'), (New-Object byte[] 524288))
         $exact = Join-Path $kickstarts 'kick31.rom'
         [IO.File]::WriteAllBytes($exact, (New-Object byte[] 524288))
         Assert-That (Test-SamePath (Find-Kickstart '') $exact) "chose $(Find-Kickstart '')"
@@ -456,13 +478,47 @@ Test-Case 'should prefer a usual ROM name in any folder to a name pattern and sk
     }
 }
 
+Test-Case 'should run VS Code through its Electron binary so cmd.exe never parses an argument' {
+    $vscode = New-Dir 'vscode-fake'
+    $bin = New-Dir 'vscode-fake\bin'
+    $out = New-Dir 'vscode-fake\07f806f999\resources\app\out'
+    Set-Content -LiteralPath (Join-Path $out 'cli.js') -Value '// cli'
+    $record = Join-Path $vscode 'seen.txt'
+    Add-Type -OutputType ConsoleApplication -OutputAssembly (Join-Path $vscode 'Code.exe') -TypeDefinition (@'
+public static class FakeCode {
+    public static int Main(string[] args) {
+        System.IO.File.WriteAllLines(@"RECORD", new string[] {
+            System.Environment.GetEnvironmentVariable("ELECTRON_RUN_AS_NODE") ?? "", string.Join("|", args) });
+        return 0;
+    }
+}
+'@).Replace('RECORD', $record.Replace('"', '""'))
+    $launcher = Join-Path $bin 'code.cmd'
+    Set-Content -LiteralPath $launcher -Encoding Ascii -Value @(
+        '@echo off', 'setlocal', 'set VSCODE_DEV=', 'set ELECTRON_RUN_AS_NODE=1',
+        '"%~dp0..\Code.exe" "%~dp0..\07f806f999\resources\app\out\cli.js" %*', 'endlocal')
+    $hostile = 'C:\work\R&D %PATH% ^x'
+    $result = Invoke-Editor $launcher @('--install-extension', $hostile)
+    Assert-That ($null -ne $result -and $result.Code -eq 0) 'the editor was not run directly'
+    $seen = Get-Content -LiteralPath $record
+    Assert-That ($seen[0] -eq '1') 'ELECTRON_RUN_AS_NODE was not set'
+    $expected = (Join-Path $out 'cli.js') + '|--install-extension|' + $hostile
+    Assert-That ($seen[1] -eq $expected) "arguments changed: $($seen[1])"
+    $odd = Join-Path $bin 'odd.cmd'
+    Set-Content -LiteralPath $odd -Value '@echo off & start notepad'
+    Assert-That ($null -eq (Invoke-Editor $odd @('x'))) 'ran a launcher of an unexpected shape'
+}
+
 Test-Case 'should refuse an FS-UAE archive with an unsafe entry before unpacking it' {
     $root = New-Dir 'fsuae-bad'
     $zip = New-Zip (Join-Path $root 'bad.zip') @('FS-UAE/Windows/x86-64/fs-uae.exe', '../evil.txt')
     function Invoke-Download([string]$Url, [string]$Destination, [long]$Bytes, [string]$Sha256, [int]$MaxSeconds) {
         Copy-Item -LiteralPath $zip -Destination $Destination
     }
-    Assert-That ((Get-StopCode { Install-FsUae $root }) -eq 1) 'accepted an unsafe FS-UAE archive'
+    $message = ''
+    try { Install-FsUae $root | Out-Null } catch { $message = $_.Exception.Message }
+    # The installer's own check refuses it; tar.exe never runs.
+    Assert-That ($message -match 'the FS-UAE archive contains an unsafe entry') "not refused by the entry check: $message"
     Assert-That (-not (Test-Path (Join-Path $root 'fs-uae\3.2.35'))) 'unpacked anyway'
     Assert-That (-not (Test-Path (Join-Path (Split-Path -Parent $root) 'evil.txt'))) 'wrote outside the prefix'
 }
