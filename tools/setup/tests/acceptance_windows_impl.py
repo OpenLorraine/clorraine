@@ -78,6 +78,23 @@ class WindowsAcceptanceImplTests(acceptance_windows_spec.WindowsAcceptanceSpecTe
             self.check(json.loads(json.dumps(self.evidence)))
         self.assertIn("version", str(caught.exception))
 
+    def test_should_take_the_version_from_the_candidate_not_a_constant(self) -> None:
+        moved = self.candidate / "clorraine-1.3.0-x86_64-windows.zip"
+        self.archive.rename(moved)
+        (self.candidate / "clorraine-1.2.0.vsix").rename(self.candidate / "clorraine-1.3.0.vsix")
+        record = json.loads(json.dumps(self.evidence))
+        record["version"] = "1.3.0"
+        record["archive"]["name"] = moved.name
+        record["vsix"]["name"] = "clorraine-1.3.0.vsix"
+        self.check(record)
+
+    def test_should_require_gcc_for_the_pc_hello(self) -> None:
+        self.rejected(lambda record: record["host_hello"].update(compiler="clang 19.1.0"),
+                      "host_hello.compiler")
+
+    def test_should_require_the_pinned_version_for_a_downloaded_fs_uae(self) -> None:
+        self.rejected(lambda record: record["fs_uae"].update(version="3.2.36"), "fs_uae.version")
+
     def test_should_read_the_version_from_a_full_five_asset_candidate(self) -> None:
         (self.candidate / "clorraine-1.2.0-x86_64-linux.tar.gz").write_bytes(b"linux\n")
         (self.candidate / "install.sh").write_bytes(b"sh\n")

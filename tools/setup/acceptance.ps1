@@ -8,14 +8,18 @@
 #
 # It copies the candidate's zip, install.ps1, VSIX, and SHA256SUMS into a
 # private folder beside FILE, checks them, and installs with -Archive and
-# -Checksums into an isolated prefix and APPDATA. The first install may ask
-# for administrator approval to install rc24; a second install of the same
-# candidate must reuse that registration without asking. The script then runs
+# -Checksums into an isolated prefix and APPDATA. This is the clean-install
+# acceptance: rc24 must not be registered beforehand, so the first install
+# installs it through the administrator (UAC) step; a second install of the
+# same candidate must reuse that registration without asking. The script runs
 # the PC hello with GCC, the Amiga hello, the four hosted-amiga corpus
 # programs, file-copier on hosted-amiga-13, and the return-1 negative in
 # FS-UAE, and writes FILE as JSON for `make acceptance-check`. The ROM is
 # recorded by name and SHA-256 only. -UacConfirmed and -EditorConfirmed record
-# what the person saw: the UAC prompt and a Build/Run in FS-UAE from VS Code.
+# what the person saw: the UAC prompt of this run and a Build/Run in FS-UAE from
+# VS Code; without them an interactive console asks at the end. A record whose
+# facts did not all hold is still written, and the script then exits 1.
+# FILE must be a plain local path, not under a junction or an 8.3 short name.
 #
 # This runs the self-built candidate installer with the caller's privileges.
 # Do not point it at an untrusted candidate.
@@ -85,7 +89,8 @@ function Invoke-Child([string]$File, [string[]]$Arguments, [string]$Directory) {
     $info.RedirectStandardInput = $true
     $info.RedirectStandardOutput = $true
     $info.RedirectStandardError = $true
-    foreach ($name in 'CLORRAINE_TOOLCHAIN', 'CLORRAINE_FS_UAE', 'CLORRAINE_KICKSTART') {
+    foreach ($name in 'CLORRAINE_TOOLCHAIN', 'CLORRAINE_FS_UAE', 'CLORRAINE_KICKSTART',
+            'CLORRAINE_INSTALL_LIB', 'CLORRAINE_EMULATOR_TIMEOUT_SECONDS') {
         if ($info.EnvironmentVariables.ContainsKey($name)) { $info.EnvironmentVariables.Remove($name) }
     }
     $process = [Diagnostics.Process]::Start($info)
@@ -177,6 +182,9 @@ Write-Note 'install the candidate (approve the rc24 UAC prompt if it appears)'
 $first = Invoke-Child $powershell ($installArgs + @('-InstallToolchain', '-InstallFsUae')) $work
 [IO.File]::WriteAllText((Join-Path $out 'install-1.log'), $first.Out + $first.Err)
 if ($first.Code -ne 0) { Stop-Acceptance 1 "the first install exited $($first.Code); see install-1.log" }
+if (-not $first.Out.Contains('installed rc24 in')) {
+    Stop-Acceptance 2 'rc24 was already registered, so this run did not install it; uninstall amiga-gcc under Settings > Apps for the clean-install acceptance'
+}
 $cli = Join-Path $prefix 'current\bin\clorraine.exe'
 $reported = (Invoke-Child $cli @('--version') $work).Out.Trim()
 if ($reported -ne "clorraine $version") { Stop-Acceptance 1 "installed version '$reported' is not clorraine $version" }
@@ -283,8 +291,17 @@ Assert-NoEmulator 'the negative'
 
 # --- Evidence --------------------------------------------------------------------
 
-$administrators = New-Object Security.Principal.SecurityIdentifier 'S-1-5-32-544'
-$standard = -not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole($administrators)
+# Under UAC an administrator's unelevated token still lists Administrators,
+# as a deny-only group, so the whole group list decides, not the token's role.
+$groups = Invoke-Child (Join-Path ([Environment]::SystemDirectory) 'whoami.exe') @('/groups', '/fo', 'csv', '/nh') $work
+if ($groups.Code -ne 0) { Stop-Acceptance 1 'whoami /groups failed' }
+$standard = -not $groups.Out.Contains('"S-1-5-32-544"')
+function Read-Confirmation([string]$Question) {
+    if ([Console]::IsInputRedirected) { return $false }
+    return (Read-Host "$Question [y/N]") -match '^(y|yes)$'
+}
+if (-not $UacConfirmed) { $UacConfirmed = Read-Confirmation 'Did a UAC prompt for the rc24 setup appear during this run, and did an administrator approve it?' }
+if (-not $EditorConfirmed) { $EditorConfirmed = Read-Confirmation 'Did Run in FS-UAE from VS Code build and run a project with an imported file, refuse a dirty dependency, and show a diagnostic?' }
 $sha = [Security.Cryptography.SHA256]::Create()
 try { $helloHash = (($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($guestOutput)) | ForEach-Object { $_.ToString('x2') }) -join '') } finally { $sha.Dispose() }
 $record = [ordered]@{
@@ -310,4 +327,14 @@ $record = [ordered]@{
 $json = $record | ConvertTo-Json -Depth 6
 [IO.File]::WriteAllText($Output, $json + "`n", (New-Object Text.UTF8Encoding $false))
 Write-Note "wrote $Output (raw output in $out)"
+$missing = @()
+if ($hostResult -ne 'ok') { $missing += 'the PC hello did not print the hello line' }
+if (-not $reused) { $missing += 'the second install did not reuse rc24' }
+if (-not $standard) { $missing += 'the account is an administrator, not a standard account' }
+if (-not $UacConfirmed) { $missing += 'the UAC prompt was not confirmed' }
+if (-not $EditorConfirmed) { $missing += 'the VS Code Build/Run was not confirmed' }
+if ($missing.Count -gt 0) {
+    foreach ($item in $missing) { [Console]::Error.WriteLine("acceptance: not held: $item") }
+    exit 1
+}
 exit 0

@@ -87,8 +87,8 @@ check_stage() {
 }
 
 # Asserts the exact Windows stage layout; each executable must be PE32+ for
-# x86-64 and carry the version text. The executables cannot run here, so the
-# version is read from their bytes.
+# x86-64 and carry `clorraine <version>`, the text `--version` prints. The
+# executables cannot run here, so the version is read from their bytes.
 check_windows_stage() {
     local dir=$1 entry
     [ -d "$dir" ] || die "missing Windows stage directory: $dir"
@@ -102,6 +102,7 @@ check_windows_stage() {
     done
     while IFS= read -r entry; do
         local relative=${entry#"$dir/"}
+        [ ! -L "$entry" ] || die "link in the Windows stage: $relative"
         case "$relative" in
             README.md|LICENSE|LICENSE-EXCEPTION.md|NOTICE|THIRD_PARTY_NOTICES.md) ;;
             bin/clc.exe|bin/clorraine.exe|bin/clorraine-lsp.exe) ;;
@@ -109,24 +110,7 @@ check_windows_stage() {
         esac
     done < <(find "$dir" -type f -o -type l)
     for name in clc clorraine clorraine-lsp; do
-        python3 - "$dir/bin/$name.exe" "$version" <<'PY' || exit 1
-import struct, sys
-path, version = sys.argv[1], sys.argv[2]
-name = "bin/" + path.replace("\\", "/").rsplit("/", 1)[-1]
-data = open(path, "rb").read()
-def machine_and_magic():
-    if len(data) < 0x40 or data[:2] != b"MZ":
-        return None
-    offset = struct.unpack_from("<I", data, 0x3C)[0]
-    if offset + 26 > len(data) or data[offset:offset + 4] != b"PE\0\0":
-        return None
-    return (struct.unpack_from("<H", data, offset + 4)[0],
-            struct.unpack_from("<H", data, offset + 24)[0])
-if machine_and_magic() != (0x8664, 0x020B):
-    sys.exit(f"package: {name} is not a PE32+ x86-64 executable")
-if version.encode() not in data:
-    sys.exit(f"package: {name} does not carry the version {version}")
-PY
+        python3 "$here/pe_check.py" "bin/$name.exe" "$version" <"$dir/bin/$name.exe" || exit 1
     done
 }
 
@@ -405,15 +389,29 @@ verify_candidate() {
 # Checks the Windows zip layout and the PowerShell installer pins.
 verify_windows_assets() {
     local zip="$output/$zip_name" ps1="$output/$powershell_name" vsix_file="$output/$vsix_name"
-    python3 - "$zip" "$windows_top" <<'PY' || exit 1
-import sys, zipfile
-path, top = sys.argv[1], sys.argv[2]
+    python3 - "$zip" "$windows_top" "$version" "$here/pe_check.py" <<'PY' || exit 1
+import importlib.util, sys, zipfile
+path, top, version, checker = sys.argv[1:]
+spec = importlib.util.spec_from_file_location("pe_check", checker)
+pe_check = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(pe_check)
+zip_name = path.rsplit("/", 1)[-1]
 expected = sorted(f"{top}/{name}" for name in (
     "LICENSE", "LICENSE-EXCEPTION.md", "NOTICE", "README.md", "THIRD_PARTY_NOTICES.md",
     "bin/clc.exe", "bin/clorraine-lsp.exe", "bin/clorraine.exe"))
-names = [info.filename for info in zipfile.ZipFile(path).infolist()]
-if names != expected:
-    sys.exit(f"package: {path.rsplit('/', 1)[-1]} does not hold exactly the release files")
+archive = zipfile.ZipFile(path)
+infos = archive.infolist()
+if [info.filename for info in infos] != expected:
+    sys.exit(f"package: {zip_name} does not hold exactly the release files")
+for info in infos:
+    executable = info.filename.endswith(".exe")
+    if info.external_attr >> 16 != (0o100755 if executable else 0o100644) or \
+            info.date_time != (1980, 1, 1, 0, 0, 0):
+        sys.exit(f"package: {zip_name} entry {info.filename} is not a release file entry")
+    if executable:
+        problem = pe_check.problem(archive.read(info), version)
+        if problem:
+            sys.exit(f"package: {zip_name} entry {info.filename} {problem}")
 PY
     grep -Fxq "\$script:Version = '$version'" "$ps1" || die "install.ps1 pin mismatch: Version"
     grep -Fxq "\$script:ArchiveName = '$zip_name'" "$ps1" || die "install.ps1 pin mismatch: ArchiveName"
@@ -429,6 +427,15 @@ PY
     if LC_ALL=C grep -q '[^ -~[:space:]]' "$ps1"; then
         die "install.ps1 must be printable ASCII"
     fi
+    # Every other byte, pin, and line end must be what the template gives.
+    local rebuilt
+    rebuilt="$(mktemp "${TMPDIR:-/tmp}/clorraine-install-ps1.XXXXXXXX")"
+    if ! (assemble_powershell_installer "$zip" "$vsix_file" "$rebuilt") ||
+        ! cmp -s "$rebuilt" "$ps1"; then
+        rm -f "$rebuilt"
+        die "install.ps1 differs from the template assembled with this candidate"
+    fi
+    rm -f "$rebuilt"
 }
 
 if [ "$verify" = 1 ]; then

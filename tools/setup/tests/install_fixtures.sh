@@ -177,7 +177,7 @@ image[0x80:0x84] = b"PE\0\0"
 struct.pack_into("<H", image, 0x84, 0x8664)
 struct.pack_into("<H", image, 0x98, 0x020B)
 if version:
-    image += b"\0version " + version.encode() + b"\0"
+    image += b"\0clorraine " + version.encode() + b"\n\0"
 open(path, "wb").write(bytes(image))
 PY
 }
