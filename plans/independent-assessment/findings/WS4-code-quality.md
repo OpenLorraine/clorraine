@@ -90,6 +90,7 @@ the scalar benchmarks.
 - **Effort**: M
 - **Related**: WS4-09 template specialization; WS6-03 (hidden costs)
 - **Self-refutation (4.3.1)**: earlier plans measured Clorraine against earlier Clorraine, not against C; none settled the template builder's cost. The fairness of the C reference was checked: it allocates one heap block per string, formats with the same least-significant-first writer, and frees it — the gap is the generic builder only (attribution). Stays Major (≥10% on a shipped 68000 lens, ST-4).
+- **DEF**: DEF-612 (`plans/00-roadmap.md`)
 - **Verdict**: confirmed (Major, verified) — verifier ses_dea9a6112ffeMR984F2rpPTplg (9.2.3): net +32.6% reproduced; patch 413 −23.8% of net, output identical.
 
 ### ASM-WS4-002 — `Array<T>` push and get cost 39% more instructions than equivalent C on the A500
@@ -107,6 +108,7 @@ the scalar benchmarks.
 - **Effort**: M
 - **Related**: WS4-09; DEF history of `Array` ownership (WS8); `plans/real-workload-audit/99-execution-plan.md` (concluded the `get`/`push` instances are inlined into `main` and left them unchanged; amortized reserve growth followed in `growable-array-growth`)
 - **Self-refutation (4.3.1)**: the earlier audit compared shapes, not C; this new measurement (patches 411/412: −7.1% and −23.0% with identical output) contradicts its "no change" conclusion for `get`/`push`. The C reference grows by the same doubling from 8 bytes and keeps the spec-required check, so the gap is the per-push call, the zeroing `memset`, and the view. Stays Major.
+- **DEF**: DEF-611 (`plans/00-roadmap.md`)
 - **Verdict**: confirmed (Major, verified) — verifier ses_dea9a6112ffeMR984F2rpPTplg (9.2.3): net +38.5%; patches 412 −23.0% and 411 −7.1%.
 
 ### ASM-WS4-003 — The runtime fault writer pulls 16.6 KB of `printf` and soft-float code into every checked program

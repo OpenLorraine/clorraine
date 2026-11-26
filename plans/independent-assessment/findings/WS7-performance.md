@@ -63,6 +63,7 @@ Runs 2026-11-26 (logs under `build/tmp/assessment/WS7/`; committed record
 - **Related**: ASM-WS4-004 (module tables occupy RAM twice); DEF-309 (the fill expression evaluated per element — a different, fixed defect); WS3-11
 - **Self-refutation (7.3.1)**: `performance-levers-closeout` and `constant-array-initializer` measured constant-initializer tables, not fills; no limitation entry covers fills at module level. Major (≥10% `.text` and C compile time above 10× on a shipped 68000 build).
 - **Phase 9 additions**: emitter site traced by the verifier: `compiler/src/codegen/program.rs:1974`, `:2058-2085`; related to ASM-WS4-004 (both lower module initializers as run-time stores; different shapes and remedies).
+- **DEF**: DEF-596 (`plans/00-roadmap.md`)
 - **Verdict**: confirmed (Major, verified) — verifier ses_dea685c4bffegV12VLXpl04mC6 (9.2.5): 740 reproduces (GCC 160 s at 65,536; `.text` 547,676 B); a `[; 0]` module fill is expanded too; emitter site `codegen/program.rs:2058-2085` `emit_filled_array` (called from `emit_global_array_fill`, `:1974`), while the function path compacts (`codegen/function.rs:4337-4675`).
 
 ### ASM-WS7-002 — Compile time grows about quadratically for call-heavy and generic code
@@ -81,6 +82,7 @@ Runs 2026-11-26 (logs under `build/tmp/assessment/WS7/`; committed record
 - **Related**: `plans/compiler-throughput/05-findings.md` §2 (codegen fixed; "the ownership pass … close to linear" on the mixed shape; "residual generic-instance … lookups still scan the function table"); WS1-10 robustness (locals)
 - **Self-refutation (7.3.1)**: the earlier plan measured shapes with few calls per body and no generics; the new series contradict its "close to linear" statement only for call-heavy and generic bodies, which is the claim here. The 10× rule is applied at equal function count, stated explicitly; against each series' own linear extrapolation the 8,000 point is 8.6× (ownership) and 9.3× (generic) slower. Major.
 - **Phase 9 corrections**: average exponent over 1,000→8,000 is about quadratic (ownership 2.22, generic 1.85), above quadratic on the top doubling; add `compiler/src/codegen.rs:1009-1020` (`resolve_function` fallback scan) to the location — the residual generic-instance lookup `compiler-throughput` left open.
+- **DEF**: DEF-610 (`plans/00-roadmap.md`)
 - **Verdict**: confirmed (Major; measurement verified, attribution probable and reproduced) — verifier ses_dea685c4bffegV12VLXpl04mC6 (9.2.5): every superlinear series stays superlinear under load (ownership top-doubling exponent 2.94, average 2.22 over 1,000→8,000; generic 2.12/1.85); title correction: "faster than quadratically" holds for the top doubling, about quadratic on average; gdb samples add `codegen::Emitter::resolve_function`'s linear fallback (`compiler/src/codegen.rs:1009-1020`) to the location.
 
 ### ASM-WS7-003 — The 68020 probe build of `container` runs 21% more instructions than the 68000 build

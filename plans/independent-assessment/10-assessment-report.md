@@ -669,37 +669,37 @@ and `probes/WS5/verify-9.2.4/`.
 
 | ID | Severity | DEF | Issue |
 |----|----------|-----|-------|
-| ASM-WS5-001 | Critical | — | — |
-| ASM-WS1-002 | Critical | — | — |
-| ASM-WS2-001 | Critical | — | — |
-| ASM-WS5-004 | Critical | — | — |
-| ASM-WS5-005 | Critical | — | — |
-| ASM-WS5-002 | Critical | — | — |
-| ASM-WS5-016 | Critical | — | — |
-| ASM-WS3-001 | Critical | — | — |
-| ASM-WS1-004 | Critical | — | — |
-| ASM-WS1-005 | Critical | — | — |
-| ASM-WS3-002 | Critical | — | — |
-| ASM-WS5-006 | Critical | — | — |
-| ASM-WS6-001 | Major | — | — |
-| ASM-WS5-023 | Major | — | — |
-| ASM-WS7-001 | Major | — | — |
-| ASM-WS5-008 | Major | — | — |
-| ASM-WS5-012 | Major | — | — |
-| ASM-WS5-007 | Major | — | — |
-| ASM-WS5-009 | Major | — | — |
-| ASM-WS1-001 | Major | — | — |
-| ASM-WS3-003 | Major | — | — |
-| ASM-WS6-002 | Major | — | — |
-| ASM-WS5-013 | Major | — | — |
-| ASM-WS5-017 | Major | — | — |
-| ASM-WS5-018 | Major | — | — |
-| ASM-WS5-010 | Major | — | — |
-| ASM-WS3-008 | Major | — | — |
-| ASM-WS3-007 | Major | — | — |
-| ASM-WS7-002 | Major | — | — |
-| ASM-WS4-002 | Major | — | — |
-| ASM-WS4-001 | Major | — | — |
+| ASM-WS5-001 | Critical | DEF-582 | — |
+| ASM-WS1-002 | Critical | DEF-583 | — |
+| ASM-WS2-001 | Critical | DEF-584 | — |
+| ASM-WS5-004 | Critical | DEF-585 | — |
+| ASM-WS5-005 | Critical | DEF-586 | — |
+| ASM-WS5-002 | Critical | DEF-587 | — |
+| ASM-WS5-016 | Critical | DEF-588 | — |
+| ASM-WS3-001 | Critical | DEF-589 | — |
+| ASM-WS1-004 | Critical | DEF-590 | — |
+| ASM-WS1-005 | Critical | DEF-591 | — |
+| ASM-WS3-002 | Critical | DEF-592 | — |
+| ASM-WS5-006 | Critical | DEF-593 | — |
+| ASM-WS6-001 | Major | DEF-594 | — |
+| ASM-WS5-023 | Major | DEF-595 | — |
+| ASM-WS7-001 | Major | DEF-596 | — |
+| ASM-WS5-008 | Major | DEF-597 | — |
+| ASM-WS5-012 | Major | DEF-598 | — |
+| ASM-WS5-007 | Major | DEF-599 | — |
+| ASM-WS5-009 | Major | DEF-600 | — |
+| ASM-WS1-001 | Major | DEF-601 | — |
+| ASM-WS3-003 | Major | DEF-602 | — |
+| ASM-WS6-002 | Major | DEF-603 | — |
+| ASM-WS5-013 | Major | DEF-604 | — |
+| ASM-WS5-017 | Major | DEF-605 | — |
+| ASM-WS5-018 | Major | DEF-606 | — |
+| ASM-WS5-010 | Major | DEF-607 | — |
+| ASM-WS3-008 | Major | DEF-608 | — |
+| ASM-WS3-007 | Major | DEF-609 | — |
+| ASM-WS7-002 | Major | DEF-610 | — |
+| ASM-WS4-002 | Major | DEF-611 | — |
+| ASM-WS4-001 | Major | DEF-612 | — |
 | ASM-WS0-001 | Minor | n/a | — |
 | ASM-WS1-003 | Minor | n/a | — |
 | ASM-WS2-002 | Minor | n/a | — |
@@ -733,5 +733,5 @@ and `probes/WS5/verify-9.2.4/`.
 - [x] The ten sections of 03-04 are present (review RV, task 10.3.1)
 - [x] The ranked findings in §4 are exactly the surviving ledger rows of `05-findings.md` (58 = 58)
 - [x] No finding appears in §1, §4, §5, or §7 unless it is surviving (none refuted or merged)
-- [ ] Every surviving Critical/Major has a DEF row in `plans/00-roadmap.md`, and every finding-derived DEF row added by this plan maps to a surviving finding
+- [x] Every surviving Critical/Major has a DEF row in `plans/00-roadmap.md` (DEF-582..DEF-612), and every finding-derived DEF row added by this plan maps to a surviving finding
 - [x] Every measured quantity cites its measurement record (ST-12; RV-006 resolved)

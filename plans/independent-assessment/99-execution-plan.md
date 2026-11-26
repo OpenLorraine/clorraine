@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-26 03:32
-> **Progress**: 89/95 tasks (93%)
+> **Last Updated**: 2026-11-26 03:33
+> **Progress**: 90/95 tasks (94%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -412,7 +412,7 @@ this plan's folder and the roadmap; 03-01 §Ground rules)
 ### Step 10.3: Review, DEF rows, issues, repeatability, and gate
 
 - [x] 10.3.1 Independent `correctness-reviewer` review of the report against `05-findings.md`, ST-10, and ST-12; record its findings under `05-findings.md` §Report review and fix every critical/major one ✅ (completed: 2026-11-26 03:32)
-- [ ] 10.3.2 Allocate one DEF row per surviving Critical/Major in `plans/00-roadmap.md` per 03-04 §DEF rows; write the IDs back into the ledger, the findings, and the report appendix; re-check ST-10
+- [x] 10.3.2 Allocate one DEF row per surviving Critical/Major in `plans/00-roadmap.md` per 03-04 §DEF rows; write the IDs back into the ledger, the findings, and the report appendix; re-check ST-10 ✅ (completed: 2026-11-26 03:33)
 - [ ] 10.3.3 Draft every issue under `issues/` per 03-04 §GitHub issues (finding issues, Minor tracking issues, theme parent issues): search all open issues for overlaps and propose links or comments instead of duplicates, apply the redaction rule and grep the drafts for it; present the full list, overlaps, and labels to the user and wait for approval (AR #27)
 - [ ] 10.3.4 After approval: ask the user whether to push the plan commits first (permalinks are added only if pushed); create any missing labels, then the approved theme parents, then finding issues with `gh issue create --parent <theme#>`, then tracking issues, checking all open issues for duplicates first; post the approved comments on overlapping existing issues; record every issue number in the findings, the ledger, the DEF rows, and the report appendix
 - [ ] 10.3.5 Promote the reusable assets per 03-04 §Repeatability: copy the two scripts and `probes/WS0/ref/` into `tools/assessment/`, and the method documents into `tools/assessment/template/` with placeholders, cleared checkboxes, the standing-default register, the widened drift-check exclusion, and only the lessons Phase 9 confirmed

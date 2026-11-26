@@ -65,6 +65,7 @@ records `records/WS6-results.json`, `WS6-contrast.json`, `WS6-runs.log`).
 - **Effort**: S
 - **Related**: SQ-WS6-2 (the §4 carrier); ASM-WS6-004 (`std.io` has no appendix table)
 - **Self-refutation (6.3.1)**: no limitation or DEF row covers it; the doc comment acknowledges ambiguity but promises a "zero or less" signal that the code never produces for errors. Major (missing failure path).
+- **DEF**: DEF-594 (`plans/00-roadmap.md`)
 - **Verdict**: confirmed (Major) — verifier ses_dea9a6131ffesU3qOxzrQQoINm (9.2.1): probe 617 reproduces on all four host lines; the Amiga lens is the same `fread` path (code reading).
 
 ### ASM-WS6-002 — `slice` of a `str` is rejected, although the appendix gives it the same view type
@@ -82,6 +83,7 @@ records `records/WS6-results.json`, `WS6-contrast.json`, `WS6-runs.log`).
 - **Effort**: M
 - **Related**: SQ-WS6-3 (`toCString` of a sub-view); ASM-WS1-003 (the earlier spec-vs-implementation gap class)
 - **Self-refutation (6.3.1)**: not listed in `docs/known-limitations.md`; the appendix row is explicit. Major (a wrongly rejected valid program).
+- **DEF**: DEF-603 (`plans/00-roadmap.md`)
 - **Verdict**: confirmed (Major) — verifier ses_dea9a6131ffesU3qOxzrQQoINm (9.2.1): E10200 on all three profiles; no safe route to a `str` sub-view exists.
 
 ### ASM-WS6-003 — NaN prints as `-nan` on the host and `NaN` on the Amiga profiles
