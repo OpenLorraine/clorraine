@@ -585,6 +585,7 @@ fn the_exit_hook_runs_its_phases_in_order() {
             "if (cl_ports_handler != NULL)",
             "cl_ports_handler = NULL;",
             "RemIntServer(INTB_PORTS, &cl_ports_server);",
+            "while ((worker = cl_worker_head) != NULL)",
             "while ((node = cl_res_tail) != NULL)",
             "release(handle);",
             "if (cl_sprite_collisions_used)",
@@ -1197,5 +1198,112 @@ fn arexx_packets_in_flight_keep_their_reply_port_for_a_foreign_holder() {
         "kept",
         body(&shim, "static int cl_port_kept(struct MsgPort *port)"),
         &["if (cl_kept_overflow)", "return 1;", "cl_kept_ports[index] == port"],
+    );
+}
+
+/// A fault on a worker task never runs stdio or `exit` on the worker. The
+/// fault paths reach the worker path only through a pointer that creating a
+/// worker sets, so a program without workers links none of it; the worker
+/// finds its record under Forbid by task pointer, never through `tc_UserData`,
+/// records the fault, signals the parent, and parks.
+#[test]
+fn a_worker_fault_is_recorded_for_the_parent_and_the_worker_parks() {
+    let shim = shim();
+    for signature in [
+        "static inline void cl_trap(const char *code, const char *message)",
+        "static inline void cl_panic(const unsigned char *message, unsigned long len)",
+    ] {
+        assert_order(signature, body(&shim, signature), &["if (cl_worker_fault_fn != NULL)", "cl_worker_fault_fn(", "exit(20);"]);
+    }
+    let path = body_from(&shim, "static void cl_worker_fault(UBYTE kind, const char *code,");
+    assert_order(
+        "worker path",
+        path,
+        &[
+            "struct Task *self = FindTask(NULL);",
+            "Forbid();",
+            "record = cl_worker_head; record != NULL; record = record->next_worker",
+            "record->task == self",
+            "record->fault_code = code;",
+            "record->fault_kind = kind;",
+            "Permit();",
+            "if (record == NULL)",
+            "return;",
+            "Signal(record->parent, 1UL << record->signal_bit);",
+            "Wait(0);",
+        ],
+    );
+    for forbidden in ["tc_UserData", "printf", "fwrite", "fflush", "exit("] {
+        assert_lacks("worker path", path, forbidden);
+    }
+    assert_order(
+        "create",
+        body(&shim, "void *cl_create_task(cl_handler_fn entry, ULONG stack_size)"),
+        &[
+            "!cl_exit_hook_install()",
+            "record->task = task;",
+            "Forbid();",
+            "record->next_worker = cl_worker_head;",
+            "cl_worker_head = record;",
+            "Permit();",
+            "cl_worker_fault_fn = cl_worker_fault;",
+        ],
+    );
+    assert_order(
+        "unlink",
+        body(&shim, "static void cl_worker_unlink(cl_task *record)"),
+        &["Forbid();", "*link = record->next_worker;", "Permit();"],
+    );
+}
+
+/// The parent reports a worker's fault at join and leaves the parked worker
+/// for the exit to remove; the exit reports any fault nobody reported. In
+/// both places the record is marked reported before the line is printed, and
+/// the line is printed before the worker is removed, so its text is still
+/// valid and a nested exit prints nothing twice.
+#[test]
+fn a_worker_fault_is_reported_once_and_before_the_worker_is_removed() {
+    let shim = shim();
+    let join = body(&shim, "static LONG cl_task_join_record(cl_task *record)");
+    assert_order(
+        "join",
+        join,
+        &[
+            "Wait(1UL << record->signal_bit);",
+            "if (record->fault_kind != CL_FAULT_NONE)",
+            "record->fault_reported = 1;",
+            "cl_worker_print_fault(record);",
+            "exit(20);",
+            "record->removed = 1;",
+            "RemTask(record->task);",
+            "FreeSignal(record->signal_bit);",
+            "cl_worker_unlink(record);",
+            "FreeMem(record, (ULONG)sizeof *record);",
+        ],
+    );
+    let hook = body(&shim, "void cl_exit_hook(void)");
+    assert_order(
+        "exit removal",
+        hook,
+        &[
+            "while ((worker = cl_worker_head) != NULL)",
+            "worker->fault_kind != CL_FAULT_NONE && !worker->fault_reported",
+            "worker->fault_reported = 1;",
+            "cl_worker_print_fault(worker);",
+            "if (!worker->removed)",
+            "worker->removed = 1;",
+            "RemTask(worker->task);",
+            "SetSignal(0, 1UL << worker->signal_bit);",
+            "FreeSignal(worker->signal_bit);",
+            "cl_worker_unlink(worker);",
+            "FreeMem(worker, (ULONG)sizeof *worker);",
+        ],
+    );
+    let removal = &hook[hook.find("while ((worker = cl_worker_head)").expect("worker phase")..hook.find("while ((node = cl_res_tail)").expect("registry phase")];
+    assert_lacks("exit removal", removal, "Wait(");
+    assert_order(
+        "print",
+        body(&shim, "static void cl_worker_print_fault(const cl_task *record)"),
+        &["record->fault_kind == CL_FAULT_TRAP", "printf(\"error %s: %s\\n\"", "fwrite(\"panic: \", 1, 7, stdout);", "fflush(stdout);"],
     );
 }

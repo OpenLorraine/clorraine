@@ -1,0 +1,20 @@
+// Fault-exit cleanup probe for real Kickstart: a worker task divides by zero.
+// A worker is a plain Exec task, so it must not print or exit by itself; the
+// parent reports the fault when it joins the worker, and the worker is
+// removed.
+module robustness.fault_cleanup.worker_fault;
+
+import { Task, createTask, reportTaskResult, joinTask } from std.amiga.exec;
+
+func worker(): void {
+    let zero: i32 = 0;
+    reportTaskResult(10 / zero);   // error E11210: integer division by zero
+}
+
+func main(): i32 {
+    let task: Task? = createTask(worker, 8192);
+    if (task == null) {
+        return 1;
+    }
+    return joinTask(task);
+}

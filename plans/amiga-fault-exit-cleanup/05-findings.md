@@ -25,3 +25,9 @@
 | SR-Q1 (P3) | 3 | MINOR | no FS-UAE fault probe for 2.0+ kinds | deferred (AR-7; known-limitations entry in 6.1.3) |
 | SR-Q2 (P3) | 3 | MINOR | CL_LIB_TABLE_MAX zero headroom | deferred (strict scope; 20 bases exactly, pinned by tests) |
 | SR-001 (P3 re-review) | 3 | MINOR | shim_hosted_amiga.c:public port drain-to-delete race | fixed (DeletePort under Forbid) |
+| SR-001/RV-001 (P4) | 4 | MINOR | shim_hosted_amiga.c:cl_worker_fault field stores | fixed (stored under Forbid) |
+| SR-Q1 (P4) | 4 | MINOR | shim_hosted_amiga.c:exit worker phase signal bit | fixed (SetSignal clear before FreeSignal) |
+| RV-002 (P4) | 4 | MINOR | stale doc comments | fixed |
+| RV-003 (P4) | 4 | MINOR | roadmap and plan bookkeeping | fixed |
+| SR-Q2 (P4) | 4 | MINOR | ST-14/ST-18 memory not asserted | deferred (strict scope; spec change) |
+| SR-PRE (P4) | 4 | MINOR | interrupt-context fault with workers | deferred (AR-4, issue #95) |

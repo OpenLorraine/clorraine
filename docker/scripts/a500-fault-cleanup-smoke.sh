@@ -6,7 +6,8 @@
 # OS resources (an interrupt server, a public port, a custom display, a screen
 # with a window and a console, a disk font, or a layer, copper list, sprites,
 # an audio channel, and a sample) and then faults, or returns normally without
-# releasing them. A test-only walker records the system state before and after
+# releasing them. Two probes fault inside a worker task, which the parent
+# reports. A test-only walker records the system state before and after
 # every probe; the runtime must leave it exactly as it found it, and each
 # probe must print its expected output and leave with its expected rc.
 #
@@ -46,6 +47,8 @@ CASES=(
     "device-fault|error E11211: index out of range|fail|chip"
     "handler-fault|error E11211: index out of range|fail|-"
     "clean-exit|clean|ok|-"
+    "worker-fault|error E11210: integer division by zero|fail|-"
+    "worker-fault-unjoined|error E11211: index out of range\nerror E11210: integer division by zero|fail|-"
 )
 
 if [ ! -x "${repo_dir}/target/debug/clc" ]; then
@@ -224,7 +227,12 @@ done
 docker stop -t 8 "${container}" >/dev/null 2>&1 || true
 wait "${runner}" 2>/dev/null || true
 
-sdk xdftool "/work/${adf_rel}" unpack "/work/${work_rel}/capture" >/dev/null
+# A machine that crashed mid-write leaves a damaged capture disk. Report it
+# and go on: every case whose files are missing then fails by name.
+if ! sdk xdftool "/work/${adf_rel}" unpack "/work/${work_rel}/capture" \
+        > "${work}/unpack.log" 2>&1; then
+    echo "a500-fault-cleanup-smoke: the capture disk is damaged: $(tail -1 "${work}/unpack.log")" >&2
+fi
 capture="${work}/capture/Capture"
 [ -d "${capture}" ] || capture="${work}/capture"
 

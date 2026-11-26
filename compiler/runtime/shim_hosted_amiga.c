@@ -764,11 +764,26 @@ static inline int cl_isnan(double value)
     return (bits & UINT64_C(0x000fffffffffffff)) != 0;
 }
 
+/* The kinds of fault a worker task can record for its parent. */
+#define CL_FAULT_NONE 0
+#define CL_FAULT_TRAP 1
+#define CL_FAULT_PANIC 2
+
+/* Set once the program creates a worker task. A worker is a plain Exec task
+ * that must not print or exit, so a fault on one is recorded for its parent
+ * instead; programs without workers keep this null and never link that path. */
+static void (*cl_worker_fault_fn)(UBYTE kind, const char *code,
+                                  const unsigned char *message,
+                                  unsigned long len);
+
 /* Leave the process after a runtime fault. The Amiga fault contract writes the
  * first line `error CODE: message` to stdout and then exits, so the run-fault
  * leg reads it from the program's standard output. */
 static inline void cl_trap(const char *code, const char *message)
 {
+    if (cl_worker_fault_fn != NULL) {
+        cl_worker_fault_fn(CL_FAULT_TRAP, code, (const unsigned char *)message, 0);
+    }
     printf("error %s: %s\n", code, message);
     fflush(stdout);
     exit(20);
@@ -787,6 +802,9 @@ static inline unsigned long cl_cstring_len(const char *text)
  * written exactly as they are. */
 static inline void cl_panic(const unsigned char *message, unsigned long len)
 {
+    if (cl_worker_fault_fn != NULL) {
+        cl_worker_fault_fn(CL_FAULT_PANIC, NULL, message, len);
+    }
     fwrite("panic: ", 1, 7, stdout);
     /* A zero-length message is the empty view or the zero-state String; its
      * pointer is NULL, which is not a valid fwrite buffer even for zero
@@ -3644,7 +3662,84 @@ typedef struct cl_task {
     BYTE signal_bit;
     int joined;
     LONG result;
+    struct cl_task *next_worker;  /* the worker list, newest first */
+    /* A fault the worker recorded instead of exiting. The worker writes these
+     * under Forbid, so the parent, which runs at a higher priority and may
+     * read them at exit without waiting, sees all of them or none. */
+    UBYTE fault_kind;
+    UBYTE fault_reported;
+    UBYTE removed;
+    const char *fault_code;
+    const unsigned char *fault_message;
+    unsigned long fault_len;
 } cl_task;
+
+/* Every worker not yet joined, so the exit can remove them and a faulting
+ * worker can find its own record. Changed only under Forbid. */
+static cl_task *cl_worker_head;
+
+/* Take a record off the worker list. */
+static void cl_worker_unlink(cl_task *record)
+{
+    cl_task **link;
+
+    Forbid();
+    for (link = &cl_worker_head; *link != NULL; link = &(*link)->next_worker) {
+        if (*link == record) {
+            *link = record->next_worker;
+            break;
+        }
+    }
+    Permit();
+}
+
+/* A fault on a worker task: record it, wake the parent, and park. The walk
+ * runs under Forbid because the higher-priority parent could otherwise join
+ * and free a record mid-walk; tc_UserData is never read, so a foreign task
+ * that faults here is never mistaken for a worker. A task not on the list
+ * returns to the normal fault path. */
+static void cl_worker_fault(UBYTE kind, const char *code,
+                            const unsigned char *message, unsigned long len)
+{
+    struct Task *self = FindTask(NULL);
+    cl_task *record;
+
+    Forbid();
+    for (record = cl_worker_head; record != NULL; record = record->next_worker) {
+        if (record->task == self) {
+            record->fault_code = code;
+            record->fault_message = message;
+            record->fault_len = len;
+            record->fault_kind = kind;
+            break;
+        }
+    }
+    Permit();
+    if (record == NULL) {
+        return;
+    }
+    /* The parent frees this record only after the signal below or at exit,
+     * where it removes this task first. */
+    Signal(record->parent, 1UL << record->signal_bit);
+    Wait(0);
+}
+
+/* Print a worker's recorded fault exactly as the fault path of the main task
+ * would. The text stays valid until the worker is removed. */
+static void cl_worker_print_fault(const cl_task *record)
+{
+    if (record->fault_kind == CL_FAULT_TRAP) {
+        printf("error %s: %s\n", record->fault_code,
+               (const char *)record->fault_message);
+    } else {
+        fwrite("panic: ", 1, 7, stdout);
+        if (record->fault_len > 0) {
+            fwrite(record->fault_message, 1, (size_t)record->fault_len, stdout);
+        }
+        fwrite("\n", 1, 1, stdout);
+    }
+    fflush(stdout);
+}
 
 /* The C entry point Exec calls. The record is in tc_UserData; the worker
  * signals the parent after the Clorraine callback returns, then waits for the
@@ -3666,7 +3761,10 @@ static void cl_task_entry(void)
 
 /* Wait for the worker, remove it, and free the signal and record. The
  * Forbid/Permit pair is required on Kickstart 1.3 because removing another
- * task created by CreateTask has a pre-V36 crash risk without it. */
+ * task created by CreateTask has a pre-V36 crash risk without it. A worker
+ * that recorded a fault instead has its fault line printed here as the
+ * program's own, and the program exits with 20; the exit removes the parked
+ * worker. */
 static LONG cl_task_join_record(cl_task *record)
 {
     LONG result;
@@ -3677,19 +3775,31 @@ static LONG cl_task_join_record(cl_task *record)
     if (!record->joined) {
         Wait(1UL << record->signal_bit);
         record->joined = 1;
+        if (record->fault_kind != CL_FAULT_NONE) {
+            /* Report the worker's fault as the parent's own. The worker stays
+             * parked on the list, so the exit removes it after this line is
+             * printed; marking it reported first keeps a nested exit from
+             * printing it twice. */
+            record->fault_reported = 1;
+            cl_worker_print_fault(record);
+            exit(20);
+        }
+        record->removed = 1;
         Forbid();
         RemTask(record->task);
         Permit();
         FreeSignal(record->signal_bit);
     }
     result = record->result;
+    cl_worker_unlink(record);
     record->magic = 0;
     FreeMem(record, (ULONG)sizeof *record);
     return result;
 }
 
 /* Start a worker task. Returns NULL on a null callback, an out-of-range stack,
- * or an allocation failure; every partial allocation is released. */
+ * an allocation failure, or when the exit hook that removes unjoined workers
+ * cannot be installed; every partial allocation is released. */
 void *cl_create_task(cl_handler_fn entry, ULONG stack_size)
 {
     cl_task *record;
@@ -3698,7 +3808,7 @@ void *cl_create_task(cl_handler_fn entry, ULONG stack_size)
     struct Task *task;
 
     if (entry == NULL || stack_size < CL_TASK_STACK_MIN ||
-        stack_size > CL_TASK_STACK_MAX) {
+        stack_size > CL_TASK_STACK_MAX || !cl_exit_hook_install()) {
         return NULL;
     }
     parent = FindTask(NULL);
@@ -3730,6 +3840,13 @@ void *cl_create_task(cl_handler_fn entry, ULONG stack_size)
     }
     record->task = task;
     task->tc_UserData = record;
+    /* The worker runs at a lower priority, so it cannot fault before it is
+     * on the list. */
+    Forbid();
+    record->next_worker = cl_worker_head;
+    cl_worker_head = record;
+    Permit();
+    cl_worker_fault_fn = cl_worker_fault;
     return record;
 }
 
@@ -6704,14 +6821,16 @@ void cl_layer_end_update(void *handle)
  *
  * libnix runs `atexit` functions before it closes stdio, frees its memory
  * pool, and closes the libraries it opened itself, so everything the hook
- * releases is still usable here. It prints nothing.
+ * releases is still usable here. It prints nothing, except the fault line of a
+ * worker whose fault nobody reported, after any line the main task printed.
  *
  * The phases run in a fixed order:
  * 1. interrupt servers, which run asynchronously in the program's code;
- * 2. the registry, newest record first, so a dependent goes before what it
+ * 2. worker tasks the program never joined, which also run its code;
+ * 3. the registry, newest record first, so a dependent goes before what it
  *    depends on;
- * 3. the custom-chip state the shim changed;
- * 4. the library bases the shim opened itself.
+ * 4. the custom-chip state the shim changed;
+ * 5. the library bases the shim opened itself.
  *
  * Each step pops or clears its state before it acts, and loops reread their
  * state instead of keeping a saved neighbour, because a release may remove
@@ -6720,6 +6839,7 @@ void cl_layer_end_update(void *handle)
 void cl_exit_hook(void)
 {
     cl_res *node;
+    cl_task *worker;
 
     cl_exiting = 1;
 
@@ -6732,6 +6852,30 @@ void cl_exit_hook(void)
         cl_ports_handler = NULL;
         cl_ports_token = 0;
         RemIntServer(INTB_PORTS, &cl_ports_server);
+    }
+
+    /* Workers the program never joined. A fault one recorded and nobody
+     * reported is printed first, while its text is still valid; then the
+     * worker is removed without waiting, whether it is parked, ready, or
+     * still running. */
+    while ((worker = cl_worker_head) != NULL) {
+        if (worker->fault_kind != CL_FAULT_NONE && !worker->fault_reported) {
+            worker->fault_reported = 1;
+            cl_worker_print_fault(worker);
+        }
+        if (!worker->removed) {
+            worker->removed = 1;
+            Forbid();
+            RemTask(worker->task);
+            Permit();
+            /* A signal the worker sent but nobody waited for must not wake
+             * whatever reuses the bit in this process. */
+            SetSignal(0, 1UL << worker->signal_bit);
+            FreeSignal(worker->signal_bit);
+        }
+        cl_worker_unlink(worker);
+        worker->magic = 0;
+        FreeMem(worker, (ULONG)sizeof *worker);
     }
 
     while ((node = cl_res_tail) != NULL) {

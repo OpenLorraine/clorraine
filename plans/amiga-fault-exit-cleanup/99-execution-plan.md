@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-26 22:21
-> **Progress**: 35/55 tasks (64%)
+> **Last Updated**: 2026-11-26 23:09
+> **Progress**: 42/55 tasks (76%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -200,31 +200,32 @@ Rules for every task:
 
 ## Phase 4: Worker-task faults
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill)_
+> **Phase baseline tree**: 80197620ee071550d49aadc9d8d6f4a2b6960827 (HEAD `3a29b232`)
+> **Scope mode**: strict · **Expected modification set**: `compiler/runtime/shim_hosted_amiga.c`, `compiler/tests/amiga_fault_cleanup_impl_test.rs`, `compiler/tests/amiga_exec_impl_test.rs`, `examples/robustness/fault-cleanup/worker-fault*.clo`, `docker/scripts/a500-fault-cleanup-smoke.sh`, this plan folder, `plans/00-roadmap.md`
 > **Reasoning**: xhigh — cross-task fault handling under Exec scheduling rules.
 
 ### Step 4.1: Specification tests
 
 **Reference**: [07](07-testing-strategy.md) ST-14, ST-18 · [03-03](03-03-worker-faults.md) · AR-3, AR-10
 
-- [ ] 4.1.1 [spec-author] Write the ST-14 and ST-18 probes and their gate steps — `examples/robustness/fault-cleanup/worker-fault.clo`, `worker-fault-unjoined.clo`, `docker/scripts/a500-fault-cleanup-smoke.sh`
-- [ ] 4.1.2 Red phase: `make sdk-a500-fault-cleanup`; record the hang or timeout per ST
+- [x] 4.1.1 [spec-author] Write the ST-14 and ST-18 probes and their gate steps — `examples/robustness/fault-cleanup/worker-fault.clo`, `worker-fault-unjoined.clo`, `docker/scripts/a500-fault-cleanup-smoke.sh` ✅ (completed: 2026-11-26 22:22; both probes emit clean and build -Werror on nix13; gate cases added after clean-exit)
+- [x] 4.1.2 Red phase: `make sdk-a500-fault-cleanup`; record the hang or timeout per ST ✅ (completed: 2026-11-26 22:28; Red: worker-fault (ST-14) printed 'error E11210: integer division by zero' from the worker task itself and then hung the A500 (its output file was never closed; no rc marker, no after line; the gate timed out). ST-18 not reached because of that hang. The gate now reports a damaged capture disk instead of exiting silently)
 
 ### Step 4.2: Implementation
 
 **Reference**: [03-03](03-03-worker-faults.md) · AR-3, AR-9 rules 6–8, AR-10, AR-13c, AR-18
 
-- [ ] 4.2.1 Add the worker list (with `Forbid` around link and unlink), the fault record, and the detection and worker path in `cl_trap`/`cl_panic` per 03-03 §Proposed Changes — `compiler/runtime/shim_hosted_amiga.c`
-- [ ] 4.2.2 Add the report at join and exit phase 2 (removal and the unreported-fault line) per 03-03 §Report at join, §Exit removal — `compiler/runtime/shim_hosted_amiga.c`
-- [ ] 4.2.3 Green phase: ST-14 and ST-18 pass; ST-10..ST-13 and ST-17 still pass
+- [x] 4.2.1 Add the worker list (with `Forbid` around link and unlink), the fault record, and the detection and worker path in `cl_trap`/`cl_panic` per 03-03 §Proposed Changes — `compiler/runtime/shim_hosted_amiga.c`, so task-free programs link no worker path) ✅ (completed: 2026-11-26 22:37; worker check goes through a static function pointer that cl_create_task sets (the 03-03 fallback route), so task-free programs link no worker path; cargo test --workspace 4437)
+- [x] 4.2.2 Add the report at join and exit phase 2 (removal and the unreported-fault line) per 03-03 §Report at join, §Exit removal — `compiler/runtime/shim_hosted_amiga.c` ✅ (completed: 2026-11-26 22:37)
+- [x] 4.2.3 Green phase: ST-14 and ST-18 pass; ST-10..ST-13 and ST-17 still pass ✅ (completed: 2026-11-26 22:37; `make sdk-a500-fault-cleanup` OK on all eight probes: ST-14 prints the worker's line at join, ST-18 prints the parent's line then the worker's at exit, workers 0 after each; ST-10..ST-13, ST-17, ST-20 still OK)
 
 ### Step 4.3: Implementation tests and hardening
 
-- [ ] 4.3.1 Write impl tests that detection never reads `tc_UserData` and walks under `Forbid`, `cl_trap`/`cl_panic` never name `cl_exit_hook`, the worker path has no stdio or `exit`, and the record is marked reported before the line is printed and the line before `RemTask`; update the join pins — `compiler/tests/amiga_fault_cleanup_impl_test.rs`, `compiler/tests/amiga_exec_impl_test.rs`
-- [ ] 4.3.2 Phase gate: `make check`, `make sdk-a500-fault-cleanup`, `make sdk-a500-exec`
+- [x] 4.3.1 Write impl tests that detection never reads `tc_UserData` and walks under `Forbid`, `cl_trap`/`cl_panic` never name `cl_exit_hook`, the worker path has no stdio or `exit`, and the record is marked reported before the line is printed and the line before `RemTask`; update the join pins — `compiler/tests/amiga_fault_cleanup_impl_test.rs`, `compiler/tests/amiga_exec_impl_test.rs` ✅ (completed: 2026-11-26 22:38; 24 impl cases; the existing join pins in amiga_exec_impl_test.rs still hold, so none changed)
+- [x] 4.3.2 Phase gate: `make check`, `make sdk-a500-fault-cleanup`, `make sdk-a500-exec` ✅ (completed: 2026-11-26 22:47; `make check` 4439; `sdk-a500-fault-cleanup` all eight probes OK; `sdk-a500-exec` OK)
 
 **Deliverables**:
-- [ ] ST-14 and ST-18 green on the A500
+- [x] ST-14 and ST-18 green on the A500
 
 **Verify (gate)**: as 4.3.2
 

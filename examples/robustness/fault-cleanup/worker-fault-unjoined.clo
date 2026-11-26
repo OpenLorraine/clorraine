@@ -1,0 +1,32 @@
+// Fault-exit cleanup probe for real Kickstart: a worker task divides by zero,
+// then the parent faults itself before it joins the worker. The parent's own
+// fault line comes first; the worker's fault is still reported at exit, and
+// the parked worker is removed.
+module robustness.fault_cleanup.worker_fault_unjoined;
+
+import { Task, createTask, reportTaskResult } from std.amiga.exec;
+import { Timer, openTimer, timerWait } from std.amiga.timer;
+
+func worker(): void {
+    let zero: i32 = 0;
+    reportTaskResult(10 / zero);   // error E11210: integer division by zero
+}
+
+func main(): i32 {
+    let timer_opt: Timer? = openTimer();
+    if (timer_opt == null) {
+        return 1;
+    }
+    let timer: Timer = timer_opt;
+    let task: Task? = createTask(worker, 8192);
+    if (task == null) {
+        return 2;
+    }
+    // Give the lower-priority worker time to run and fault.
+    if (!timerWait(timer, 50)) {
+        return 3;
+    }
+    let xs: u32[2] = [1, 2];
+    let i: usize = 5;
+    return i32(xs[i]);   // error E11211: index out of range
+}
