@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-26 20:01
-> **Progress**: 12/75 tasks (16%)
+> **Last Updated**: 2026-11-26 20:06
+> **Progress**: 13/75 tasks (17%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -107,7 +107,7 @@ on Linux in this worktree; Windows runs go through the remote helper (AR-5, AR-2
 ### Step 2.3: Implementation tests and hardening
 
 - [x] 2.3.1 Write escaping and predicate impl tests; update only the shim-text pins the AR-44 change moves — `compiler/tests/windows_cli_impl_test.rs`, existing pinned impl tests ✅ (completed: 2026-11-26 20:01) — 6/6; no existing test pins the changed shim text
-- [ ] 2.3.2 Phase gate — `make check IMAGE=clorraine-sdk:windows-cli`
+- [x] 2.3.2 Phase gate — `make check IMAGE=clorraine-sdk:windows-cli` ✅ (completed: 2026-11-26 20:06)
 
 **Deliverables**:
 - [ ] Linux and m68k compiled output unchanged for ASCII paths (emission-integrity diff)
