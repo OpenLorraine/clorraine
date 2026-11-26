@@ -2,7 +2,7 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-26 22:48
+> **Last Updated**: 2026-11-26 22:54
 > **Progress**: 49/75 tasks (65%)
 > **CodeOps Artifact Schema**: 1
 
@@ -287,21 +287,21 @@ on Linux in this worktree; Windows runs go through the remote helper (AR-5, AR-2
 
 ## Phase 8: Documentation
 
-> **Phase baseline tree**: _(recorded by exec-plan)_
+> **Phase baseline tree**: cd902da17ec7813829cf20fa9858290532cc7cc8
 > **Reasoning**: medium — user-facing text; security guidance must be exact (AR-6)
 
 ### Step 8.1: Docs
 
 **Reference**: 03-05 §Documentation · ST-74 · AR-6, AR-15, AR-18, AR-19, AR-30, AR-38, AR-39, AR-42
 
-- [ ] 8.1.1 Write `docs/windows-cli.md` and link it from `docs/README.md`
-- [ ] 8.1.2 Add the Windows limitations — `docs/known-limitations.md`
-- [ ] 8.1.3 Add the Windows install beside the Linux one — `README.md`, `site/`
-- [ ] 8.1.4 Run `make site-check` and the docs guide spec (ST-74)
+- [x] 8.1.1 Write `docs/windows-cli.md` and link it from `docs/README.md` ✅ (2026-11-26 22:54; linked from `docs/README.md` and `docs/linux-cli.md`; URLs per AR-63)
+- [x] 8.1.2 Add the Windows limitations — `docs/known-limitations.md` ✅ (2026-11-26 22:54; section 16, plus Windows rows on the site limitations page)
+- [x] 8.1.3 Add the Windows install beside the Linux one — `README.md`, `site/` ✅ (2026-11-26 22:54; README, quick start, and status page; macOS still on the way)
+- [x] 8.1.4 Run `make site-check` and the docs guide spec (ST-74) ✅ (2026-11-26 22:54; `make site-check` exit 0 (no dead internal links); `docs_guide_spec_test` 4/4)
 - [ ] 8.1.5 Phase gate — `make check IMAGE=clorraine-sdk:windows-cli`
 
 **Deliverables**:
-- [ ] W17 met; ST-74 holds
+- [x] W17 met; ST-74 holds
 - [ ] All verification passing
 
 **Verify (gate)**: `make check IMAGE=clorraine-sdk:windows-cli` and `make site-check`

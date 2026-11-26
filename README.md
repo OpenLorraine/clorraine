@@ -5,8 +5,8 @@
 # Clorraine
 
 > **Developer preview.** Clorraine is under active development. The v1.2.0
-> Linux build is a public prerelease; expect changes. Windows and macOS are on
-> the way.
+> Linux build is a public prerelease; expect changes. Windows support ships
+> with the next release; macOS is on the way.
 
 Clorraine is a safe, C-like language for the Amiga and LorraineOS. It has
 Rust-style ownership and borrow checking, compiles to plain C, and runs on the
@@ -45,7 +45,17 @@ bundles or mirrors it. The
 [release page](https://github.com/OpenLorraine/clorraine/releases/tag/v1.2.0)
 has the details, including checksum verification.
 
-**Windows and macOS are on the way.**
+## Install on Windows
+
+Windows 11 x64, from the next release on. In Windows PowerShell:
+
+```powershell
+curl.exe -fsSLo clorraine-install.ps1 https://github.com/OpenLorraine/clorraine/releases/latest/download/install.ps1; powershell -ExecutionPolicy Bypass -File .\clorraine-install.ps1
+```
+
+The same five steps install the CLI for your account; only the rc24
+toolchain setup asks for administrator approval. See the
+[Windows CLI guide](docs/windows-cli.md). macOS is on the way.
 
 ## See what it can do
 
@@ -65,6 +75,7 @@ Everything below goes deeper than this page:
 
 - [Documentation](https://openlorraine.github.io/clorraine/)
 - [Linux CLI guide](docs/linux-cli.md)
+- [Windows CLI guide](docs/windows-cli.md)
 - [Known limitations](docs/known-limitations.md)
 - [Language specification](spec/README.md)
 - [C to Clorraine guide](docs/c-to-clorraine.md)
