@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-26 02:06
-> **Progress**: 76/95 tasks (80%)
+> **Last Updated**: 2026-11-26 02:07
+> **Progress**: 78/95 tasks (82%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -363,7 +363,7 @@ this plan's folder and the roadmap; 03-01 §Ground rules)
 
 ## Phase 9: Adversarial verification
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill)_
+> **Phase baseline tree**: 23e30b2ada027d5be688119076a7514402e0a069
 > **Reasoning**: xhigh — adversarial review that decides which findings survive (AR #16, AR #19)
 
 ### Step 9.1: Verification specification
@@ -371,8 +371,8 @@ this plan's folder and the roadmap; 03-01 §Ground rules)
 **Reference**: 03-01 §Verification protocol, §Agent routing · 03-04 §`05-findings.md` · AR #16, AR #22
 **Objective**: Blind packets that let a fresh session reproduce, refute, and sample cleans.
 
-- [ ] 9.1.1 Prepare one verification packet per workstream group per 03-01 §Agent routing: findings with evidence and probe paths, the checklist, the `clean` outcomes to sample, the checklist brief, and 03-01 §Verification protocol; exclude the author's reasoning beyond the finding text; commit the packets, local only
-- [ ] 9.1.2 Red check: every packet's reproduction commands resolve to files committed at HEAD with Task verify passing; missing files go back to the author as finding defects
+- [x] 9.1.1 Prepare one verification packet per workstream group per 03-01 §Agent routing: findings with evidence and probe paths, the checklist, the `clean` outcomes to sample, the checklist brief, and 03-01 §Verification protocol; exclude the author's reasoning beyond the finding text; commit the packets, local only ✅ (completed: 2026-11-26 02:07)
+- [x] 9.1.2 Red check: every packet's reproduction commands resolve to files committed at HEAD with Task verify passing; missing files go back to the author as finding defects ✅ (completed: 2026-11-26 02:07)
 
 ### Step 9.2: Verification
 
