@@ -13,6 +13,7 @@ set -u
 fixture() {
     root="$(new_root)"
     stage="$(make_stage "$root")"
+    wstage="$(make_windows_stage "$root")"
     vsix="$root/clorraine-1.2.0.vsix"
     printf 'fake vsix\n' >"$vsix"
     output="$root/dist"
@@ -25,11 +26,11 @@ run_package() {
     printf '%s\n' "$?"
 }
 
-# The build produces the four candidate assets with the exact layout.
+# The build produces the five candidate assets and their checksums.
 build_creates_the_expected_assets() {
     fixture
     local status
-    status="$(run_package "$package_script" --stage "$stage" --output "$output" --version 1.2.0 --vsix "$vsix")"
+    status="$(run_package "$package_script" --stage "$stage" --windows-stage "$wstage" --output "$output" --version 1.2.0 --vsix "$vsix")"
     check_status 0 "$status" "package build"
     local archive="$output/clorraine-1.2.0-x86_64-linux.tar.gz"
     check_exists "$archive" "archive"
@@ -50,7 +51,7 @@ build_creates_the_expected_assets() {
     else
         pass
     fi
-    for name in clorraine-1.2.0-x86_64-linux.tar.gz clorraine-1.2.0.vsix install.sh; do
+    for name in clorraine-1.2.0-x86_64-linux.tar.gz clorraine-1.2.0-x86_64-windows.zip clorraine-1.2.0.vsix install.sh install.ps1; do
         check_contains "$output/SHA256SUMS" "$name" "checksum coverage for $name"
     done
     check_contains "$output/install.sh" "VERSION='1.2.0'" "installer version pin"
@@ -69,12 +70,13 @@ a_version_mismatch_fails() {
     stage="$(make_stage "$root" 1.1.0)"
     mv "$stage" "$root/stage/clorraine-1.2.0-x86_64-linux"
     stage="$root/stage/clorraine-1.2.0-x86_64-linux"
+    wstage="$(make_windows_stage "$root")"
     vsix="$root/clorraine-1.2.0.vsix"
     printf 'fake vsix\n' >"$vsix"
     output="$root/dist"
     mkdir -p "$output"
     local status
-    status="$(run_package "$package_script" --stage "$stage" --output "$output" --version 1.2.0 --vsix "$vsix")"
+    status="$(run_package "$package_script" --stage "$stage" --windows-stage "$wstage" --output "$output" --version 1.2.0 --vsix "$vsix")"
     check_status 1 "$status" "version mismatch"
     check_contains "$root/stderr" "version" "version-mismatch message"
     check_absent "$output/clorraine-1.2.0-x86_64-linux.tar.gz" "no archive after a version mismatch"
@@ -85,7 +87,7 @@ an_extra_file_fails() {
     fixture
     printf 'extra\n' >"$stage/bin/extra"
     local status
-    status="$(run_package "$package_script" --stage "$stage" --output "$output" --version 1.2.0 --vsix "$vsix")"
+    status="$(run_package "$package_script" --stage "$stage" --windows-stage "$wstage" --output "$output" --version 1.2.0 --vsix "$vsix")"
     check_status 1 "$status" "extra file"
     check_contains "$root/stderr" "unexpected file" "extra-file message"
 }
@@ -95,7 +97,7 @@ a_forbidden_file_fails() {
     fixture
     printf 'not a real toolchain\n' >"$stage/toolchain.tar.xz"
     local status
-    status="$(run_package "$package_script" --stage "$stage" --output "$output" --version 1.2.0 --vsix "$vsix")"
+    status="$(run_package "$package_script" --stage "$stage" --windows-stage "$wstage" --output "$output" --version 1.2.0 --vsix "$vsix")"
     check_status 1 "$status" "forbidden file"
     check_contains "$root/stderr" "unexpected file" "forbidden-file message"
 }
@@ -104,10 +106,10 @@ a_forbidden_file_fails() {
 a_stale_installer_pin_fails() {
     fixture
     local status
-    status="$(run_package "$package_script" --stage "$stage" --output "$output" --version 1.2.0 --vsix "$vsix")"
+    status="$(run_package "$package_script" --stage "$stage" --windows-stage "$wstage" --output "$output" --version 1.2.0 --vsix "$vsix")"
     check_status 0 "$status" "package before pin change"
     sed -i "s/ARCHIVE_SHA256='[0-9a-f]*'/ARCHIVE_SHA256='0000000000000000000000000000000000000000000000000000000000000000'/" "$output/install.sh"
-    ( cd "$output" && sha256sum clorraine-1.2.0-x86_64-linux.tar.gz clorraine-1.2.0.vsix install.sh >SHA256SUMS )
+    ( cd "$output" && sha256sum clorraine-1.2.0-x86_64-linux.tar.gz clorraine-1.2.0-x86_64-windows.zip clorraine-1.2.0.vsix install.sh install.ps1 >SHA256SUMS )
     status="$(run_package "$package_script" --verify --output "$output" --version 1.2.0)"
     check_status 1 "$status" "stale pin"
     check_contains "$root/stderr" "pin" "stale-pin message"
@@ -117,10 +119,10 @@ a_stale_installer_pin_fails() {
 a_stale_vsix_pin_fails() {
     fixture
     local status
-    status="$(run_package "$package_script" --stage "$stage" --output "$output" --version 1.2.0 --vsix "$vsix")"
+    status="$(run_package "$package_script" --stage "$stage" --windows-stage "$wstage" --output "$output" --version 1.2.0 --vsix "$vsix")"
     check_status 0 "$status" "package before VSIX pin change"
     sed -i "s/VSIX_SHA256='[0-9a-f]*'/VSIX_SHA256='0000000000000000000000000000000000000000000000000000000000000000'/" "$output/install.sh"
-    ( cd "$output" && sha256sum clorraine-1.2.0-x86_64-linux.tar.gz clorraine-1.2.0.vsix install.sh >SHA256SUMS )
+    ( cd "$output" && sha256sum clorraine-1.2.0-x86_64-linux.tar.gz clorraine-1.2.0-x86_64-windows.zip clorraine-1.2.0.vsix install.sh install.ps1 >SHA256SUMS )
     status="$(run_package "$package_script" --verify --output "$output" --version 1.2.0)"
     check_status 1 "$status" "stale VSIX pin"
     check_contains "$root/stderr" "VSIX_SHA256" "stale-VSIX message"
@@ -130,7 +132,7 @@ a_stale_vsix_pin_fails() {
 a_missing_vsix_fails() {
     fixture
     local status
-    status="$(run_package "$package_script" --stage "$stage" --output "$output" --version 1.2.0 --vsix "$root/missing.vsix")"
+    status="$(run_package "$package_script" --stage "$stage" --windows-stage "$wstage" --output "$output" --version 1.2.0 --vsix "$root/missing.vsix")"
     check_status 1 "$status" "missing vsix"
     check_contains "$root/stderr" "VSIX" "missing-vsix message"
 }
@@ -139,7 +141,7 @@ a_missing_vsix_fails() {
 release_readme_has_no_local_links() {
     fixture
     local status
-    status="$(run_package "$package_script" --stage "$stage" --output "$output" --version 1.2.0 --vsix "$vsix")"
+    status="$(run_package "$package_script" --stage "$stage" --windows-stage "$wstage" --output "$output" --version 1.2.0 --vsix "$vsix")"
     check_status 0 "$status" "package for README check"
     local archive="$output/clorraine-1.2.0-x86_64-linux.tar.gz"
     local extracted="$root/extracted"
@@ -159,12 +161,12 @@ release_readme_has_no_local_links() {
 the_installer_embeds_the_amiga_hello() {
     fixture
     local status
-    status="$(run_package "$package_script" --stage "$stage" --output "$output" --version 1.2.0 --vsix "$vsix")"
+    status="$(run_package "$package_script" --stage "$stage" --windows-stage "$wstage" --output "$output" --version 1.2.0 --vsix "$vsix")"
     check_status 0 "$status" "package with the Amiga hello"
     check_contains "$output/install.sh" "module demo.HelloIntro;" "embedded intro"
     check_not_contains "$output/install.sh" "@HELLO_AMIGA_SOURCE@" "placeholder replaced"
     sed -i 's/^module demo.HelloIntro;$/module demo.Other;/' "$output/install.sh"
-    ( cd "$output" && sha256sum clorraine-1.2.0-x86_64-linux.tar.gz clorraine-1.2.0.vsix install.sh >SHA256SUMS )
+    ( cd "$output" && sha256sum clorraine-1.2.0-x86_64-linux.tar.gz clorraine-1.2.0-x86_64-windows.zip clorraine-1.2.0.vsix install.sh install.ps1 >SHA256SUMS )
     status="$(run_package "$package_script" --verify --output "$output" --version 1.2.0)"
     check_status 1 "$status" "installer without the intro"
     check_contains "$root/stderr" "Amiga hello" "missing-intro message"

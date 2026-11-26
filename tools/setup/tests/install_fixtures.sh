@@ -164,6 +164,38 @@ EOF
     printf '%s\n' "$stage"
 }
 
+# Writes a minimal PE32+ x86-64 image at $1; with $2, the version text is
+# embedded the way a real build embeds it.
+make_pe() {
+    python3 - "$1" "${2:-}" <<'PY'
+import struct, sys
+path, version = sys.argv[1], sys.argv[2]
+image = bytearray(0x200)
+image[0:2] = b"MZ"
+struct.pack_into("<I", image, 0x3C, 0x80)
+image[0x80:0x84] = b"PE\0\0"
+struct.pack_into("<H", image, 0x84, 0x8664)
+struct.pack_into("<H", image, 0x98, 0x020B)
+if version:
+    image += b"\0version " + version.encode() + b"\0"
+open(path, "wb").write(bytes(image))
+PY
+}
+
+# Creates a fixture Windows stage tree and prints its path.
+make_windows_stage() {
+    local root="$1" version="${2:-1.2.0}"
+    local stage="$root/wstage/clorraine-$version-x86_64-windows"
+    mkdir -p "$stage/bin"
+    for name in clc clorraine clorraine-lsp; do
+        make_pe "$stage/bin/$name.exe" "$version"
+    done
+    for document in README.md LICENSE LICENSE-EXCEPTION.md NOTICE THIRD_PARTY_NOTICES.md; do
+        printf 'fixture %s\n' "$document" >"$stage/$document"
+    done
+    printf '%s\n' "$stage"
+}
+
 # Packages a stage tree into the versioned fixture archive and prints its path.
 make_archive() {
     local root="$1" stage="$2"
