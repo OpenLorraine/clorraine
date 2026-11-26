@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-26 20:57
-> **Progress**: 29/75 tasks (39%)
+> **Last Updated**: 2026-11-26 20:58
+> **Progress**: 30/75 tasks (40%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -174,7 +174,7 @@ on Linux in this worktree; Windows runs go through the remote helper (AR-5, AR-2
 
 ### Step 4.3: Implementation tests and hardening
 
-- [ ] 4.3.1 Write impl tests — `compiler/tests/windows_cli_impl_test.rs`, `tools/vscode/test/windows.impl.test.ts`
+- [x] 4.3.1 Write impl tests — `compiler/tests/windows_cli_impl_test.rs`, `tools/vscode/test/windows.impl.test.ts` ✅ (completed: 2026-11-26 20:58) — Rust impl 24/24, extension impl 6/6
 - [ ] 4.3.2 Phase gate — `make check IMAGE=clorraine-sdk:windows-cli` and `make vscode-check`
 
 **Deliverables**:
