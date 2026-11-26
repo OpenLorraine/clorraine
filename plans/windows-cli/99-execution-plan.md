@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-26 19:52
-> **Progress**: 6/75 tasks (8%)
+> **Last Updated**: 2026-11-26 19:58
+> **Progress**: 8/75 tasks (11%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -86,15 +86,15 @@ on Linux in this worktree; Windows runs go through the remote helper (AR-5, AR-2
 
 ## Phase 2: Emission — `#line` escaping and the freestanding shim
 
-> **Phase baseline tree**: _(recorded by exec-plan)_
+> **Phase baseline tree**: 69d6b2d1982880a5fd6c85f72b334ab304cb1f0b
 > **Reasoning**: xhigh — emitted C changes on every host; emission-integrity and memory-safety review
 
 ### Step 2.1: Specification tests
 
 **Reference**: 03-01 §`#line` escaping, §Freestanding shim · ST-3 – ST-8 · AR-16, AR-23, AR-44
 
-- [ ] 2.1.1 [spec-author] Write ST-3 – ST-8 — `compiler/tests/windows_cli_spec_test.rs`
-- [ ] 2.1.2 Run the suite and confirm ST-3 – ST-5, ST-7, ST-8 fail (red); record why ST-6 passes before the change
+- [x] 2.1.1 [spec-author] Write ST-3 – ST-8 — `compiler/tests/windows_cli_spec_test.rs` ✅ (completed: 2026-11-26 19:58) — written by the session (no spec-test-author role in this repo)
+- [x] 2.1.2 Run the suite and confirm ST-3 – ST-5, ST-7, ST-8 fail (red); record why ST-6 passes before the change ✅ (completed: 2026-11-26 19:58) — red: ST-8 does not compile (`native_syscalls_for` missing); ST-3/4/5 show the raw `\`, `"`, tab; both ST-7 cases fail. ST-6 passes: plain paths must stay byte-identical, which the base already does
 
 ### Step 2.2: Implementation
 
