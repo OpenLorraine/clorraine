@@ -11,11 +11,12 @@
 use std::ffi::{OsStr, OsString};
 use std::fs::{self, OpenOptions};
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use super::cli::Options;
 use super::display;
 use super::environment::{self, EnvironmentError};
+use super::platform::{self, HostOs};
 
 /// The folder used when the command names none.
 const DEFAULT_FOLDER: &str = "amiga-starter";
@@ -91,35 +92,39 @@ fn write_new(path: &Path, text: &str) -> Result<(), EnvironmentError> {
 }
 
 /// The `clorraine` launcher the editor tasks should run.
-///
-/// A launcher started by path is used as written, made absolute but not
-/// resolved, so an installed `bin/clorraine` link keeps following upgrades.
-/// A bare name is looked up on `PATH`; failing both, the tasks use the bare
-/// name and rely on the editor's own `PATH`.
 fn launcher(search_path: &OsStr) -> String {
     let invoked = std::env::args_os().next().unwrap_or_else(|| OsString::from("clorraine"));
-    let invoked = PathBuf::from(invoked);
-    let found = if invoked.components().count() > 1 {
-        Some(absolute(&invoked))
+    launcher_for(HostOs::current(), &invoked, search_path)
+}
+
+/// The launcher for a driver started as `invoked`, with `search_path` as
+/// `PATH`, on the given host family.
+///
+/// A launcher started by path is used as written, made absolute but not
+/// resolved, so an installed link (`bin/clorraine`, or the Windows
+/// `current\bin\clorraine.exe` junction path) keeps following upgrades. A
+/// bare name is looked up on `PATH` as the host's executable name; failing
+/// both, the tasks use the bare name and rely on the editor's own `PATH`.
+///
+/// ```
+/// use clc::clorraine::{launcher_for, platform::HostOs};
+/// use std::ffi::OsStr;
+/// let path = r"C:\P\current\bin\clorraine.exe";
+/// assert_eq!(launcher_for(HostOs::Windows, OsStr::new(path), OsStr::new("")), path);
+/// ```
+pub fn launcher_for(os: HostOs, invoked: &OsStr, search_path: &OsStr) -> String {
+    let invoked_text = invoked.to_string_lossy();
+    let found = if platform::is_path_like(os, &invoked_text) {
+        Some(platform::absolute_for(os, Path::new(invoked)))
     } else {
+        let name = platform::executable_name(os, &invoked_text);
         std::env::split_paths(search_path)
-            .map(|dir| absolute(&dir.join(&invoked)))
+            .map(|dir| platform::absolute_for(os, &dir.join(&name)))
             .find(|candidate| environment::is_executable_file(candidate))
     };
     found
         .and_then(|path| path.to_str().map(str::to_owned))
         .unwrap_or_else(|| "clorraine".to_owned())
-}
-
-/// Makes `path` absolute against the current directory without resolving
-/// links.
-fn absolute(path: &Path) -> PathBuf {
-    if path.is_absolute() {
-        return path.to_owned();
-    }
-    std::env::current_dir()
-        .map(|dir| dir.join(path))
-        .unwrap_or_else(|_| path.to_owned())
 }
 
 /// Escapes `text` for use inside a JSON string literal.
@@ -138,7 +143,7 @@ fn json_string(text: &str) -> String {
 
 /// The success message: what was created and how to run it.
 fn summary(name: &str) -> String {
-    let folder = shell_word(name);
+    let folder = platform::shell_word(HostOs::current(), name);
     format!(
         "Created your Amiga project in {shown}/\n\
          \n\
@@ -154,19 +159,6 @@ fn summary(name: &str) -> String {
          \x20 clorraine run -p hosted-amiga --emulator main.clo\n",
         shown = display::sanitize(name),
     )
-}
-
-/// Quotes `word` for a POSIX shell when it is not a plain word.
-fn shell_word(word: &str) -> String {
-    let plain = !word.is_empty()
-        && word
-            .chars()
-            .all(|ch| ch.is_ascii_alphanumeric() || "-_./+@%".contains(ch));
-    if plain {
-        word.to_owned()
-    } else {
-        format!("'{}'", display::sanitize(word).replace('\'', "'\\''"))
-    }
 }
 
 /// A path for a message, made terminal-safe.
@@ -199,9 +191,10 @@ mod tests {
 
     #[test]
     fn shell_words_are_quoted_only_when_needed() {
-        assert_eq!(shell_word("my-app"), "my-app");
-        assert_eq!(shell_word("my app"), "'my app'");
-        assert_eq!(shell_word("it's"), "'it'\\''s'");
+        let unix = |word| platform::shell_word(HostOs::Unix, word);
+        assert_eq!(unix("my-app"), "my-app");
+        assert_eq!(unix("my app"), "'my app'");
+        assert_eq!(unix("it's"), "'it'\\''s'");
     }
 
     #[test]

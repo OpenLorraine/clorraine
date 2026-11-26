@@ -10,7 +10,7 @@ use std::path::Path;
 use std::process::Child;
 use std::time::{Duration, Instant};
 
-use super::super::display;
+use super::storage;
 
 /// How often the host checks the guest markers.
 const POLL_INTERVAL: Duration = Duration::from_millis(250);
@@ -122,10 +122,7 @@ fn read_result(drive: &Path) -> Result<Vec<u8>, String> {
         Ok(bytes) => Ok(strip_carriage_returns(bytes)),
         // An empty result is valid: a program may print nothing.
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(Vec::new()),
-        Err(error) => Err(format!(
-            "cannot read '{}': {error}",
-            display::sanitize(&path.display().to_string())
-        )),
+        Err(error) => Err(format!("cannot read '{}': {error}", storage::shown(&path))),
     }
 }
 
@@ -182,10 +179,7 @@ fn read_text(path: &Path) -> Result<Option<String>, String> {
     match fs::read_to_string(path) {
         Ok(text) => Ok(Some(text)),
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
-        Err(error) => Err(format!(
-            "cannot read '{}': {error}",
-            display::sanitize(&path.display().to_string())
-        )),
+        Err(error) => Err(format!("cannot read '{}': {error}", storage::shown(&path))),
     }
 }
 

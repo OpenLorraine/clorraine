@@ -26,10 +26,12 @@ use std::time::Duration;
 use super::cli::Options;
 use super::display;
 use super::environment::EnvironmentError;
+use super::platform::HostOs;
 use super::run::RunResult;
 use crate::diag::DiagnosticFormat;
 
 use observe::Outcome;
+pub use select::fs_uae_version_for;
 use storage::Storage;
 
 /// Guest wrapper source compiled into every private run.
@@ -308,10 +310,18 @@ impl Emulator {
             command.env(name, root.join(relative));
         }
         // Changing HOME must not change which X server credentials are used.
-        if let Some(authority) = storage::caller_authority() {
-            command.env("XAUTHORITY", authority);
+        // Windows has no X server, so only Unix passes the credentials on.
+        if HostOs::current() == HostOs::Unix {
+            if let Some(authority) = storage::caller_authority() {
+                command.env("XAUTHORITY", authority);
+            }
         }
         command.env("TMPDIR", root.join("tmp"));
+        // Windows programs find their temporary folder through TEMP and TMP.
+        if HostOs::current() == HostOs::Windows {
+            command.env("TEMP", root.join("tmp"));
+            command.env("TMP", root.join("tmp"));
+        }
         command
             .stdin(Stdio::null())
             .stdout(Stdio::from(out))

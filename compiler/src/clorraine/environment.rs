@@ -8,10 +8,12 @@
 //! Host and `emit` commands ignore toolchain settings. The selected compiler is
 //! returned as an absolute path so a later directory change cannot redirect it.
 
-use std::ffi::OsStr;
+use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 
 use super::cli::{Command, Options};
+use super::display;
+use super::platform::{self, HostOs};
 use super::setup::{self, Validation};
 use super::SETUP_GUIDANCE;
 
@@ -121,14 +123,71 @@ pub fn missing_tool_in(tools: &[&str], path: &OsStr) -> Option<String> {
 }
 
 /// True when `tool` names an executable file in one of the search directories.
+///
+/// On Windows the file is `<tool>.exe`, the name the shell would run.
 fn tool_on_path(dirs: &[PathBuf], tool: &str) -> bool {
-    dirs.iter().any(|dir| is_executable_file(&dir.join(tool)))
+    let name = platform::executable_name(HostOs::current(), tool);
+    dirs.iter().any(|dir| is_executable_file(&dir.join(&name)))
+}
+
+/// Chooses the host C compiler for one invocation.
+///
+/// A `CLORRAINE_CC` value (`override_cc`) is the only candidate: a path must
+/// name an executable file, and a bare name must be found on `PATH`. Without
+/// it, the first of [`platform::host_compilers`] found on `PATH` is used.
+/// The returned program is spawned as given, so a bare name keeps the usual
+/// `PATH` lookup.
+///
+/// # Errors
+///
+/// An exit-1 [`EnvironmentError`] naming the missing override, or the host's
+/// missing-compiler hint when no candidate is found.
+pub fn resolve_host_compiler(
+    os: HostOs,
+    override_cc: Option<&OsStr>,
+    path: &OsStr,
+) -> Result<OsString, EnvironmentError> {
+    let dirs: Vec<PathBuf> = std::env::split_paths(path).collect();
+    let found = |name: &OsStr| -> bool {
+        let text = name.to_string_lossy();
+        if platform::is_path_like(os, &text) {
+            let given = Path::new(name);
+            is_executable_file(given)
+                || (os == HostOs::Windows && is_executable_file(Path::new(&platform::executable_name(os, &text))))
+        } else {
+            let file = platform::executable_name(os, &text);
+            dirs.iter().any(|dir| is_executable_file(&dir.join(&file)))
+        }
+    };
+    if let Some(chosen) = override_cc {
+        if found(chosen) {
+            return Ok(chosen.to_owned());
+        }
+        return Err(EnvironmentError {
+            code: 1,
+            message: format!(
+                "clorraine: CLORRAINE_CC '{}' was not found",
+                display::sanitize(&chosen.to_string_lossy())
+            ),
+        });
+    }
+    if let Some(name) = platform::host_compilers(os, None).into_iter().find(|name| found(name)) {
+        return Ok(name);
+    }
+    let message = match os {
+        HostOs::Unix => missing_tool_message("cc"),
+        HostOs::Windows => format!(
+            "clorraine: no C compiler (gcc, cc, or clang) was found on PATH\n{}",
+            platform::missing_compiler_hint(os)
+        ),
+    };
+    Err(EnvironmentError { code: 1, message })
 }
 
 /// The error printed when a required tool is missing.
 pub fn missing_tool_message(tool: &str) -> String {
     let hint = match tool {
-        "cc" => "install a C compiler (cc)".to_owned(),
+        "cc" => platform::missing_compiler_hint(HostOs::Unix).to_owned(),
         "vamos" => "install amitools (vamos) or use --emulator".to_owned(),
         _ => format!("install the toolchain or run '{SETUP_GUIDANCE}'"),
     };

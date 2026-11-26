@@ -14,7 +14,6 @@
 //! setup. A broken library then fails at the real link with the compiler's own
 //! error.
 
-use std::ffi::OsStr;
 use std::fs::{self, OpenOptions};
 use std::io::{self, Read, Write};
 use std::thread;
@@ -26,6 +25,7 @@ use std::time::{Duration, Instant};
 use super::cli::Options;
 use super::display;
 use super::emulator;
+use super::platform::{self, executable_name, HostOs};
 
 /// The only toolchain version this release validates.
 const SUPPORTED_VERSION: &str = "16.2-rc24";
@@ -114,6 +114,21 @@ pub fn run(options: &Options) -> Result<(), SetupError> {
 /// returned path is canonical, so a later directory change or replacement
 /// alias cannot select a different compiler.
 pub fn validate(selected: &Path, mode: Validation) -> Result<Toolchain, SetupError> {
+    validate_for(HostOs::current(), selected, mode)
+}
+
+/// [`validate`] with the host family as a parameter.
+///
+/// The family picks the compiler's file name (`bin/m68k-amigaos-gcc.exe` on
+/// Windows) and the path spelling: Windows paths are returned and reported
+/// without the verbatim `\\?\` prefix that resolving them adds, so the
+/// config file and every message show an ordinary `C:\…` path.
+///
+/// # Errors
+///
+/// A [`SetupError`] with exit code 2 for an invalid selection, or 1 when the
+/// compiler fails its version check or runtime probes.
+pub fn validate_for(os: HostOs, selected: &Path, mode: Validation) -> Result<Toolchain, SetupError> {
     let text = selected.to_str().ok_or_else(|| {
         error(
             2,
@@ -135,6 +150,7 @@ pub fn validate(selected: &Path, mode: Validation) -> Result<Toolchain, SetupErr
             ),
         )
     })?;
+    let root = shown_path(os, root);
     if !root.is_dir() {
         return Err(error(2, format!("--toolchain: '{}' is not a directory", root.display())));
     }
@@ -154,13 +170,15 @@ pub fn validate(selected: &Path, mode: Validation) -> Result<Toolchain, SetupErr
             ));
         }
     }
-    let compiler = root.join("bin/m68k-amigaos-gcc");
+    let compiler_name = executable_name(os, "m68k-amigaos-gcc");
+    let compiler = root.join("bin").join(&compiler_name);
     let compiler = compiler.canonicalize().map_err(|_| {
         error(
             2,
-            format!("--toolchain: '{}' has no bin/m68k-amigaos-gcc", root.display()),
+            format!("--toolchain: '{}' has no bin/{compiler_name}", root.display()),
         )
     })?;
+    let compiler = shown_path(os, compiler);
     if !compiler.starts_with(&root) {
         return Err(error(2, "--toolchain: the compiler escapes the selected root"));
     }
@@ -183,7 +201,9 @@ pub fn validate(selected: &Path, mode: Validation) -> Result<Toolchain, SetupErr
             version: String::new(),
         });
     }
-    check_glibc()?;
+    if cfg!(target_os = "linux") {
+        check_glibc()?;
+    }
     let version = compiler_version(&compiler)?;
     if !version.contains(SUPPORTED_VERSION) {
         return Err(error(
@@ -220,27 +240,20 @@ pub fn stored_config() -> Result<Config, SetupError> {
     }
 }
 
-/// The config file owned by the CLI.
+/// The config file owned by the CLI: `XDG_CONFIG_HOME` or `HOME` on Unix,
+/// `%APPDATA%` on Windows (see [`platform::config_file`]).
 pub fn config_file() -> Result<PathBuf, SetupError> {
-    Ok(config_dir(
-        std::env::var_os("XDG_CONFIG_HOME").as_deref(),
-        std::env::var_os("HOME").as_deref(),
-    )?.join("config"))
+    platform::config_file(HostOs::current(), |name| std::env::var_os(name))
+        .map_err(|message| error(2, message))
 }
 
-/// Resolves the config directory from the two platform inputs.
-///
-/// A relative `XDG_CONFIG_HOME` is ignored, matching the XDG base-directory
-/// rule. Without a usable home the command cannot own a config file.
-fn config_dir(xdg: Option<&OsStr>, home: Option<&OsStr>) -> Result<PathBuf, SetupError> {
-    if let Some(xdg) = xdg.map(Path::new).filter(|path| path.is_absolute()) {
-        return Ok(xdg.join("clorraine"));
+/// A resolved path in the spelling the host's users write (no verbatim
+/// prefix on Windows).
+fn shown_path(os: HostOs, path: PathBuf) -> PathBuf {
+    match path.to_str() {
+        Some(text) => PathBuf::from(platform::display_path(os, text)),
+        None => path,
     }
-    let home = home
-        .map(Path::new)
-        .filter(|path| path.is_absolute())
-        .ok_or_else(|| error(2, "clorraine: cannot determine a config directory; set HOME or XDG_CONFIG_HOME"))?;
-    Ok(home.join(".config/clorraine"))
 }
 
 /// Parses the supported keys while preserving spaces in the values. Unknown
@@ -577,18 +590,25 @@ mod tests {
         assert_eq!(parsed, config);
     }
 
+    /// The Unix config rule over a fixed `XDG_CONFIG_HOME` and `HOME`.
+    fn unix_config(xdg: &str, home: &str) -> PathBuf {
+        let (xdg, home) = (xdg.to_owned(), home.to_owned());
+        platform::config_file(HostOs::Unix, move |name| match name {
+            "XDG_CONFIG_HOME" => Some(xdg.clone().into()),
+            "HOME" => Some(home.clone().into()),
+            _ => None,
+        })
+        .expect("a config file")
+    }
+
     #[test]
     fn config_dir_prefers_an_absolute_xdg_home() {
-        let path = config_dir(Some(OsStr::new("/xdg")), Some(OsStr::new("/home/user")))
-            .expect("absolute xdg");
-        assert_eq!(path, Path::new("/xdg/clorraine"));
+        assert_eq!(unix_config("/xdg", "/home/user"), Path::new("/xdg/clorraine/config"));
     }
 
     #[test]
     fn config_dir_ignores_a_relative_xdg_home() {
-        let path = config_dir(Some(OsStr::new("relative")), Some(OsStr::new("/home/user")))
-            .expect("home fallback");
-        assert_eq!(path, Path::new("/home/user/.config/clorraine"));
+        assert_eq!(unix_config("relative", "/home/user"), Path::new("/home/user/.config/clorraine/config"));
     }
 
     #[test]

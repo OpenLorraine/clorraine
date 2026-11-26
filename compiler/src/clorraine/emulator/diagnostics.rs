@@ -3,8 +3,7 @@
 use std::io::{self, Write};
 use std::path::Path;
 
-use super::super::display;
-use super::storage::Storage;
+use super::storage::{self, Storage};
 use crate::diag::{format_error, DiagnosticFormat};
 use crate::clorraine::run::RunResult;
 
@@ -26,7 +25,7 @@ pub(super) fn fail_retained(
 pub(super) fn retained_message(root: &Path, reason: &str) -> String {
     format!(
         "clorraine: {reason}; private run retained at '{}'",
-        display::sanitize(&root.display().to_string())
+        storage::shown(root)
     )
 }
 

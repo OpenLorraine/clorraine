@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-26 20:25
-> **Progress**: 15/75 tasks (20%)
+> **Last Updated**: 2026-11-26 20:29
+> **Progress**: 21/75 tasks (28%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -133,12 +133,12 @@ on Linux in this worktree; Windows runs go through the remote helper (AR-5, AR-2
 
 **Reference**: 03-02 §New Functions/Methods, §OS-parameterized entry points, §Call-site changes
 
-- [ ] 3.2.1 Add `platform.rs` with `HostOs` and its functions — `compiler/src/clorraine/platform.rs`, `compiler/src/clorraine/mod.rs`
-- [ ] 3.2.2 Wire the validator, display paths, and the config file — `setup.rs`
-- [ ] 3.2.3 Wire the PATH search and the host-compiler resolver — `environment.rs`, `toolchain.rs`, `mod.rs`
-- [ ] 3.2.4 Wire FS-UAE selection, the PE version, spawn, and storage messages — `emulator/select.rs`, `emulator/mod.rs`, `emulator/storage.rs` (also remove the Windows-only `unused_mut` at `storage.rs:104`)
-- [ ] 3.2.5 Wire host artifact names and the `new` launcher and summary — `artifacts.rs`, `new.rs`
-- [ ] 3.2.6 Run the spec suite — ST-9 – ST-26 pass (green); existing driver suites unchanged
+- [x] 3.2.1 Add `platform.rs` with `HostOs` and its functions — `compiler/src/clorraine/platform.rs`, `compiler/src/clorraine/mod.rs` ✅ (completed: 2026-11-26 20:29)
+- [x] 3.2.2 Wire the validator, display paths, and the config file — `setup.rs` ✅ (completed: 2026-11-26 20:29)
+- [x] 3.2.3 Wire the PATH search and the host-compiler resolver — `environment.rs`, `toolchain.rs`, `mod.rs` ✅ (completed: 2026-11-26 20:29)
+- [x] 3.2.4 Wire FS-UAE selection, the PE version, spawn, and storage messages — `emulator/select.rs`, `emulator/mod.rs`, `emulator/storage.rs` (also remove the Windows-only `unused_mut` at `storage.rs:104`) ✅ (completed: 2026-11-26 20:29)
+- [x] 3.2.5 Wire host artifact names and the `new` launcher and summary — `artifacts.rs`, `new.rs` ✅ (completed: 2026-11-26 20:29)
+- [x] 3.2.6 Run the spec suite — ST-9 – ST-26 pass (green); existing driver suites unchanged ✅ (completed: 2026-11-26 20:29) — spec 25/25, lib 483, 11 driver suites unchanged; Windows check has no warnings
 
 ### Step 3.3: Implementation tests and hardening
 

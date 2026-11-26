@@ -13,6 +13,7 @@ use std::time::Duration;
 
 use super::super::display;
 use super::super::environment::{self, EnvironmentError};
+use super::super::platform::{self, HostOs};
 use super::super::setup;
 use super::absolute;
 use super::Rom;
@@ -35,6 +36,9 @@ const ROM_KS31_A1200: u64 = 524_299;
 /// A 256 KB Kickstart 1.3 image.
 const ROM_256K: u64 = 262_144;
 
+/// The largest FS-UAE executable whose version resource is read on Windows.
+const MAX_EXECUTABLE_BYTES: u64 = 64 * 1024 * 1024;
+
 /// Resolves the FS-UAE executable from the flag, environment, the path
 /// remembered by `setup`, or `PATH`.
 pub(super) fn resolve_executable(explicit: Option<&str>, path: &OsStr) -> Result<PathBuf, EnvironmentError> {
@@ -50,7 +54,7 @@ pub(super) fn resolve_executable(explicit: Option<&str>, path: &OsStr) -> Result
             .map_err(|error| input_error(2, "--fs-uae", &error.to_string()))?,
         None => {
             let found = std::env::split_paths(path)
-                .map(|dir| dir.join("fs-uae"))
+                .map(|dir| dir.join(platform::executable_name(HostOs::current(), "fs-uae")))
                 .find(|file| environment::is_executable_file(file))
                 .ok_or_else(|| {
                     input_error(
@@ -85,46 +89,65 @@ fn remembered(
     Ok(pick(config).map(PathBuf::into_os_string))
 }
 
-/// Runs `fs-uae --version` once and requires 3.2.0 or newer.
+/// Reads the FS-UAE version once and requires 3.2.0 or newer.
 pub(super) fn check_version(executable: &Path) -> Result<(), EnvironmentError> {
-    let output = Command::new(executable)
-        .arg("--version")
-        .output()
-        .map_err(|error| {
-            input_error(
-                2,
-                "--fs-uae",
-                &format!("cannot run '{} --version': {error}", executable.display()),
-            )
-        })?;
-    if !output.status.success() {
-        return Err(input_error(
-            2,
-            "--fs-uae",
-            &format!("'{} --version' failed", executable.display()),
-        ));
-    }
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let first = stdout.lines().next().unwrap_or("").trim();
-    let token = first.split_whitespace().next().unwrap_or("");
-    let version = parse_version(token).ok_or_else(|| {
-        input_error(
-            2,
-            "--fs-uae",
-            &format!(
-                "cannot read the FS-UAE version from '{}'",
-                display::sanitize(first)
-            ),
-        )
-    })?;
+    fs_uae_version_for(HostOs::current(), executable)
+        .map(|_| ())
+        .map_err(|detail| input_error(2, "--fs-uae", &detail))
+}
+
+/// The version of the FS-UAE at `executable`, when it is 3.2.0 or newer.
+///
+/// Unix runs `fs-uae --version` once and reads its first line. The Windows
+/// build is a GUI program that prints nothing to a pipe, so there the version
+/// comes from the executable's version resource and the file is never run;
+/// a file over 64 MiB is refused rather than read.
+///
+/// # Errors
+///
+/// The detail text for a `--fs-uae` usage error: the version cannot be read,
+/// or it is older than 3.2.0.
+pub fn fs_uae_version_for(os: HostOs, executable: &Path) -> Result<(u64, u64, u64), String> {
+    let (version, token) = match os {
+        HostOs::Windows => {
+            let shown = platform::display_path(os, &executable.display().to_string());
+            let unreadable = || format!("cannot read the FS-UAE version from '{}'", display::sanitize(&shown));
+            let bytes = read_limited(executable).ok_or_else(unreadable)?;
+            let version = platform::pe_file_version(&bytes).ok_or_else(unreadable)?;
+            (version, format!("{}.{}.{}", version.0, version.1, version.2))
+        }
+        HostOs::Unix => {
+            let output = Command::new(executable)
+                .arg("--version")
+                .output()
+                .map_err(|error| format!("cannot run '{} --version': {error}", executable.display()))?;
+            if !output.status.success() {
+                return Err(format!("'{} --version' failed", executable.display()));
+            }
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let first = stdout.lines().next().unwrap_or("").trim();
+            let token = first.split_whitespace().next().unwrap_or("");
+            let version = parse_version(token).ok_or_else(|| {
+                format!("cannot read the FS-UAE version from '{}'", display::sanitize(first))
+            })?;
+            (version, token.to_owned())
+        }
+    };
     if version < MINIMUM_FS_UAE {
-        return Err(input_error(
-            2,
-            "--fs-uae",
-            &format!("FS-UAE '{token}' is older than the required 3.2.0"),
-        ));
+        return Err(format!("FS-UAE '{}' is older than the required 3.2.0", display::sanitize(&token)));
     }
-    Ok(())
+    Ok(version)
+}
+
+/// The bytes of `path` when it is a file of at most 64 MiB.
+fn read_limited(path: &Path) -> Option<Vec<u8>> {
+    let file = File::open(path).ok()?;
+    if !file.metadata().ok()?.is_file() || file.metadata().ok()?.len() > MAX_EXECUTABLE_BYTES {
+        return None;
+    }
+    let mut bytes = Vec::new();
+    io::Read::read_to_end(&mut io::Read::take(file, MAX_EXECUTABLE_BYTES + 1), &mut bytes).ok()?;
+    (bytes.len() as u64 <= MAX_EXECUTABLE_BYTES).then_some(bytes)
 }
 
 /// Parses the leading `major.minor[.patch]` numbers of a version token.
