@@ -37,7 +37,10 @@ const ROM_KS31_A1200: u64 = 524_299;
 const ROM_256K: u64 = 262_144;
 
 /// The largest FS-UAE executable whose version resource is read on Windows.
-const MAX_EXECUTABLE_BYTES: u64 = 64 * 1024 * 1024;
+///
+/// The FS-UAE 3.2.35 executable is about 66 MiB, so the bound leaves room for
+/// later releases while still refusing to load an arbitrarily large file.
+const MAX_EXECUTABLE_BYTES: u64 = 256 * 1024 * 1024;
 
 /// Resolves the FS-UAE executable from the flag, environment, the path
 /// remembered by `setup`, or `PATH`.
@@ -101,7 +104,7 @@ pub(super) fn check_version(executable: &Path) -> Result<(), EnvironmentError> {
 /// Unix runs `fs-uae --version` once and reads its first line. The Windows
 /// build is a GUI program that prints nothing to a pipe, so there the version
 /// comes from the executable's version resource and the file is never run;
-/// a file over 64 MiB is refused rather than read.
+/// a file over 256 MiB is refused rather than read.
 ///
 /// # Errors
 ///
@@ -139,7 +142,7 @@ pub fn fs_uae_version_for(os: HostOs, executable: &Path) -> Result<(u64, u64, u6
     Ok(version)
 }
 
-/// The bytes of `path` when it is a file of at most 64 MiB.
+/// The bytes of `path` when it is a file of at most 256 MiB.
 fn read_limited(path: &Path) -> Option<Vec<u8>> {
     let file = File::open(path).ok()?;
     if !file.metadata().ok()?.is_file() || file.metadata().ok()?.len() > MAX_EXECUTABLE_BYTES {

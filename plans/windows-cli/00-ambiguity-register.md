@@ -1,6 +1,6 @@
 ## Ambiguity Register: Windows CLI and installer
 
-> **Status**: ✅ GATE PASSED — all 53 items resolved; AR-54 – AR-57 added and resolved during execution
+> **Status**: ✅ GATE PASSED — all 53 items resolved; AR-54 – AR-58 added and resolved during execution
 > **Last Updated**: 2026-11-26 18:30
 > **Evidence**: `spikes/08-windows-cli/README.md`
 
@@ -63,6 +63,7 @@
 | 55 | Technical (runtime) | The driver modules are private, so the integration spec suites cannot call `native_syscalls_for`, `validate_for`, `fs_uae_version_for`, or `launcher_for` as 03-01/03-02 name them | Re-export exactly those items from `clc::clorraine` and make `platform` public / make the whole modules public / move the spec cases into unit tests | Re-export the named items from `clc::clorraine`; `pub mod platform` (see AR-55 resolution) | ✅ Resolved |
 | 56 | Technical (runtime) | The freestanding shim's `offsetof` casts a pointer to `unsigned long`, which MinGW rejects under `-Werror` on Win64 (32-bit `long`), so freestanding programs using `offsetof` cannot build on Windows (W13) | Cast through the shim's `uintptr_t` / a second `_WIN64` branch for the macro / leave it as a limitation | Cast through `uintptr_t` (see AR-56 resolution) | ✅ Resolved |
 | 57 | Technical (runtime) | A `#line` path containing `??` forms a C trigraph under `-std=c99` and fails the strict build (pre-existing; found by the Phase 2 review), which W12's "valid C string literal" excludes | Escape every `?` that follows a `?` as `\?` / leave it (Windows forbids `?` in file names) | Escape every `?` that follows a `?` (see AR-57 resolution) | ✅ Resolved |
+| 58 | Technical (runtime) | The 64 MiB read limit for the FS-UAE executable (03-02, ST-23) rejects the pinned FS-UAE 3.2.35 `fs-uae.exe`, which is 69,273,425 bytes, so W11's PE version read fails on the real host | Raise the limit to 256 MiB / stream-scan the file with no full read / read only the resource section | Raise the limit to 256 MiB (see AR-58 resolution); 03-02 and ST-23 updated | ✅ Resolved |
 
 ## Coverage Map
 
@@ -244,4 +245,28 @@ Hardening: no challenger; three independent reviewers reproduced the defect
 Policy version: 1
 Root invocation ID: exec-windows-cli-20261126-1938
 Reopen triggers: a toolchain leg that does not accept `\?` in a #line string
+```
+
+**AR-58 (runtime, auto-design; reopens the 03-02 read limit and ST-23):**
+
+```text
+Authority: AI — delegated by --auto-design
+Eligibility: implementation limit (resource bound) inside AR-14; W11 and the PE-version contract
+  are unchanged
+Objective: the PE version read works on the pinned FS-UAE 3.2.35 executable while memory stays
+  bounded against a pathological file
+Decision: read at most 256 MiB; a larger file is the same "cannot read the FS-UAE version" error.
+  03-02 (select.rs row and error table) and ST-23 change from 64 MiB to 256 MiB
+Evidence: on the Windows host, FS-UAE/Windows/x86-64/fs-uae.exe is 69,273,425 bytes; its
+  VS_FIXEDFILEINFO is at 0xb1eb08 (4-aligned, structure version 0x00010000, 3.2.35); ST-30 failed
+  with "cannot read the FS-UAE version" because of the 64 MiB limit
+Rejected alternatives: a streaming scanner (changes the specified pe_file_version(bytes) contract
+  for no user-visible gain); reading only the resource section (a PE section-table parser, more
+  code for the same result)
+Strongest counterargument: every emulator run reads about 70 MB once
+Confidence: High — would change if a later FS-UAE executable exceeds 256 MiB
+Hardening: no challenger; measured on the real file
+Policy version: 1
+Root invocation ID: exec-windows-cli-20261126-1938
+Reopen triggers: a pinned FS-UAE executable over 256 MiB; a run-time cost users notice
 ```

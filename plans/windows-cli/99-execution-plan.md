@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-26 20:30
-> **Progress**: 22/75 tasks (29%)
+> **Last Updated**: 2026-11-26 20:38
+> **Progress**: 23/75 tasks (31%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -143,7 +143,7 @@ on Linux in this worktree; Windows runs go through the remote helper (AR-5, AR-2
 ### Step 3.3: Implementation tests and hardening
 
 - [x] 3.3.1 Write driver impl tests (PE bounds, verbatim forms, resolver errors, launcher fallbacks) — `compiler/tests/windows_cli_impl_test.rs` ✅ (completed: 2026-11-26 20:30) — impl 16/16; resolver unit tests in `environment.rs` (crate-private)
-- [ ] 3.3.2 Cross-build, push, and run ST-27 – ST-30 on the Windows host through the helper
+- [x] 3.3.2 Cross-build, push, and run ST-27 – ST-30 on the Windows host through the helper ✅ (completed: 2026-11-26 20:38) — all four hold; fixed on the way: the validator's containment checks now compare canonical paths, and the FS-UAE read limit is 256 MiB (AR-58; fs-uae.exe is 69,273,425 bytes)
 - [ ] 3.3.3 Phase gate — `make check IMAGE=clorraine-sdk:windows-cli`
 
 **Deliverables**:

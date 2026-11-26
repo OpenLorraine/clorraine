@@ -69,7 +69,7 @@ The existing functions keep their signatures and call these with `HostOs::curren
 | `setup.rs` `config_file` | Delegates to `platform::config_file` | AR-43 |
 | `environment.rs` PATH search | Checks `executable_name(os, tool)`; the cc hint comes from `missing_compiler_hint` | AR-29 |
 | `toolchain.rs` host and freestanding run tools | The program is resolved at run time: `CLORRAINE_CC`, else the first `host_compilers` entry found on PATH; `Tool.program` becomes the placeholder the resolver replaces | AR-29 |
-| `emulator/select.rs` | PATH fallback looks for `executable_name(os, "fs-uae")`; on Windows the version comes from `pe_file_version` of the executable's bytes (read at most 64 MiB; larger is an error); Unix keeps `--version` | AR-14 |
+| `emulator/select.rs` | PATH fallback looks for `executable_name(os, "fs-uae")`; on Windows the version comes from `pe_file_version` of the executable's bytes (read at most 256 MiB (AR-58); larger is an error); Unix keeps `--version` | AR-14 |
 | `emulator/mod.rs` spawn | On Windows also sets `TEMP` and `TMP` to the run's `tmp`; `XAUTHORITY` only on Unix | AR-14 |
 | `emulator/storage.rs` | Retained-run and error messages use `display_path`; messages name `TEMP` on Windows and `TMPDIR` on Unix; Windows relies on the per-user ACL of `%TEMP%` | AR-38, AR-42 |
 | `artifacts.rs` | Host and freestanding host-run names from `host_artifact_name`; Amiga artifacts unchanged | AR-45 |
@@ -88,7 +88,7 @@ The existing functions keep their signatures and call these with `HostOs::curren
 | `CLORRAINE_CC` names nothing runnable | Exit 1: `clorraine: CLORRAINE_CC '<value>' was not found` | AR-29 |
 | No host compiler on Windows | Exit 1 with the Windows hint | AR-29 |
 | FS-UAE executable without a readable version resource | Exit 2: `--fs-uae: cannot read the FS-UAE version from '<path>'` | AR-14 |
-| FS-UAE executable over 64 MiB | Exit 2: same message | AR-14 |
+| FS-UAE executable over 256 MiB (AR-58) | Exit 2: same message | AR-14 |
 | FS-UAE older than 3.2.0 | Unchanged message | AR-14 |
 
 ## Testing Requirements
