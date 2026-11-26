@@ -18,6 +18,10 @@
 #
 # This file is ASCII-only so Windows PowerShell 5.1 reads it the same way in
 # every code page.
+#
+# The parameter block is an advanced one so an unknown or misspelled option is
+# collected in $Rest and reported as a usage error, instead of being ignored.
+[CmdletBinding(PositionalBinding = $false)]
 param(
     [string]$Prefix,
     [switch]$ModifyPath,
@@ -38,7 +42,8 @@ param(
     [switch]$NoVSCode,
     [switch]$Uninstall,
     [switch]$Purge,
-    [switch]$Help
+    [switch]$Help,
+    [Parameter(ValueFromRemainingArguments = $true)][string[]]$Rest
 )
 
 # --- Release pins (replaced by package.sh) -----------------------------------
@@ -58,6 +63,13 @@ $script:PathRegistryKey = 'HKCU:\Environment'
 
 # The installer's own lock, shared by every run in this logon session.
 $script:MutexName = 'Local\Clorraine-Install'
+
+# The installer's own options, for the rules that compare them.
+$script:InstallOptions = @(
+    'Prefix', 'ModifyPath', 'Archive', 'Checksums', 'Toolchain', 'NoToolchain', 'InstallToolchain',
+    'ReplaceToolchain', 'FsUae', 'Kickstart', 'NoEmulator', 'InstallFsUae', 'NoHello', 'Starter',
+    'NoStarter', 'VSCode', 'NoVSCode', 'Uninstall', 'Purge'
+)
 
 # Files every Windows candidate carries under its top folder.
 $script:CandidateFiles = @(
@@ -196,6 +208,10 @@ function Get-HostArchitecture {
     }
 }
 
+# True in a 64-bit PowerShell; a 32-bit one cannot see the paths of 64-bit
+# processes, which the purge in-use check needs.
+function Test-64BitProcess { return [Environment]::Is64BitProcess }
+
 # The Windows build number (22000 and later is Windows 11).
 function Get-OsBuild { return [Environment]::OSVersion.Version.Build }
 
@@ -318,7 +334,28 @@ function Remove-TreeSafe([string]$Path) {
 function New-PrivateTemp([string]$Tag) {
     $path = Join-Path ([IO.Path]::GetTempPath()) ("clorraine-$Tag-" + [guid]::NewGuid().ToString('N').Substring(0, 12))
     New-Item -ItemType Directory -Path $path | Out-Null
+    Set-PrivateAccess $path
     return $path
+}
+
+# Gives a folder this installer created an access list of its own: full
+# control for the current user, SYSTEM, and Administrators, nothing inherited.
+# A shared TMP or a prefix such as C:\Clorraine would otherwise let another
+# local user replace a verified file before it is used.
+function Set-PrivateAccess([string]$Path) {
+    $security = New-Object System.Security.AccessControl.DirectorySecurity
+    $security.SetAccessRuleProtection($true, $false)
+    $inherit = [System.Security.AccessControl.InheritanceFlags]'ContainerInherit, ObjectInherit'
+    $sids = @(
+        [System.Security.Principal.WindowsIdentity]::GetCurrent().User,
+        (New-Object System.Security.Principal.SecurityIdentifier 'S-1-5-18'),
+        (New-Object System.Security.Principal.SecurityIdentifier 'S-1-5-32-544')
+    )
+    foreach ($sid in $sids) {
+        $rule = New-Object System.Security.AccessControl.FileSystemAccessRule($sid, 'FullControl', $inherit, 'None', 'Allow')
+        $security.AddAccessRule($rule)
+    }
+    (New-Object System.IO.DirectoryInfo $Path).SetAccessControl($security)
 }
 
 # The lowercase SHA-256 of a file.
@@ -381,38 +418,79 @@ function Test-LocalArchive([string]$Path, [string]$ChecksumFile) {
 }
 
 # Checks every entry of a candidate zip before anything is extracted: one top
-# folder, no absolute, drive, or parent-relative names, and exactly the
-# expected file set. Returns the top folder name.
+# folder, no absolute, drive, or parent-relative names, only regular files and
+# folders, no repeated name, and exactly the expected file set. Names are
+# compared ordinally, so case and culture rules cannot make two names match.
+# Returns the top folder name.
 function Test-CandidateZip([string]$Path) {
     Add-Type -AssemblyName System.IO.Compression
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     $top = "clorraine-$script:Version-x86_64-windows"
-    $seen = @{}
+    $expected = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal)
+    foreach ($file in $script:CandidateFiles) { [void]$expected.Add($file) }
+    $seen = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
     $zip = [IO.Compression.ZipFile]::OpenRead($Path)
     try {
         foreach ($entry in $zip.Entries) {
+            $shown = Get-SafeText $entry.FullName
             $name = $entry.FullName.Replace('\', '/')
             $parts = $name.Split('/')
             if ($name.StartsWith('/') -or $name.Contains(':') -or ($parts -contains '..') -or ($parts -contains '.')) {
-                Stop-Install 1 ('archive contains an unsafe entry: ' + (Get-SafeText $entry.FullName))
+                Stop-Install 1 "archive contains an unsafe entry: $shown"
             }
-            if ($parts[0] -ne $top) {
-                Stop-Install 1 ('archive entry outside ' + $top + ': ' + (Get-SafeText $entry.FullName))
+            if (-not [string]::Equals($parts[0], $top, [StringComparison]::Ordinal)) {
+                Stop-Install 1 "archive entry outside ${top}: $shown"
             }
+            # The Unix file type lives in the high half of the external
+            # attributes; only regular files and folders (or none) are allowed.
+            $type = ($entry.ExternalAttributes -shr 16) -band 0xF000
+            if ($type -ne 0 -and $type -ne 0x8000 -and $type -ne 0x4000) {
+                Stop-Install 1 "archive contains a link or special file: $shown"
+            }
+            if (-not $seen.Add($name.TrimEnd('/'))) { Stop-Install 1 "archive repeats an entry: $shown" }
             if ($name.EndsWith('/')) { continue }
-            $relative = $name.Substring($top.Length + 1)
-            if ($script:CandidateFiles -notcontains $relative) {
-                Stop-Install 1 ('archive has an unexpected file: ' + (Get-SafeText $entry.FullName))
+            if (-not $expected.Contains($name.Substring($top.Length + 1))) {
+                Stop-Install 1 "archive has an unexpected file: $shown"
             }
-            $seen[$relative] = $true
         }
     } finally {
         $zip.Dispose()
     }
     foreach ($file in $script:CandidateFiles) {
-        if (-not $seen.ContainsKey($file)) { Stop-Install 1 "archive is missing $file" }
+        if (-not $seen.Contains("$top/$file")) { Stop-Install 1 "archive is missing $file" }
     }
     return $top
+}
+
+# Checks what tar.exe actually wrote, before anything in it runs: one top
+# folder holding exactly the expected files as regular files, with no link
+# anywhere. The extractor may read names from a different part of the zip
+# than the check above, so the result is checked as well.
+function Test-ExtractedTree([string]$Staging, [string]$Top) {
+    $children = @(Get-ChildItem -LiteralPath $Staging -Force)
+    if ($children.Count -ne 1 -or -not [string]::Equals($children[0].Name, $Top, [StringComparison]::Ordinal)) {
+        Stop-Install 1 'the extracted archive does not hold exactly one top folder'
+    }
+    $tree = Join-Path $Staging $Top
+    $found = New-Object 'System.Collections.Generic.List[string]'
+    $pending = New-Object 'System.Collections.Generic.Stack[string]'
+    $pending.Push($tree)
+    while ($pending.Count -gt 0) {
+        $folder = $pending.Pop()
+        foreach ($item in @(Get-ChildItem -LiteralPath $folder -Force)) {
+            if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+                Stop-Install 1 ('the extracted archive contains a link: ' + (Get-SafeText $item.Name))
+            }
+            if ($item.PSIsContainer) { $pending.Push($item.FullName); continue }
+            $found.Add($item.FullName.Substring($tree.Length + 1).Replace('\', '/'))
+        }
+    }
+    $sorted = @($found | Sort-Object)
+    $wanted = @($script:CandidateFiles | Sort-Object)
+    if (($sorted -join '|') -cne ($wanted -join '|')) {
+        Stop-Install 1 'the extracted archive does not hold exactly the expected files'
+    }
+    return $tree
 }
 
 # Requires the extracted CLI to report exactly this installer's version.
@@ -555,11 +633,15 @@ function Get-DefaultPrefix { return Join-Path $env:LOCALAPPDATA 'Programs\Clorra
 # Validates the prefix and creates it.
 function Resolve-Prefix([string]$Path) {
     if (-not (Test-DrivePath $Path)) { Stop-Install 1 "-Prefix must be an absolute path such as C:\Users\me\Clorraine" }
-    if ($Path -match '[;"]' -or $Path -match '[\x00-\x1F\x7F]') {
-        Stop-Install 1 '-Prefix must not contain a semicolon, a double quote, or control characters'
+    # A percent sign would make the expandable PATH entry name another folder.
+    if ($Path -match '[;"%]' -or $Path -match '[\x00-\x1F\x7F]') {
+        Stop-Install 1 '-Prefix must not contain a semicolon, a double quote, a percent sign, or control characters'
     }
     $full = [IO.Path]::GetFullPath($Path).TrimEnd('\')
-    New-Item -ItemType Directory -Force -Path $full | Out-Null
+    if (-not (Test-Path -LiteralPath $full)) {
+        New-Item -ItemType Directory -Force -Path $full | Out-Null
+        Set-PrivateAccess $full
+    }
     return $full
 }
 
@@ -596,23 +678,27 @@ function Get-HelloAmigaSource {
 }
 
 # Installs one verified archive into Root and switches `current` to it.
-# Returns the version folder. Any failure before the switch removes what this
-# run created; a failure during the switch restores the previous link.
+# Returns the version folder. The cleanup runs in `finally`, so it also runs
+# when the person presses Ctrl+C: unless the run completed, a version folder
+# this run created is removed and the previous `current` is restored.
 function Install-Archive([string]$Root, [string]$ArchivePath) {
     $versions = Join-Path $Root 'versions'
     New-Item -ItemType Directory -Force -Path $versions | Out-Null
     $top = Test-CandidateZip $ArchivePath
     $folder = Join-Path $versions ("$script:Version-" + (Get-Sha256 $ArchivePath).Substring(0, 12))
     $staging = Join-Path $versions ('.tmp-' + [guid]::NewGuid().ToString('N').Substring(0, 12))
+    $current = Join-Path $Root 'current'
+    $pending = Join-Path $Root 'current.new'
+    $previous = Get-JunctionTarget $current
     $created = $false
-    $previous = Get-JunctionTarget (Join-Path $Root 'current')
-    $switched = $false
+    $switching = $false
+    $completed = $false
     try {
         New-Item -ItemType Directory -Path $staging | Out-Null
         $tar = Join-Path $env:SystemRoot 'System32\tar.exe'
         $result = Invoke-Native $tar @('-x', '-f', $ArchivePath, '-C', $staging)
         if ($result.Code -ne 0) { Stop-Install 1 ('cannot extract the archive: ' + (Get-SafeText $result.Err).Trim()) }
-        $tree = Join-Path $staging $top
+        $tree = Test-ExtractedTree $staging $top
         Test-ExtractedVersion $tree
         if (Test-Path -LiteralPath $folder) {
             Test-ExtractedVersion $folder
@@ -620,22 +706,22 @@ function Install-Archive([string]$Root, [string]$ArchivePath) {
             [IO.Directory]::Move($tree, $folder)
             $created = $true
         }
-        $switched = $true
+        $switching = $true
         Set-CurrentVersion $Root $folder
-    } catch {
-        if ($switched) {
-            $current = Join-Path $Root 'current'
-            if ($null -ne (Get-Item -LiteralPath (Join-Path $Root 'current.new') -Force -ErrorAction SilentlyContinue)) {
-                Remove-Link (Join-Path $Root 'current.new')
-            }
-            if ($previous -and -not (Test-SamePath ([string](Get-JunctionTarget $current)) $previous)) {
-                if ($null -ne (Get-Item -LiteralPath $current -Force -ErrorAction SilentlyContinue)) { Remove-Link $current }
-                New-Item -ItemType Junction -Path $current -Target $previous | Out-Null
-            }
-        }
-        if ($created -and (Test-Path -LiteralPath $folder)) { Remove-TreeSafe $folder }
-        throw
+        $completed = $true
     } finally {
+        if (-not $completed) {
+            if ($switching) {
+                if ($null -ne (Get-Item -LiteralPath $pending -Force -ErrorAction SilentlyContinue)) { Remove-Link $pending }
+                $now = Get-JunctionTarget $current
+                $restore = -not ($previous -and $now -and (Test-SamePath $now $previous))
+                if ($restore) {
+                    if ($null -ne (Get-Item -LiteralPath $current -Force -ErrorAction SilentlyContinue)) { Remove-Link $current }
+                    if ($previous) { New-Item -ItemType Junction -Path $current -Target $previous | Out-Null }
+                }
+            }
+            if ($created -and (Test-Path -LiteralPath $folder)) { Remove-TreeSafe $folder }
+        }
         if (Test-Path -LiteralPath $staging) { Remove-TreeSafe $staging }
     }
     return $folder
@@ -658,6 +744,45 @@ function Update-UserPath([string]$Root, [bool]$Requested, [bool]$Interactive) {
 }
 
 # --- Uninstall ---------------------------------------------------------------
+
+# Removes a folder only when it is an ordinary, empty folder.
+function Remove-EmptyFolder([string]$Path) {
+    if ((Test-Path -LiteralPath $Path -PathType Container) -and -not (Test-ReparsePoint $Path) -and
+        @(Get-ChildItem -LiteralPath $Path -Force).Count -eq 0) {
+        [IO.Directory]::Delete($Path, $false)
+    }
+}
+
+# Removes what this installer created under Root and nothing else: version
+# folders and staging folders by their exact name pattern, the two hello
+# files, and the FS-UAE it downloaded into fs-uae\3.2.35. The folders that
+# held them go only when they end up empty, so a prefix that also holds the
+# user's own files keeps them. Nothing is reached through a link.
+function Remove-InstallerData([string]$Root) {
+    $versions = Join-Path $Root 'versions'
+    if ((Test-Path -LiteralPath $versions -PathType Container) -and -not (Test-ReparsePoint $versions)) {
+        foreach ($child in @(Get-ChildItem -LiteralPath $versions -Force)) {
+            if ($child.Name -cmatch '^[0-9A-Za-z.+-]+-[0-9a-f]{12}$' -or $child.Name -cmatch '^\.tmp-[0-9a-f]{12}$') {
+                Remove-TreeSafe $child.FullName
+            }
+        }
+        Remove-EmptyFolder $versions
+    }
+    $examples = Join-Path $Root 'examples'
+    if ((Test-Path -LiteralPath $examples -PathType Container) -and -not (Test-ReparsePoint $examples)) {
+        foreach ($name in 'hello.clo', 'hello-amiga.clo') {
+            $file = Join-Path $examples $name
+            if ((Test-Path -LiteralPath $file -PathType Leaf) -and -not (Test-ReparsePoint $file)) { [IO.File]::Delete($file) }
+        }
+        Remove-EmptyFolder $examples
+    }
+    $fsuae = Join-Path $Root 'fs-uae'
+    $downloaded = Join-Path $fsuae '3.2.35'
+    if ((Test-Path -LiteralPath $fsuae -PathType Container) -and -not (Test-ReparsePoint $fsuae)) {
+        if ($null -ne (Get-Item -LiteralPath $downloaded -Force -ErrorAction SilentlyContinue)) { Remove-TreeSafe $downloaded }
+        Remove-EmptyFolder $fsuae
+    }
+}
 
 # The program files running from inside Root, as full paths.
 function Get-ProcessesUnder([string]$Root) {
@@ -688,20 +813,14 @@ function Invoke-Uninstall([string]$Root, [bool]$AlsoPurge) {
     foreach ($link in $links) { Remove-Link $link }
     Write-Ok "removed the Clorraine link and PATH entry from $Root"
     if ($AlsoPurge) {
-        foreach ($name in 'versions', 'examples', 'fs-uae\3.2.35') {
-            $path = Join-Path $Root $name
-            if ($null -ne (Get-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue)) { Remove-TreeSafe $path }
-        }
-        $fsuae = Join-Path $Root 'fs-uae'
-        if ((Test-Path -LiteralPath $fsuae) -and @(Get-ChildItem -LiteralPath $fsuae -Force).Count -eq 0) {
-            [IO.Directory]::Delete($fsuae, $false)
-        }
+        Remove-InstallerData $Root
         $configDir = Join-Path $env:APPDATA 'clorraine'
         $config = Join-Path $configDir 'config'
-        if (Test-Path -LiteralPath $config) { Remove-Item -LiteralPath $config -Force }
-        if ((Test-Path -LiteralPath $configDir) -and @(Get-ChildItem -LiteralPath $configDir -Force).Count -eq 0) {
-            [IO.Directory]::Delete($configDir, $false)
+        # Only a plain file named config is ours; a folder or link is left.
+        if ((Test-Path -LiteralPath $config -PathType Leaf) -and -not (Test-ReparsePoint $config)) {
+            [IO.File]::Delete($config)
         }
+        Remove-EmptyFolder $configDir
         Write-Ok "removed the Clorraine versions, examples, and $config"
     }
     Write-Line '  The rc24 toolchain and any FS-UAE you installed yourself are kept.'
@@ -713,9 +832,10 @@ function Invoke-Uninstall([string]$Root, [bool]$AlsoPurge) {
 # Rejects option combinations that cannot mean one thing.
 function Test-Options([hashtable]$Options) {
     $given = { param($name) $Options.ContainsKey($name) -and [bool]$Options[$name] }
+    if (& $given 'Rest') { Stop-Usage ("unknown option '" + (Get-SafeText (@($Options['Rest'])[0])) + "'") }
     if ((& $given 'Purge') -and -not (& $given 'Uninstall')) { Stop-Usage '-Purge requires -Uninstall' }
     if (& $given 'Uninstall') {
-        foreach ($name in $Options.Keys) {
+        foreach ($name in $script:InstallOptions) {
             if ($name -notin 'Uninstall', 'Purge', 'Prefix' -and (& $given $name)) {
                 Stop-Usage "-Uninstall cannot be combined with -$name"
             }
@@ -743,6 +863,7 @@ function Test-Options([hashtable]$Options) {
 # Runs the installer and returns its exit code: 0 on success, 1 for a
 # failure, 2 for a usage error. Takes the same parameters as the script.
 function Invoke-Installer {
+    [CmdletBinding(PositionalBinding = $false)]
     param(
         [string]$Prefix,
         [switch]$ModifyPath,
@@ -763,7 +884,8 @@ function Invoke-Installer {
         [switch]$NoVSCode,
         [switch]$Uninstall,
         [switch]$Purge,
-        [switch]$Help
+        [switch]$Help,
+        [Parameter(ValueFromRemainingArguments = $true)][string[]]$Rest
     )
     $ErrorActionPreference = 'Stop'
     $options = @{}
@@ -794,6 +916,9 @@ function Invoke-Main([hashtable]$Options) {
     $interactive = Test-Interactive
 
     if ((Get-HostArchitecture) -ne 'X64') { Stop-Install 1 'this installer supports 64-bit x86 Windows only' }
+    if (-not (Test-64BitProcess)) {
+        Stop-Install 1 'run the 64-bit Windows PowerShell (%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe)'
+    }
     if ((Get-OsBuild) -lt 22000) { Write-Warn 'Windows 10 is untested; continuing' }
     foreach ($tool in 'curl.exe', 'tar.exe') {
         if (-not (Test-Path -LiteralPath (Join-Path $env:SystemRoot "System32\$tool"))) {
