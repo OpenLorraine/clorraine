@@ -64,6 +64,7 @@ check:
 	$(MAKE) setup-check
 	$(MAKE) dist-check
 	$(DOCKER_MAKE) exec CMD="cargo test --workspace"
+	$(DOCKER_MAKE) exec CMD="cargo check --workspace --target x86_64-pc-windows-gnu"
 	$(MAKE) bench-test
 	$(MAKE) fuzz-test
 	$(MAKE) fuzz-smoke
