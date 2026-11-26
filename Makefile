@@ -116,7 +116,8 @@ dist-check:
 	bash tools/setup/tests/install.impl.test.sh
 	bash tools/setup/tests/dist.spec.test.sh
 	bash tools/setup/tests/windows-dist.spec.test.sh
-	cd tools/setup && PYTHONPATH=tests python3 -m unittest acceptance_spec acceptance_windows_spec test_retained_inputs -v
+	bash tools/setup/tests/windows-dist.impl.test.sh
+	cd tools/setup && PYTHONPATH=tests python3 -m unittest acceptance_spec acceptance_windows_spec acceptance_windows_impl test_retained_inputs -v
 
 # Run the full local acceptance from an exact candidate and pinned inputs.
 acceptance:
