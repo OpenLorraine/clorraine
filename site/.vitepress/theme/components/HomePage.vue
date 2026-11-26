@@ -35,7 +35,7 @@ import { withBase } from "vitepress";
           </div>
           <p class="cl-hero__note">
             Apache 2.0 · No ROMs or Workbench media · Linux x86_64 today;
-            Windows and macOS are on the way.
+            Windows 11 in the next release; macOS is on the way.
           </p>
         </div>
 
@@ -95,7 +95,7 @@ import { withBase } from "vitepress";
           <ul class="cl-checks">
             <li>Linux x86_64 with glibc 2.38 or newer.</li>
             <li>FS-UAE 3.2+ and your licensed Kickstart 3.1 ROM for the Amiga run.</li>
-            <li>Windows and macOS are on the way.</li>
+            <li>Windows 11 support ships with the next release; macOS is on the way.</li>
           </ul>
           <a class="cl-text-link" :href="withBase('/guide/quick-start')">
             Install guide and requirements

@@ -319,9 +319,9 @@ toolchain, FS-UAE, the VS Code extension, and a starter project; see
   10 prints "untested" and continues; PowerShell 7 is untested; ARM64 and
   32-bit Windows are refused.
 - **Execution policy.** The installer runs with a one-time, process-scope
-  bypass. A policy set by Group Policy cannot be bypassed, and browser
-  downloads need `Unblock-File`. Clorraine never changes the policy
-  permanently.
+  bypass. A policy set by Group Policy takes precedence over the bypass. A
+  browser-downloaded script needs `Unblock-File` only when it is run without
+  the bypass. Clorraine never changes the policy permanently.
 - **Administrator step.** Installing rc24 runs its setup elevated once, into
   `C:\Program Files\Clorraine`; declining the UAC prompt keeps the CLI.
 - **Host compiler.** PC builds need GCC (w64devkit or MSYS2 UCRT64) or
@@ -332,6 +332,7 @@ toolchain, FS-UAE, the VS Code extension, and a starter project; see
 - **Interrupted emulator runs.** Ctrl+C during `run --emulator` leaves the
   FS-UAE window open and the `%TEMP%\clorraine-emulator-*` folder behind.
 - **Paths.** Network-share (UNC) workspaces, paths longer than 260 characters,
-  and a `%TEMP%` path containing a comma are not supported.
+  and a temporary-folder path (`%TMP%`, normally the same as `%TEMP%`)
+  containing a comma are not supported.
 - **Signing.** The binaries and scripts are not code-signed; SmartScreen or
   Defender may ask before the first run.

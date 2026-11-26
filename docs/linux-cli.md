@@ -136,8 +136,8 @@ and the CLI config.
 
 ## Limits
 
-- Linux x86_64 only on Linux; see [Windows CLI](windows-cli.md) for Windows.
-  macOS is on the way; WSL2, Remote-WSL, and ARM hosts are not claimed.
+- x86_64 only on Linux; Windows has its own [guide](windows-cli.md). macOS is
+  on the way; WSL2, Remote-WSL, and ARM hosts are not claimed.
 - The VS Code extension is not in a marketplace yet.
 - The full list is in [known limitations](known-limitations.md).
 

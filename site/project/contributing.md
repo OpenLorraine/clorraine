@@ -52,8 +52,9 @@ Good places to help:
 
 - **Platform testing.** macOS and Windows hosts, different Linux distributions,
   and real Amiga hardware.
-- **Installers.** The Linux installer is a developer preview; Windows and macOS
-  installers and a marketplace extension are next.
+- **Installers.** The Linux installer is a developer preview and the Windows
+  installer ships with the next release; a macOS installer and a marketplace
+  extension are next.
 - **Documentation.** Correct a confusing page, add a tested example, or improve
   an error message.
 - **Amiga coverage.** Pick a tracked capability, add a gate, and prove it on the

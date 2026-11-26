@@ -1,19 +1,20 @@
 # Windows CLI (developer preview)
 
 > **Next release.** Windows support ships with the first Clorraine release after
-> v1.2.0; the v1.2.0 release has Linux assets only.
+> v1.2.0; the v1.2.0 release has Linux assets only. The commands below write
+> that release's version as `vX.Y.Z`.
 
 Clorraine runs on **Windows 11 x64** as a developer preview. One
 PowerShell script installs the CLI for your Windows account and, with your
 approval, the Amiga toolchain, FS-UAE, the VS Code extension, and a starter
-project. It needs no Docker, WSL, or Windows build environment.
+project. It needs no Docker or WSL; PC builds need GCC.
 
 ## Install
 
 Open **Windows PowerShell** (not as administrator) and run:
 
 ```powershell
-curl.exe -fsSLo clorraine-install.ps1 https://github.com/OpenLorraine/clorraine/releases/latest/download/install.ps1; powershell -ExecutionPolicy Bypass -File .\clorraine-install.ps1
+curl.exe -fsSLo clorraine-install.ps1 https://github.com/OpenLorraine/clorraine/releases/download/vX.Y.Z/install.ps1; powershell -ExecutionPolicy Bypass -File .\clorraine-install.ps1
 ```
 
 The installer walks through the same five steps as on Linux:
@@ -39,20 +40,26 @@ The installer walks through the same five steps as on Linux:
 
 To check the installer before running it, download `install.ps1` and
 `SHA256SUMS` from the
-[latest release](https://github.com/OpenLorraine/clorraine/releases/latest)
+[release](https://github.com/OpenLorraine/clorraine/releases) that carries Windows
 and compare the hash:
 
 ```powershell
-curl.exe -fsSLO https://github.com/OpenLorraine/clorraine/releases/latest/download/install.ps1
-curl.exe -fsSLO https://github.com/OpenLorraine/clorraine/releases/latest/download/SHA256SUMS
+curl.exe -fsSLO https://github.com/OpenLorraine/clorraine/releases/download/vX.Y.Z/install.ps1
+curl.exe -fsSLO https://github.com/OpenLorraine/clorraine/releases/download/vX.Y.Z/SHA256SUMS
 (Get-FileHash -Algorithm SHA256 .\install.ps1).Hash.ToLower()
 Select-String 'install.ps1' .\SHA256SUMS
+powershell -ExecutionPolicy Bypass -File .\install.ps1
 ```
+
+The two hashes must match before you run the last line. The commands below
+call the installer `clorraine-install.ps1`; use `install.ps1` if you
+downloaded it this way.
 
 ## The execution policy and the UAC prompt
 
-Windows blocks unsigned scripts by default. The install command bypasses the
-execution policy for that one `powershell` process only. Inside a PowerShell
+Windows PowerShell does not run scripts by default (the Restricted policy on
+Windows 11). The install command bypasses the execution policy for that one
+`powershell` process only. Inside a PowerShell
 window you can do the same for the current window with:
 
 ```powershell
@@ -61,12 +68,15 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 
 Do not change the execution policy permanently; Clorraine never asks you to.
 
-- If the script was downloaded with a browser, Windows marks it as coming from
-  the internet. Run `Unblock-File .\clorraine-install.ps1` first, or use the
-  `curl.exe` command above.
-- If your organization sets the execution policy through Group Policy, the
-  bypass has no effect and PowerShell reports that running scripts is
-  disabled. Ask your administrator; the installer cannot work around it.
+- A browser saves the script as `install.ps1` and marks it as coming from the
+  internet. The bypass ignores that mark: run
+  `powershell -ExecutionPolicy Bypass -File .\install.ps1`. To run it without
+  the bypass, remove the mark first with `Unblock-File .\install.ps1`.
+- If your organization sets the execution policy through Group Policy, that
+  policy takes precedence over the bypass. When it forbids the script,
+  PowerShell reports that running scripts is disabled or that the script is
+  not digitally signed. Ask your administrator; the installer cannot work
+  around it.
 - The only administrator step is the rc24 toolchain setup. The UAC prompt
   names Windows PowerShell; it copies the verified setup into a folder only
   administrators can change, checks it again there, and runs it silently.
@@ -105,8 +115,9 @@ redistribute them. `setup` rejects other toolchain versions.
 
 The installer looks for a ROM in `%USERPROFILE%\amiga\roms`, your
 `Documents\FS-UAE\Kickstarts`, and the Amiga Forever shared folder
-`%PUBLIC%\Documents\Amiga Files\Shared\rom`, and for FS-UAE on `PATH`, under
-its own folder, and in `C:\Program Files\FS-UAE`.
+`%PUBLIC%\Documents\Amiga Files\Shared\rom`, and for FS-UAE (after `-FsUae`,
+`CLORRAINE_FS_UAE`, and the config) on `PATH`, in the copy it downloaded under
+`fs-uae\3.2.35`, and under `C:\Program Files\FS-UAE`.
 
 ## Everyday commands
 
@@ -143,7 +154,8 @@ compiler for PC builds; without it the CLI uses the first of `gcc.exe`,
 ## Emulator runs
 
 `run --emulator` works as on Linux: it boots an Amiga 1200 with Kickstart 3.1
-in FS-UAE from a private folder under `%TEMP%`, ends a run after 90 seconds
+in FS-UAE from a private folder in the temporary folder (`%TMP%`, normally
+the same as `%TEMP%`), ends a run after 90 seconds
 (`CLORRAINE_EMULATOR_TIMEOUT_SECONDS`, 1–3600), and keeps the private folder
 of a failed or timed-out run. The FS-UAE window opens on your desktop.
 
@@ -153,7 +165,8 @@ The installer installs the `openlorraine.clorraine` extension from the release
 when VS Code (`code`, `codium`, or `code-insiders`) is found. The extension
 finds `clorraine.exe` and `clorraine-lsp.exe` in
 `%LOCALAPPDATA%\Programs\Clorraine\current\bin`, so it works without the
-`PATH` entry. Diagnostics, navigation, and the **Run in FS-UAE** and **Run**
+`PATH` entry. With a custom `-Prefix`, keep the `PATH` entry or set
+`clorraine.driver.path` and `clorraine.lsp.path` in your User Settings. Diagnostics, navigation, and the **Run in FS-UAE** and **Run**
 buttons behave as on Linux.
 
 ## Scripted installs and removal
@@ -169,7 +182,7 @@ options are listed by `.\clorraine-install.ps1 -Help`, among them `-Prefix`,
 entry; `-Uninstall -Purge` also removes the installed versions, the examples,
 the FS-UAE it downloaded, and the CLI config. Neither touches files you put
 in the install folder. The rc24 toolchain is removed under **Settings > Apps >
-Installed apps** (`amiga-gcc`).
+Installed apps** (`amiga-gcc version 16.2-rc24`).
 
 ## Limits
 
@@ -181,7 +194,8 @@ Installed apps** (`amiga-gcc`).
   `%TEMP%\clorraine-emulator-*` folder behind; close the window and delete the
   folder.
 - Network-share (UNC) workspaces, paths longer than 260 characters, and a
-  `%TEMP%` path with a comma are not supported.
+  temporary-folder path (`%TMP%`, normally the same as `%TEMP%`) containing a
+  comma are not supported.
 - The binaries and scripts are not code-signed yet, so SmartScreen or
   Defender may ask before the first run.
 - The VS Code extension is not in a marketplace yet.

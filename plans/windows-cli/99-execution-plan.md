@@ -2,7 +2,7 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-26 22:54
+> **Last Updated**: 2026-11-26 23:04
 > **Progress**: 49/75 tasks (65%)
 > **CodeOps Artifact Schema**: 1
 
@@ -298,11 +298,11 @@ on Linux in this worktree; Windows runs go through the remote helper (AR-5, AR-2
 - [x] 8.1.2 Add the Windows limitations — `docs/known-limitations.md` ✅ (2026-11-26 22:54; section 16, plus Windows rows on the site limitations page)
 - [x] 8.1.3 Add the Windows install beside the Linux one — `README.md`, `site/` ✅ (2026-11-26 22:54; README, quick start, and status page; macOS still on the way)
 - [x] 8.1.4 Run `make site-check` and the docs guide spec (ST-74) ✅ (2026-11-26 22:54; `make site-check` exit 0 (no dead internal links); `docs_guide_spec_test` 4/4)
-- [ ] 8.1.5 Phase gate — `make check IMAGE=clorraine-sdk:windows-cli`
+- [x] 8.1.5 Phase gate — `make check IMAGE=clorraine-sdk:windows-cli` ✅ (2026-11-26 23:04; exit 0, 161 suites; after the docs-review fixes: PowerShell impl 30/30 and spec 28/28 on the host, `make site-check` exit 0)
 
 **Deliverables**:
 - [x] W17 met; ST-74 holds
-- [ ] All verification passing
+- [x] All verification passing
 
 **Verify (gate)**: `make check IMAGE=clorraine-sdk:windows-cli` and `make site-check`
 
@@ -328,7 +328,7 @@ on Linux in this worktree; Windows runs go through the remote helper (AR-5, AR-2
 ### Step 9.2: Cleanup and merge readiness
 
 - [ ] 9.2.1 Remove `Clorraine Test` and `%USERPROFILE%\clorraine-spike` on the Windows host (AR-49, AR-50)
-- [ ] 9.2.2 Draft the Clang follow-up issue text and the merge notes (image rebuild, `AGENTS.md` and roadmap edits per AR-37); file or open nothing without the user's approval
+- [ ] 9.2.2 Draft the Clang follow-up issue text and the merge notes (image rebuild, `AGENTS.md` and roadmap edits per AR-37); file or open nothing without the user's approval; the release notes replace `vX.Y.Z` in the Windows install commands with the release tag (AR-63)
 - [ ] 9.2.3 Rebase on `main`, rerun `make check IMAGE=clorraine-sdk:windows-cli`, and push the branch with the git-commit skill in push mode
 - [ ] 9.2.4 Ask the user to approve opening the pull request
 
