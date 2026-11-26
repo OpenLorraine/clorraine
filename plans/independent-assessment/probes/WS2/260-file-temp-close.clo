@@ -1,0 +1,32 @@
+module Probe.Main;
+
+import { File, createFile, openFile, readFile, writeBytes, println, MODE_OLDFILE } from std.io;
+import { String, stringOf, bytes } from std.text;
+import { Buffer, bufferNew, bufferBytes } from std.mem;
+
+func mk(path: cstring): File {
+    let f: File? = createFile(path);
+    if (f != null) {
+        return f;
+    }
+    assert(false, "create");
+    return mk(path);
+}
+
+func main(): i32 {
+    let data: String = stringOf("hello");
+    let w: i32 = writeBytes(mk("build/tmp/assessment/WS2/f260.txt"), bytes(data));
+    println($"wrote {w}");
+    let g: File? = openFile("build/tmp/assessment/WS2/f260.txt", MODE_OLDFILE);
+    if (g == null) {
+        println("open failed");
+        return 1;
+    }
+    let buf: Buffer? = bufferNew(16);
+    if (buf == null) {
+        return 1;
+    }
+    let got: i32 = readFile(g, borrow bufferBytes(buf));
+    println($"read {got}");
+    return 0;
+}

@@ -1,0 +1,20 @@
+# WS2-05 (temporary drop point), added in Phase 9 from the 9.2.2 verifier's reproduction
+# (build/tmp/assessment/verify/ws2/p1/file-temp.clo, session ses_dea9a612affe7B68nL0nJN0bQn).
+# Committed after the verifier's run, before this probe's own run. Sources: spec/03 §5
+# and spec/decisions.md D5 (temporaries drop at statement end), spec/17 §3 (a temporary
+# created anywhere in a statement is dropped at statement end), std.io `File freedBy
+# Close` (the drop closes and flushes the file).
+# Expected: the temporary File from `mk(...)` is closed at the end of its statement, so
+# the five bytes are on disk when the file is reopened: "wrote 5" then "read 5".
+# Contrast: the File bound to a local in an inner block (closed at block end) — the same
+# output.
+profiles: host hosted-amiga
+expect: output
+contrast: let w: i32 = writeBytes(mk("build/tmp/assessment/WS2/f260.txt"), bytes(data)); ==> let w: i32 = 0;\n    {\n        let f: File = mk("build/tmp/assessment/WS2/f260.txt");\n        w = writeBytes(f, bytes(data));\n    }
+contrast-expect: output
+--- output
+wrote 5
+read 5
+--- contrast-output
+wrote 5
+read 5
