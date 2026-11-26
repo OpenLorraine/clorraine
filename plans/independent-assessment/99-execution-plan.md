@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-26 02:01
-> **Progress**: 69/95 tasks (72%)
+> **Last Updated**: 2026-11-26 02:06
+> **Progress**: 76/95 tasks (80%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -342,19 +342,19 @@ this plan's folder and the roadmap; 03-01 §Ground rules)
 **Objective**: The assertion classification scheme and the DEF classification scheme fixed before analysis.
 
 - [x] 8.1.1 Write the static assertion-classification scheme (WS8-03) and the DEF classification scheme (WS8-07 classes, components, and the recurring threshold) under `probes/WS8/`; commit them, local only ✅ (completed: 2026-11-26 02:01)
-- [ ] 8.1.2 Red check: the assertion scheme separates a known value-asserting test from a known compiles-only test, and the DEF scheme puts two hand-picked rows of different kinds in different classes; log in `findings/WS8-test-integrity.md`
+- [x] 8.1.2 Red check: the assertion scheme separates a known value-asserting test from a known compiles-only test, and the DEF scheme puts two hand-picked rows of different kinds in different classes; log in `findings/WS8-test-integrity.md` ✅ (completed: 2026-11-26 02:01)
 
 ### Step 8.2: Analysis
 
-- [ ] 8.2.1 WS8-01, WS8-02: coverage map per checklist area and the gap reason for every WS1–WS7 finding of Minor or above
-- [ ] 8.2.2 WS8-03..WS8-06: static assertion classification (five tests per area), fuzzer construct coverage, sanitizer holes, pinned-text tests
-- [ ] 8.2.3 WS8-07: classify every DEF row in `plans/00-roadmap.md` by component and class; recurrence over time
-- [ ] 8.2.4 WS8-08: structural root cause per recurring class, presence at the baseline (cross-check WS2-12), and a structural remedy proposal
+- [x] 8.2.1 WS8-01, WS8-02: coverage map per checklist area and the gap reason for every WS1–WS7 finding of Minor or above ✅ (completed: 2026-11-26 02:06)
+- [x] 8.2.2 WS8-03..WS8-06: static assertion classification (five tests per area), fuzzer construct coverage, sanitizer holes, pinned-text tests ✅ (completed: 2026-11-26 02:06)
+- [x] 8.2.3 WS8-07: classify every DEF row in `plans/00-roadmap.md` by component and class; recurrence over time ✅ (completed: 2026-11-26 02:06)
+- [x] 8.2.4 WS8-08: structural root cause per recurring class, presence at the baseline (cross-check WS2-12), and a structural remedy proposal ✅ (completed: 2026-11-26 02:06)
 
 ### Step 8.3: Hardening and gate
 
-- [ ] 8.3.1 Self-refutation of every root-cause claim against the code at the baseline
-- [ ] 8.3.2 Phase gate: Task verify and the Phases 1–8 row of `07` §Check points for `findings/WS8-test-integrity.md` and `probes/WS8/`; commit, local only
+- [x] 8.3.1 Self-refutation of every root-cause claim against the code at the baseline ✅ (completed: 2026-11-26 02:06)
+- [x] 8.3.2 Phase gate: Task verify and the Phases 1–8 row of `07` §Check points for `findings/WS8-test-integrity.md` and `probes/WS8/`; commit, local only ✅ (completed: 2026-11-26 02:06)
 
 **Test slices**: N/A — no test map
 **Verify (gate)**: `bash plans/independent-assessment/probes/WS0/drift-check.sh plans/independent-assessment`, then the Phases 1–8 row of `07` §Check points (AR #20)

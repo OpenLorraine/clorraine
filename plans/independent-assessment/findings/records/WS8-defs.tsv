@@ -1,0 +1,601 @@
+DEF-11	2026-09-26	partial-move-drop-coherence	ownership	memory-safety	Self-referential struct-literal reassignment double-frees
+DEF-12	2026-09-26	generic-substitution-guards	sema	other	Generic substitution guards
+DEF-13	2026-09-28	codegen-ownership-safety	ownership	memory-safety	`for (borrow e in xs)` double-frees a droppable element
+DEF-14	2026-09-28	codegen-ownership-safety	other	miscompile	Local shadowing miscompiles (locals keyed by source name)
+DEF-15	2026-09-29	array-value-integrity	ownership	memory-safety	Multi-extent element loops bind the base element, not the row
+DEF-16	2026-09-28	element-loop-integrity	ownership	memory-safety	Reading an owned array element as a view argument double-frees
+DEF-17	2026-09-28	element-loop-integrity	codegen	other	Nested element loops hang (step-block mis-selection)
+DEF-18	2026-09-29	borrow-view-and-shadowing	ownership	other	A `take`/move through a borrow element view steals the element
+DEF-19	2026-09-29	array-value-integrity	ownership	miscompile	`len` on an owned `String` silently yields 0
+DEF-20	2026-09-29	borrow-view-and-shadowing	sema	false-reject	`if (x != null) { let x: T = x; }` spuriously reports E10010
+DEF-21	2026-09-29	array-value-integrity	ownership	invalid-c	A projection over an array-returning call emits invalid C
+DEF-22	2026-09-29	array-value-integrity	ownership	invalid-c	Fixed-array value assignment emits invalid C
+DEF-23	2026-09-29	runtime-value-integrity	ownership	other	Materialized compiler temporaries that own elements are never released
+DEF-24	2026-09-29	runtime-value-integrity	codegen	invalid-c	An element loop over an array-returning call emits invalid C
+DEF-25	2026-09-29	runtime-value-integrity	ownership	invalid-c	A conditional fixed-array value emits invalid C
+DEF-26	2026-09-29	runtime-value-integrity	runtime	false-accept	A callable-field receiver in a runtime index is not bounds-guarded
+DEF-27	2026-09-29	runtime-value-integrity	codegen	other	An array-returning func-typed field emits the wrong C function pointer type
+DEF-28	2026-09-29	runtime-value-integrity	codegen	other	A non-literal `panic` message emits a view struct where the runtime takes a C string
+DEF-29	2026-09-29	runtime-value-integrity	ownership	other	A guarded operand's fixed-array call with a `take` argument runs eagerly
+DEF-30	2026-10-01	call-value-integrity	ownership	false-accept	An array-returning closure struct or lifted lambda emits the wrong C function pointer type
+DEF-31	2026-10-01	call-value-integrity	codegen	invalid-c	An indexed fixed-array element store emits invalid C
+DEF-32	2026-10-01	call-value-integrity	codegen	invalid-c	A conditional fixed-array argument with a call arm emits invalid C
+DEF-33	2026-10-01	call-value-integrity	codegen	invalid-c	A conditional fixed-array argument with a literal or duplicable arm emits invalid C
+DEF-34	2026-10-01	call-value-integrity	ownership	memory-safety	A scalar owned conditional double-frees
+DEF-45	2026-10-01	call-value-integrity	ownership	memory-safety	A deferred take-call result leaks when nothing adopts it
+DEF-35	2026-10-01	call-value-integrity	codegen	invalid-c	An array-literal projection emits invalid C
+DEF-36	2026-10-01	call-value-integrity	ownership	other	Zeroing a moved-out fixed-array parameter touches the parameter pointer
+DEF-37	2026-10-01	call-value-integrity	codegen	miscompile	A `do`/`while` guarded condition never re-evaluates its value
+DEF-38	2026-10-01	call-value-integrity	codegen	invalid-c	A struct-literal conditional field emits invalid C
+DEF-39	2026-10-01	call-value-integrity	ownership	memory-safety	A re-materialized growable-array operand leaks in the embedded guard spelling
+DEF-40	2026-10-01	call-value-integrity	runtime	other	A captured func value called by name inside a capturing lambda resolves by name
+DEF-41	2026-10-01	call-value-integrity	codegen	other	A module-level func-typed global called by name is not resolved to its symbol
+DEF-42	2026-10-01	call-value-integrity	codegen	other	An implicit `String`→`str` widening is not emitted for a func-value argument
+DEF-43	2026-10-01	call-value-integrity	codegen	invalid-c	A func type in return position spells an invalid C declarator
+DEF-44	2026-10-01	call-value-integrity	ownership	other	A `borrow` mode in a func-type parameter is dropped
+DEF-46	2026-10-01	residual-defect-hardening	codegen	invalid-c	A deferred array literal with a nested non-literal fixed-array row emits invalid C
+DEF-47	2026-10-01	residual-defect-hardening	codegen	other	A multi-extent fixed-array return of a place emits an array assignment
+DEF-48	2026-10-01	residual-defect-hardening	ownership	memory-safety	An unguarded loop condition holding an owned call result leaks
+DEF-49	2026-10-01	residual-defect-hardening	ownership	memory-safety	Generic instantiations never get a scope cleanup
+DEF-50	2026-10-03	residual-defect-completion	codegen	invalid-c	Distinct fixed-array generic type arguments share a C symbol
+DEF-51	2026-10-03	residual-defect-completion	ownership	memory-safety	A drop-needing element keeps the expression-form re-store drop skipped
+DEF-52	2026-10-03	residual-defect-completion	codegen	other	A generic call inside a lifted lambda in a generic body is never instantiated
+DEF-53	2026-10-03	residual-defect-completion	ownership	memory-safety	An ownerless element passed to a take parameter double-frees
+DEF-54	2026-10-03	residual-defect-completion	ownership	other	A generic-struct borrow argument is passed by value
+DEF-55	2026-10-03	residual-defect-completion	ownership	memory-safety	A returned field of a fresh call result leaks its siblings
+DEF-56	2026-10-03	def-backlog-completion	ownership	memory-safety	A generic lend returned by value and bound to an owning local double-frees
+DEF-57	2026-10-03	def-backlog-completion	sema	other	A specialized capturing closure passed to a callable-bound generic parameter spells a site-only callable type
+DEF-58	2026-10-03	def-backlog-completion	codegen	invalid-c	A zero-argument call through a closure-typed value emits a trailing comma
+DEF-59	2026-10-03	def-backlog-completion	ownership	memory-safety	An ownerless element read under a maybe-owning substitution uses freed memory
+DEF-60	2026-10-03	def-backlog-completion	ownership	miscompile	A run-time-index element take under a maybe-owning substitution empties the wrong slot
+DEF-61	2026-10-03	def-backlog-completion	ownership	memory-safety	A generic body can pass a default-lend parameter to a take position without E10034
+DEF-62	2026-10-03	def-backlog-completion	ownership	memory-safety	A do-while early return leaks the guarded condition's final value
+DEF-63	2026-10-04	def-backlog-closeout	ownership	memory-safety	A guarded member-root take under a maybe-owning substitution leaks the call result's sibling fields
+DEF-64	2026-10-04	def-backlog-closeout	ownership	miscompile	An aggregate-literal element consume with a run-time index moves the wrong slot
+DEF-65	2026-10-04	def-backlog-closeout	ownership	memory-safety	A concrete non-null `borrow T?` out-param slot double-frees
+DEF-66	2026-10-04	def-backlog-closeout	ownership	memory-safety	An element read through a `slice()` view over a statement temporary is not moved out
+DEF-67	2026-10-04	def-backlog-closeout	ownership	memory-safety	An owned call result consumed as a borrow inside a larger expression is never released
+DEF-68	2026-10-04	def-backlog-closeout	ownership	memory-safety	A do-while body's deferred return leaks the condition temporary
+DEF-69	2026-10-04	def-backlog-closeout	codegen	false-accept	A lambda that reads an enclosing name without listing it as a capture emits undeclared C
+DEF-70	2026-10-09	slice-temporary-integrity	ownership	memory-safety	Multi-extent slice views are flat-typed, so row moves and nested accesses corrupt or mis-type
+DEF-71	2026-10-09	slice-temporary-integrity	ownership	memory-safety	Take or consume roots that are not a direct call still leak the call result's siblings
+DEF-72	2026-10-09	slice-temporary-integrity	codegen	miscompile	An impure index in an aggregate literal reads slot zero and never runs the index call
+DEF-73	2026-10-09	slice-temporary-integrity	ownership	other	An element-projection consume still evaluates eagerly inside an aggregate literal
+DEF-74	2026-10-09	slice-temporary-integrity	codegen	memory-safety	A direct-call member-rooted consume leaks the call result's sibling fields
+DEF-75	2026-10-09	slice-temporary-integrity	ownership	invalid-c	A call-indexed assignment with a compound right-hand side emits invalid C
+DEF-76	2026-10-10	eval-emission-integrity	ownership	invalid-c	A generic len argument emits a set-but-unused owned array local and fails the strict build
+DEF-77	2026-10-10	borrow-generic-integrity	ownership	memory-safety	A func-typed parameter named like a module lender under-binds and leaks
+DEF-78	2026-10-10	borrow-generic-integrity	ownership	memory-safety	A `borrow T` slot instantiated with a non-nullable non-duplicable type accepts `slot = v` and double-frees
+DEF-79	2026-10-10	borrow-generic-integrity	ownership	other	Struct-instance type keys ignore nullability
+DEF-80	2026-10-10	eval-emission-integrity	ownership	other	Owned-struct empty returns emit a compound literal against the C99-subset contract
+DEF-81	2026-10-10	borrow-generic-integrity	codegen	other	Nullable slice `T[]? == null` reports `E10222`
+DEF-82	2026-10-10	borrow-generic-integrity	ownership	miscompile	Out-slot self-assignment destroys the caller's value
+DEF-83	2026-10-10	borrow-generic-integrity	ownership	false-reject	A nullable `raw?` out-slot gets a spurious W10001
+DEF-84	2026-10-09	defer-integrity	codegen	invalid-c	A `continue` inside a `defer` emits a jump to an undefined cleanup label
+DEF-85	2026-10-09	defer-integrity	ownership	other	A `return` inside a `defer` can self-loop its own cleanup rung
+DEF-86	2026-10-09	defer-integrity	codegen	other	A `defer` is skipped on the fall-through path when the scope also continues
+DEF-87	2026-10-09	defer-integrity	codegen	memory-safety	An earlier returning `defer` is emitted inside a later defer's guard and never runs
+DEF-88	2026-10-09	defer-integrity	ownership	other	Returning a defer-local value reads it after its drop or null
+DEF-89	2026-10-09	slice-temporary-integrity	ownership	memory-safety	An ownerless call result's `.count` receiver is not materialized and leaks
+DEF-90	2026-10-10	eval-emission-integrity	codegen	invalid-c	Freestanding emitted units omit the bool definition
+DEF-91	2026-10-08	def-backlog-closeout	ownership	memory-safety	A capture-less lambda releases a statement temporary before reading it
+DEF-92	2026-10-10	closure-integrity	codegen	false-accept	An inner lambda cannot relay a binding the outer lambda does not capture
+DEF-93	2026-10-10	closure-integrity	codegen	false-accept	An explicit capture of a module-level constant emits an environment-less call
+DEF-94	2026-10-10	closure-integrity	ownership	other	A field write through a listed copy capture reports E10024 instead of E10402
+DEF-95	2026-10-10	eval-emission-integrity	ownership	memory-safety	A view-bound owned expression temporary leaks per loop iteration
+DEF-96	2026-10-10	eval-emission-integrity	ownership	memory-safety	A deferred `break`/`continue` preempting a pending ordinary owned return leaks the abandoned value
+DEF-97	2026-10-10	eval-emission-integrity	ownership	invalid-c	An unused-but-set fixed-array local fails the strict build in the `codegen_run_spec_test` suite
+DEF-98	2026-10-10	eval-emission-integrity	ownership	invalid-c	A slice passed to an uncontracted extern fails the strict build (`APTR` vs `ClSlice`)
+DEF-99	2026-10-10	eval-emission-integrity	codegen	other	A growable-slice `len` const-folds to zero
+DEF-100	2026-10-10	borrow-store-integrity	ownership	memory-safety	A whole-binding self-assignment through a parameter-typed lend slot is unguarded
+DEF-101	2026-10-10	borrow-store-integrity	ownership	memory-safety	Returning a concrete `borrow T?` out-slot value double-frees
+DEF-102	2026-10-10	borrow-store-integrity	ownership	other	A runtime-indexed element self-assign through a nullable out-slot is unguarded
+DEF-103	2026-10-10	eval-emission-integrity	ownership	other	The nullable key marker collides with a user identifier ending in `Q` in nested instance positions
+DEF-104	2026-10-10	closure-integrity	ownership	memory-safety	An immediately-invoked lifted closure returning its captured owner aliases the source and double-frees
+DEF-105	2026-10-10	borrow-store-integrity	ownership	false-accept	An element store through a possibly-null view dereferences a null pointer
+DEF-106	2026-10-10	borrow-store-integrity	ownership	memory-safety	A constant-index element store into a slice emits no bounds trap
+DEF-107	2026-10-10	eval-emission-integrity	ownership	false-accept	View-pair equality on `str` and `static str` is accepted but emits a comparison of C structs
+DEF-108	2026-10-10	eval-emission-integrity	ownership	invalid-c	An inferred-null local emits into an integer declaration
+DEF-109	2026-10-10	closure-integrity	ownership	memory-safety	A captured func-typed binding named like a module lender under-binds and leaks
+DEF-110	2026-10-10	closure-integrity	ownership	invalid-c	An unbound type-parameter call is accepted and emits invalid C
+DEF-111	2026-10-10	eval-emission-integrity	ownership	other	A generic borrow field projection folds `len` to zero
+DEF-112	2026-10-10	eval-emission-integrity	ownership	other	A declared binding named like a compiler-generated local collides with it
+DEF-113	2026-10-10	store-emission-integrity	ownership	memory-safety	A conditional-result store through a non-nullable lend root frees the caller's value
+DEF-114	2026-10-10	store-emission-integrity	ownership	false-accept	A `str` element store is accepted and writes read-only storage
+DEF-115	2026-10-10	store-emission-integrity	ownership	other	A slice of a user struct emits the slice typedef before the element struct
+DEF-116	2026-10-10	store-emission-integrity	ownership	invalid-c	A module-level array initializer with a global slice emits invalid C
+DEF-117	2026-10-10	eval-emission-integrity	ownership	invalid-c	A fixed-array-returning call in a module initializer emits a destination-less call
+DEF-118	2026-10-10	eval-emission-integrity	ownership	false-accept	A `str` element loop is accepted and emits C that does not build
+DEF-119	2026-10-10	eval-emission-integrity	codegen	false-accept	Value-position updates bypass the const and read-only write rules
+DEF-120	2026-10-10	eval-emission-integrity	codegen	invalid-c	A multi-extent row slice of a user struct emits an incomplete-element typedef
+DEF-121	2026-10-10	eval-emission-integrity	ownership	miscompile	A module initializer evaluates a guarded sub-expression twice
+DEF-122	2026-10-10	eval-emission-integrity	codegen	invalid-c	A slice-typed module binding initialized from an array literal emits an array assignment
+DEF-124	2026-10-10	eval-emission-integrity	ownership	false-accept	`cstring` element writes are accepted although the view is immutable
+DEF-125	2026-10-10	eval-emission-integrity	ownership	memory-safety	A temporary argument to a call through a func-typed value leaks
+DEF-126	2026-10-10	eval-emission-integrity	ownership	miscompile	A block-bodied lambda return of a by-value generic capture reports E10034 instead of the ruled E10401
+DEF-127	2026-10-10	eval-emission-integrity	sema	memory-safety	A conditional capture return is accepted and double-frees
+DEF-128	2026-10-10	eval-emission-integrity	codegen	invalid-c	A call of a callable-bound parameter's struct field is accepted and emits invalid C
+DEF-129	2026-10-10	eval-emission-integrity	codegen	invalid-c	A member call on a bare type-parameter receiver is accepted and emits invalid C
+DEF-130	2026-10-11	module-initializer-integrity	ownership	memory-safety	A module initializer never releases an owned temporary it binds
+DEF-131	2026-10-11	module-initializer-integrity	codegen	invalid-c	A closure or func-typed-global callee in a module initializer emits an unresolved callable
+DEF-132	2026-10-11	module-initializer-integrity	codegen	invalid-c	A generic function call in a module initializer emits the plain module symbol and no instance is declared
+DEF-133	2026-10-11	module-initializer-integrity	ownership	miscompile	A callable-field call in a module initializer drops the receiver
+DEF-134	2026-10-11	module-initializer-integrity	codegen	invalid-c	A module-initializer struct literal with a fixed-array field from a place emits an invalid compound literal
+DEF-135	2026-10-11	module-initializer-integrity	ownership	invalid-c	A str-valued template module initializer misses the view wrapper
+DEF-136	2026-10-10	checker-conformance	codegen	other	An impure dividend or index base is re-read by its guard
+DEF-137	2026-10-11	module-initializer-integrity	codegen	invalid-c	A written slice type argument in a function body misses its slice typedef
+DEF-138	2026-10-11	callable-release-integrity	ownership	memory-safety	A source local named `__cl_owned0` collides with the generated temporary and double-frees
+DEF-139	2026-10-11	callable-release-integrity	ownership	memory-safety	A field call through a temporary receiver leaks the receiver's owned sibling fields
+DEF-140	2026-10-11	callable-release-integrity	ownership	other	Two instances of one generic struct with different func signatures collide on the `fn` type key
+DEF-141	2026-10-11	callable-release-integrity	ownership	other	`len` of a null `String` segfaults
+DEF-142	2026-10-10	checker-conformance	codegen	invalid-c	A handle-element slice built only as an inline argument misses its slice typedef
+DEF-143	2026-10-11	module-initializer-integrity	codegen	other	A module-initializer dot-call on a fixed-array field yields zero
+DEF-144	2026-10-10	checker-conformance	codegen	invalid-c	A `str` or slice argument to an uncontracted `cstring` extern parameter emits invalid C
+DEF-145	2026-10-10	checker-conformance	ownership	invalid-c	A generic `T` iterable instantiated at a struct-element array emits invalid C
+DEF-146	2026-10-10	checker-conformance	codegen	invalid-c	A value-form member read on a bare type parameter is accepted and emits invalid C
+DEF-147	2026-10-10	checker-conformance	codegen	false-accept	A free-function dot-call arity mismatch is unchecked
+DEF-148	2026-10-10	checker-conformance	codegen	false-accept	An unknown member callee on a raw or plain-struct receiver is accepted
+DEF-149	2026-10-10	checker-conformance	ownership	false-accept	Assigning a view through a null-valued local is accepted and breaks the build
+DEF-150	2026-10-10	checker-conformance	ownership	other	A conditional-wrapped projection folds `len` to zero
+DEF-151	2026-10-10	checker-conformance	codegen	invalid-c	Uses of a null-inferred local as a typed value emit invalid C
+DEF-152	2026-10-11	module-initializer-integrity	ownership	false-accept	Module-initializer value updates bypass the own-stage write checks
+DEF-153	2026-10-10	checker-conformance	ownership	other	An update of a moved or uninitialized place reports the state error more than once
+DEF-154	2026-10-10	checker-conformance	codegen	false-accept	`toCString` accepts only `String`, not `str`
+DEF-155	2026-10-11	callable-release-integrity	ownership	other	A `func`-typed field call ignores the field's own parameter modes
+DEF-156	2026-10-11	callable-release-integrity	ownership	other	A module-level `func`-typed global takes no parameter modes
+DEF-157	2026-10-11	callable-release-integrity	ownership	other	A callable-bound `Param`-typed callee keeps no effects
+DEF-158	2026-10-11	callable-release-integrity	ownership	other	Owned materialization is suppressed inside a `defer` body
+DEF-159	2026-10-11	callable-release-integrity	ownership	memory-safety	A conditional view whose taken backing has no owner leaks it
+DEF-160	2026-10-10	checker-conformance	ownership	other	Non-escape capture moves report E10034 naming a capture a borrowed parameter
+DEF-161	2026-10-10	checker-conformance	ownership	other	A block-bodied composite capture return reports E10034 and E10401 together
+DEF-162	2026-10-10	checker-conformance	ownership	other	The E10030 message can name a compiler-generated owner
+DEF-163	2026-10-11	callable-release-integrity	ownership	memory-safety	A fixed array of view elements returned from a function leaks its backings
+DEF-164	2026-10-11	callable-release-integrity	ownership	memory-safety	A discarded owned call statement leaks its result
+DEF-165	2026-10-11	callable-release-integrity	ownership	other	An inline capturing lambda emits duplicate `ClEnv_0` definitions
+DEF-166	2026-10-11	callable-release-integrity	ownership	memory-safety	A capture-less generic lambda called with a by-value owning argument double-frees
+DEF-167	2026-10-27	def-critical-major-closeout	ownership	invalid-c	A call-shaped comparison expression emits a call in the C
+DEF-168	2026-10-12	non-lexical-lifetimes	ownership	invalid-c	An array literal argument to a field call emits an invalid compound initializer
+DEF-169	2026-10-29	def-zero-closeout	ownership	invalid-c	The func type key's fixed separators can textually collide with user identifiers
+DEF-170	2026-10-10	non-lexical-lifetimes	ownership	invalid-c	A call through an imported or qualified global emits the bare written name
+DEF-171	2026-10-27	def-critical-major-closeout	ownership	invalid-c	An accepted `embed` outside a constant context emits invalid C
+DEF-172	2026-10-12	non-lexical-lifetimes	ownership	memory-safety	A module func-typed global initialized with a lambda is emitted as NULL
+DEF-173	2026-10-29	def-zero-closeout	ownership	memory-safety	A same-named function in another loaded module supplies modes to a current-module func-typed global
+DEF-174	2026-10-28	def-zero-closeout	ownership	false-accept	A call-site marker on a closure-call argument is accepted
+DEF-175	2026-10-12	callable-release-integrity	ownership	memory-safety	A call-rooted projection arm leaks the projection root's other fields
+DEF-176	2026-10-13	conditional-projection-integrity	ownership	memory-safety	A projection of a mixed conditional in a consuming position leaks or reads freed storage
+DEF-177	2026-10-13	conditional-projection-integrity	ownership	memory-safety	A `str[N]` lend-derived array records no loan
+DEF-178	2026-10-13	conditional-projection-integrity	ownership	memory-safety	A guarded intrinsic argument of an owned conditional projection double-frees
+DEF-179	2026-10-13	conditional-projection-integrity	ownership	memory-safety	A nested conditional arm's owned store double-frees
+DEF-180	2026-10-13	conditional-projection-integrity	ownership	memory-safety	A conditional place arm registers no shared loan
+DEF-181	2026-10-13	conditional-projection-integrity	ownership	memory-safety	A guarded struct-literal receiver leaks
+DEF-182	2026-10-13	conditional-projection-integrity	ownership	memory-safety	A dot-`len` receiver of a conditional view projection leaks
+DEF-183	2026-10-13	conditional-projection-integrity	ownership	platform	A projection of a conditional in a return position emits type-mismatched C
+DEF-184	2026-10-13	conditional-projection-integrity	ownership	other	`i++ + i` emits a sequence-point violating C expression
+DEF-185	2026-10-13	conditional-projection-integrity	ownership	memory-safety	A discarded closure call with a maybe-owning result leaks
+DEF-186	2026-10-13	conditional-projection-integrity	ownership	memory-safety	A discarded call inside a conditional expression statement leaks
+DEF-187	2026-10-13	conditional-projection-integrity	codegen	memory-safety	A returned view through a call whose elision candidate differs from the actual source reads freed storage
+DEF-188	2026-10-13	conditional-projection-integrity	ownership	invalid-c	An owned fixed-array projection of a call result emits invalid C
+DEF-189	2026-10-11	non-lexical-lifetimes	runtime	platform	The freestanding shim's startup misaligns the stack for 16-byte aligned stores
+DEF-190	2026-10-29	def-zero-closeout	ownership	false-accept	A nullable call-result widened into a non-nullable view position is accepted
+DEF-191	2026-10-29	def-zero-closeout	ownership	other	The `unsafe` exemption for the null-use rule differs between sites
+DEF-192	2026-10-29	def-zero-closeout	sema	false-accept	A qualified value read of a nullable binding is never scrutinized
+DEF-193	2026-10-29	def-zero-closeout	sema	other	Narrowing does not survive `&&`/`\
+DEF-194	2026-10-30	def-zero-closeout	codegen	invalid-c	A constant-bounds `slice` of a runtime view emits a guard that fails the strict build
+DEF-195	2026-10-29	def-zero-closeout	codegen	false-accept	`len` of a `cstring` or `usize` is emitted as the constant zero
+DEF-196	2026-10-11	non-lexical-lifetimes	codegen	miscompile	An initializer call whose callee is an expression emits invalid or silently wrong C
+DEF-197	2026-10-11	non-lexical-lifetimes	codegen	invalid-c	An inferred generic call at an initializer's top level declares no instance
+DEF-198	2026-10-29	def-zero-closeout	ownership	false-accept	A call-site marker in an initializer call is accepted
+DEF-199	2026-10-30	def-zero-closeout	codegen	invalid-c	A closure-call argument needing the `str` widening emits the raw handle
+DEF-200	2026-10-28	def-zero-closeout	codegen	other	A qualified function value reference emits a C member path
+DEF-201	2026-10-30	def-zero-closeout	codegen	invalid-c	A constant zero divisor inside a lambda body fails the strict build
+DEF-202	2026-10-28	def-zero-closeout	codegen	invalid-c	A func-typed fixed-array global emits an invalid C declarator
+DEF-203	2026-10-28	def-zero-closeout	ownership	false-accept	An initializer dot call on a global receiver is accepted where the body rejects
+DEF-204	2026-10-12	non-lexical-lifetimes	ownership	memory-safety	An owned temporary argument of an initializer call is never materialized or released
+DEF-205	2026-10-29	def-zero-closeout	ownership	invalid-c	A body func-typed global named like a view builder is intercepted by the intrinsic gate
+DEF-206	2026-10-30	def-zero-closeout	codegen	other	A fixed-array struct field built from an array literal re-emits an element guard
+DEF-207	2026-10-11	non-lexical-lifetimes	ownership	invalid-c	A conditional with a null arm at a nullable view dereferences NULL
+DEF-208	2026-10-28	def-zero-closeout	codegen	other	A conditional with mixed `str` and `String` arms emits an invalid ternary
+DEF-209	2026-10-11	non-lexical-lifetimes	ownership	memory-safety	A member projection of an owned call result leaks in a function body
+DEF-210	2026-10-30	def-zero-closeout	ownership	memory-safety	An initializer `take` argument that projects a call-result array element leaks its sibling
+DEF-211	2026-10-11	non-lexical-lifetimes	codegen	other	`sizeof` of a fixed array measures the element, not the array
+DEF-212	2026-10-29	def-zero-closeout	codegen	other	A local used only as a store index is reported `W10000 unused local`
+DEF-213	2026-10-11	checker-conformance	codegen	invalid-c	A direct-call arity mismatch is unchecked
+DEF-214	2026-10-29	def-zero-closeout	codegen	false-accept	A call of a non-callable member or value is accepted
+DEF-215	2026-10-11	checker-conformance	codegen	other	A lifted-lambda specialization's slice type argument misses its typedef
+DEF-216	2026-10-11	checker-conformance	codegen	other	A slice typedef of a generic struct-instance element names an undeclared instance type
+DEF-217	2026-10-28	def-zero-closeout	codegen	invalid-c	A slice of a func-pointer element emits an invalid C declarator
+DEF-218	2026-10-28	def-zero-closeout	codegen	other	An explicit `slice<i32[]>` with a discarded result emits a call to an undeclared `slice`
+DEF-219	2026-10-11	non-lexical-lifetimes	ownership	invalid-c	An owned bind in a short-circuit right side is released outside its declaration block
+DEF-220	2026-10-11	non-lexical-lifetimes	codegen	invalid-c	A generic call with an inferred type argument in a module initializer emits no instance
+DEF-221	2026-10-28	def-zero-closeout	codegen	other	A fixed-array literal base with a run-time index emits a bare brace list
+DEF-222	2026-10-30	def-zero-closeout	sema	other	An instance recorded from a type argument is not field-expanded
+DEF-223	2026-10-30	def-zero-closeout	codegen	other	The global-initializer `sizeof(Wrap<i32>[])` spelling names an undeclared instance
+DEF-224	2026-10-30	def-zero-closeout	codegen	invalid-c	The concrete value-form `.len` on `cstring`/`String` (and `len(cstring)`) emits invalid C or 0
+DEF-225	2026-10-28	def-zero-closeout	sema	other	A mixed-arm generic conditional `len` folds to 0
+DEF-226	2026-10-28	def-zero-closeout	codegen	invalid-c	A nested opaque projection chain with a missing deeper field stays accepted and emits invalid C
+DEF-227	2026-10-28	def-zero-closeout	codegen	invalid-c	A lifted lambda capturing a fixed array emits invalid C
+DEF-228	2026-10-30	def-zero-closeout	sema	false-accept	A generic `raw` instance bypasses the `unsafe` dereference gate
+DEF-229	2026-10-11	non-lexical-lifetimes	ownership	false-accept	A member read on a loop element is unaudited
+DEF-230	2026-10-11	non-lexical-lifetimes	sema	invalid-c	A closure capture of a loop element mis-types the environment field
+DEF-231	2026-10-11	non-lexical-lifetimes	codegen	other	A generic call whose inferred type argument is unresolved emits an undefined instance
+DEF-232	2026-10-11	non-lexical-lifetimes	codegen	false-accept	An index of a row element gets no bounds guard
+DEF-233	2026-10-11	non-lexical-lifetimes	codegen	invalid-c	The value-form enum member read on a value emits invalid C
+DEF-234	2026-10-28	def-zero-closeout	sema	other	Fold programs segfault on the host no-libc freestanding leg
+DEF-235	2026-10-11	checker-conformance	ownership	other	A `String` handle at an uncontracted `cstring` parameter crosses as the block pointer
+DEF-236	2026-10-29	def-zero-closeout	codegen	invalid-c	A call through a func-typed value with an arity mismatch emits invalid C
+DEF-237	2026-10-11	checker-conformance	ownership	other	The uncontracted-extern rules are unchecked
+DEF-238	2026-10-11	non-lexical-lifetimes	codegen	false-accept	The view members `.ptr` and `.len` carry no checked type
+DEF-239	2026-10-29	def-zero-closeout	codegen	false-accept	The `Array` dot-call arm bypasses the zero-parameter candidate rule
+DEF-240	2026-10-28	def-zero-closeout	sema	false-accept	A module-qualified direct call bypasses the arity rule
+DEF-241	2026-10-29	def-zero-closeout	codegen	other	A raw receiver's callable field emits a dot instead of an arrow
+DEF-242	2026-10-11	non-lexical-lifetimes	codegen	miscompile	A parameter-typed argument's conversion is deferred to an instance audit that does not exist
+DEF-243	2026-10-11	non-lexical-lifetimes	codegen	invalid-c	An `ffi` result's declared type is discarded
+DEF-244	2026-10-29	def-zero-closeout	sema	false-accept	A never-called `ffi` declaration's parameter types are never validated
+DEF-245	2026-10-11	non-lexical-lifetimes	ownership	invalid-c	A null-shaped value at a nullable non-pointer destination emits `void *`
+DEF-246	2026-10-29	def-zero-closeout	sema	false-accept	The literal `null` at a non-nullable aggregate position is accepted
+DEF-247	2026-10-29	def-zero-closeout	sema	false-accept	A member read or store through the null-shaped head is accepted
+DEF-248	2026-10-29	def-zero-closeout	ownership	false-accept	A null-shaped value at an arithmetic or comparison operand is accepted
+DEF-249	2026-10-29	def-zero-closeout	sema	false-accept	A null-shaped value at a condition is accepted
+DEF-250	2026-10-29	def-zero-closeout	ownership	other	A concrete read-only capture moved at a `let`/assignment site reports `E10034` instead of `E10401`
+DEF-251	2026-10-11	non-lexical-lifetimes	ownership	memory-safety	A writable `[borrow x]` capture stored into a nullable owning out-slot is accepted and double-frees
+DEF-252	2026-10-29	def-zero-closeout	ownership	false-accept	Moving out of a `const` binding is accepted
+DEF-253	2026-10-28	def-zero-closeout	codegen	invalid-c	A concrete discarded array literal is accepted and emits C the strict build rejects
+DEF-254	2026-10-29	def-zero-closeout	ownership	miscompile	`--max-errors 0` silently accepts rejected programs
+DEF-255	2026-10-12	non-lexical-lifetimes	ownership	invalid-c	A void expression-bodied lambda over an intrinsic statement emits invalid C and drops the abort
+DEF-256	2026-10-13	conditional-projection-integrity	ownership	invalid-c	A discarded `.len()` statement emits an undefined `len(...)` call
+DEF-257	2026-10-15	conditional-projection-residue	ownership	false-accept	A generic destination's conditional projection keeps copy semantics and is accepted-unsound
+DEF-258	2026-10-15	conditional-projection-residue	ownership	memory-safety	A conditional-of-projections leaks the fresh root's sibling
+DEF-259	2026-10-15	conditional-projection-residue	other	memory-safety	A struct-literal fresh arm's sibling leaks in a consumed conditional projection
+DEF-260	2026-10-15	conditional-projection-residue	ownership	memory-safety	A guarded `take` of a conditional projection double-frees
+DEF-261	2026-10-15	conditional-projection-residue	ownership	memory-safety	A call-wrapped conditional view escapes the shared-loan record
+DEF-262	2026-10-15	conditional-projection-residue	ownership	memory-safety	A conditional-of-literals receiver in a loop condition double-frees
+DEF-263	2026-10-28	def-zero-closeout	sema	other	A fixed-array `.len` receiver folds to a constant and never evaluates
+DEF-264	2026-10-15	conditional-projection-residue	ownership	memory-safety	A literal field that projects an ownerless root leaks the root's siblings
+DEF-265	2026-10-15	conditional-projection-residue	ownership	memory-safety	A view stored into a destination that outlives the storing frame keeps the derived element in place
+DEF-266	2026-10-15	conditional-projection-residue	codegen	memory-safety	View-array literals in nested positions leak their temporary elements
+DEF-267	2026-10-15	conditional-projection-residue	ownership	false-accept	The `str[N]` return spelling treats a place-derived element as a move
+DEF-268	2026-10-15	conditional-projection-residue	codegen	invalid-c	A conditional view return whose arms disagree is accepted and emits invalid C
+DEF-269	2026-10-15	conditional-projection-residue	codegen	invalid-c	A view-array store to a global struct field emits invalid C
+DEF-270	2026-10-15	conditional-projection-residue	ownership	memory-safety	A discarded struct-literal arm mixing a fresh and a place-derived owning field leaks the fresh field
+DEF-271	2026-10-15	conditional-projection-residue	ownership	memory-safety	A discarded conditional's fresh projection arm leaks its receiver's storage
+DEF-272	2026-10-15	conditional-projection-residue	ownership	invalid-c	A conditional of fixed-array results (and a literal with a fixed-array owning field) emits C that fails the strict build
+DEF-273	2026-10-15	conditional-projection-residue	codegen	invalid-c	The assignment-target update spellings emit unsequenced C
+DEF-274	2026-10-15	conditional-projection-residue	codegen	other	A literal field or element update shares a statement with a sibling read
+DEF-275	2026-10-15	conditional-projection-residue	codegen	invalid-c	A fixed-array projection of a conditional root or of a `for` iterable emits invalid C
+DEF-276	2026-10-15	conditional-projection-residue	ownership	memory-safety	A view-typed conditional stored into an out-slot leaves a dangling view
+DEF-277	2026-10-15	conditional-projection-residue	ownership	invalid-c	The update pin misses the dot receiver and a loop-condition operand
+DEF-278	2026-10-15	conditional-projection-residue	ownership	miscompile	An update in a later argument reorders an earlier non-duplicable argument
+DEF-279	2026-10-15	conditional-projection-residue	ownership	other	A mixed conditional view return reports two escape diagnostics at one site
+DEF-280	2026-10-15	conditional-projection-residue	ownership	other	A local-backed view stored into a local view-array element is rejected
+DEF-281	2026-10-15	conditional-projection-residue	ownership	memory-safety	A duplicable projection over a residual-owning fresh root leaks in the take and return positions
+DEF-282	2026-10-15	conditional-projection-residue	ownership	other	A nested fresh conditional at a mixed view return reports two identical `E10030` messages at one site
+DEF-283	2026-10-15	conditional-projection-residue	ownership	other	A deferred mixed view return prints the compiler-generated binding name
+DEF-284	2026-10-15	conditional-projection-residue	ownership	memory-safety	A guarded argument whose view element wraps a fresh call root leaks the call root residual and runs the call on the skipped path
+DEF-285	2026-10-15	conditional-projection-residue	ownership	memory-safety	A runtime-index element store of a view leaks its owner and skips the element loan
+DEF-286	2026-10-15	non-lexical-lifetimes	ownership	false-accept	A cross-frame out-slot pass-through accepts a view of a frame that dies before the slot is read
+DEF-287	2026-10-15	conditional-projection-residue	ownership	memory-safety	A module-global view initialized from a fresh call leaks its owner
+DEF-288	2026-10-15	conditional-projection-residue	ownership	memory-safety	A view-carrying container escapes with a frame-backed element and its loans are not consulted
+DEF-289	2026-10-15	conditional-projection-residue	ownership	false-accept	A directly returned struct literal with a parameter-backed view field is rejected while its two-step twin is accepted
+DEF-290	2026-10-15	conditional-projection-residue	ownership	miscompile	A stale literal-carrier loan survives overwriting the view field, so a later backing write is falsely rejected
+DEF-291	2026-10-15	conditional-projection-residue	codegen	invalid-c	An all-null composite view store is falsely rejected
+DEF-292	2026-10-15	conditional-projection-residue	ownership	memory-safety	A conditional carrier literal's taken arm leaks its fresh element root
+DEF-293	2026-10-15	conditional-projection-residue	ownership	memory-safety	A discarded conditional arm whose selected type owns nothing leaks its root's residual
+DEF-294	2026-10-15	conditional-projection-residue	ownership	invalid-c	A loop-condition receiver with mixed arms emits sequence-point C
+DEF-295	2026-10-15	conditional-projection-residue	ownership	memory-safety	A loop-condition member projection double-frees
+DEF-296	2026-10-15	conditional-projection-residue	ownership	false-accept	A discarded literal field that projects a conditional over owned places moves out and zeroes, and a later use crashes
+DEF-297	2026-10-15	conditional-projection-residue	ownership	memory-safety	A bare discarded all-fresh literal statement leaks its fields
+DEF-298	2026-10-15	conditional-projection-residue	codegen	invalid-c	A fixed-array field initialized from a conditional value emits invalid C
+DEF-299	2026-10-15	conditional-projection-residue	codegen	invalid-c	A conditional root projected into a literal field emits invalid C
+DEF-300	2026-10-15	conditional-projection-residue	codegen	invalid-c	A guarded `len` over a literal view-array field emits an incomplete initializer
+DEF-301	2026-10-15	conditional-projection-residue	ownership	invalid-c	A conditional root with an ownerless arm emits lvalue-required C
+DEF-302	2026-10-15	conditional-projection-residue	ownership	miscompile	A conditional of call-filled fixed-array literals emits too-few-arguments C
+DEF-303	2026-10-15	conditional-projection-residue	codegen	other	A `String[2]` conditional-root projection returned by value segfaults
+DEF-304	2026-10-15	conditional-projection-residue	codegen	invalid-c	A guarded or deferred fixed-array conditional takes the expression fallback and emits invalid C
+DEF-305	2026-10-15	conditional-projection-residue	codegen	other	`fixed_array_field_needs_stores` does not descend array-literal elements
+DEF-306	2026-10-15	conditional-projection-residue	ownership	invalid-c	A conditional whose arm is a projection of a conditional emits invalid C
+DEF-307	2026-10-15	conditional-projection-residue	ownership	miscompile	A whole-array conditional iterable still marks its arms as moved
+DEF-308	2026-10-15	conditional-projection-residue	other	invalid-c	A guarded update operand keeps the deferred spelling and fails the strict build
+DEF-309	2026-10-15	conditional-projection-residue	codegen	miscompile	The array fill form re-evaluates the fill expression per element
+DEF-310	2026-10-15	conditional-projection-residue	ownership	miscompile	A bare raw-deref store is accepted and the write is silently dropped
+DEF-311	2026-10-29	def-zero-closeout	other	memory-safety	The residual-root hook misses the operand and guarded read positions
+DEF-312	2026-10-29	def-zero-closeout	ownership	other	The element-carrier loan conflict is owner-granular
+DEF-313	2026-10-28	def-zero-closeout	ownership	invalid-c	An all-null conditional as a call argument emits invalid C
+DEF-314	2026-10-28	def-zero-closeout	other	memory-safety	A module-view binding of a conditional member leaks
+DEF-315	2026-10-16	conditional-projection-residue-ii	ownership	false-accept	A view-like fixed-array copy drops its element loans
+DEF-316	2026-10-30	def-zero-closeout	ownership	memory-safety	A duplicable member argument under a guard leaks its fresh root
+DEF-317	2026-10-28	def-zero-closeout	ownership	memory-safety	The owning-literal carrier arm leaks its fresh view root residual
+DEF-318	2026-10-30	def-zero-closeout	ownership	memory-safety	A module-initializer carrier's residual sibling leaks
+DEF-319	2026-10-28	def-zero-closeout	other	memory-safety	A direct literal carrier return is accepted and leaks
+DEF-320	2026-10-28	def-zero-closeout	codegen	invalid-c	A nested-conditional carrier read-back emits invalid C
+DEF-321	2026-10-28	def-zero-closeout	sema	memory-safety	A view-typed `Index` receiver leaks
+DEF-322	2026-10-16	conditional-projection-residue-ii	ownership	miscompile	An element store through a conditional or projected base is accepted and silently dropped
+DEF-323	2026-10-16	conditional-projection-residue-ii	ownership	invalid-c	A guarded conditional of call-filled view-array literals emits invalid C or runs eagerly
+DEF-324	2026-10-30	def-zero-closeout	other	other	The guarded literal spellings keep pre-existing invalid-C emissions
+DEF-325	2026-10-30	def-zero-closeout	stdlib	miscompile	A call-expression array fill re-evaluates per element
+DEF-326	2026-10-30	def-zero-closeout	stdlib	miscompile	A deferred-arm fixed-array fill re-evaluates its update per element
+DEF-327	2026-10-30	def-zero-closeout	ownership	invalid-c	The loop-condition place-borrowing receiver keeps GCC 15's sequence-point false positive
+DEF-328	2026-10-28	def-zero-closeout	ownership	miscompile	A member over a parenthesized deref is accepted and silently dropped
+DEF-329	2026-10-16	conditional-projection-residue-ii	ownership	memory-safety	An owned raw deref read creates a second owner
+DEF-330	2026-10-30	def-zero-closeout	other	false-reject	A raw source pointer used as a store value's deref reports a spurious unused-local warning
+DEF-331	2026-10-16	conditional-projection-residue-ii	sema	other	The one-candidate mismatch consequence is not withheld
+DEF-332	2026-10-16	conditional-projection-residue-ii	ownership	other	A user binding named like the reserved prefix is labelled compiler-generated
+DEF-333	2026-10-16	conditional-projection-residue-ii	sema	false-accept	The array-literal element of a local view stored into a global is accepted and reads freed storage
+DEF-334	2026-10-30	def-zero-closeout	ownership	other	A deferred generated owner whose rolled-back id a later binding re-takes renders that binding's name
+DEF-335	2026-10-16	residual-major-closeout	codegen	other	The nullable-view conditional call and place arms dereference NULL
+DEF-336	2026-10-16	residual-major-closeout	codegen	other	A null arm passed as a call argument widens unguarded
+DEF-337	2026-10-16	residual-major-closeout	codegen	other	An initializer member projection of a nullable handle dereferences NULL
+DEF-338	2026-10-16	residual-major-closeout	codegen	other	An initializer generic dot call with a local-headed qualified receiver emits no instance
+DEF-339	2026-10-16	residual-major-closeout	ownership	memory-safety	A store to an owned field through a borrowed generic element leaks the overwritten owner
+DEF-340	2026-10-16	residual-major-closeout	ownership	invalid-c	A temp-rooted projected argument is keyed by the emitter but not recorded by the walk
+DEF-341	2026-10-16	residual-major-closeout	ownership	invalid-c	A lifted lambda's return type is unsubstituted for an element-member expression
+DEF-342	2026-10-16	residual-major-closeout	codegen	invalid-c	The declined projected-argument shapes emit invalid C
+DEF-343	2026-10-17	residual-major-closeout	ownership	memory-safety	A chained index on an opaque element is unjudged
+DEF-344	2026-10-17	residual-major-closeout	ownership	false-accept	A null-shaped argument against an inferred parameter fixed by another argument misses the null rule
+DEF-345	2026-10-17	residual-major-closeout	sema	false-accept	A substituted element in a conversion or member position is not judged per instance
+DEF-346	2026-10-17	residual-major-closeout	sema	miscompile	A fixed array's `.ptr` and any unknown view member are silently accepted on the concrete path
+DEF-347	2026-10-17	residual-major-closeout	codegen	invalid-c	A view `.ptr` read at a mutable destination emits the const pointer without a cast
+DEF-348	2026-10-17	residual-major-closeout	sema	false-accept	A `raw E` enum member read is accepted-invalid and asymmetric across the paths
+DEF-349	2026-10-29	def-zero-closeout	sema	invalid-c	The `E10200` help's suggested cast is not host-build-clean
+DEF-350	2026-10-17	residual-major-closeout	codegen	invalid-c	An `ffi` result declared as a view or slice is accepted and emits invalid C
+DEF-351	2026-10-17	residual-major-closeout	ownership	invalid-c	The inverse conversion routes stay unjudged at instances
+DEF-352	2026-10-30	def-zero-closeout	codegen	invalid-c	A raw pointer's `.ptr`/`.len` members emit the arrow shape and fail the strict build
+DEF-353	2026-10-17	residual-major-closeout	ownership	miscompile	A `borrow out: i32` instance loses the store
+DEF-354	2026-10-28	def-zero-closeout	ownership	miscompile	A two-root conditional capture store reports `E10401` twice
+DEF-355	2026-10-30	def-zero-closeout	codegen	invalid-c	A struct-literal compound-initializer field never reaches the typed-null lowering
+DEF-356	2026-10-17	residual-major-closeout	codegen	other	The func-global resolution residuals: aliased imports and the self-qualified priority
+DEF-357	2026-10-17	residual-major-closeout	sema	other	The const folder's `sizeof`/`offset_of` are not ABI-layout-faithful
+DEF-358	2026-10-30	def-zero-closeout	other	memory-safety	The `run_with_timeout` harness never drains its pipes, deadlocking ASan children
+DEF-359	2026-10-17	residual-major-closeout	codegen	false-accept	The checker types a bare func-global call by simple name across modules
+DEF-360	2026-10-18	residual-major-closeout-ii	ownership	false-accept	A dot-call's mismatched written argument is accepted by the checker
+DEF-361	2026-10-18	residual-major-closeout-ii	sema	other	A shadowing local or parameter over-resolves a direct binding name as a dot-receiver head
+DEF-362	2026-10-18	residual-major-closeout-ii	ownership	memory-safety	A `take` argument of an opaque generic member type never moves out at the instance
+DEF-363	2026-10-18	residual-major-closeout-ii	sema	false-accept	A declaration and import name collision is not reported (MOD-12 E11103)
+DEF-364	2026-10-18	residual-major-closeout-ii	sema	invalid-c	Opaque conditional substitutions lose two frozen judgments
+DEF-365	2026-10-18	residual-major-closeout-ii	sema	memory-safety	An element-of-element placeholder leaks into the instance key
+DEF-366	2026-10-18	residual-major-closeout-ii	ownership	memory-safety	An owning row field read in a generic borrow loop double-frees
+DEF-367	2026-10-18	residual-major-closeout-ii	ownership	miscompile	A store to a member of a runtime-indexed element is silently dropped
+DEF-368	2026-10-18	residual-major-closeout-ii	codegen	invalid-c	A generic element member `str` conversion emits invalid C
+DEF-369	2026-10-18	residual-major-closeout-ii	ownership	memory-safety	An owned fixed-array member of a borrowed element is moved out without the partial-move judgment
+DEF-370	2026-10-29	def-zero-closeout	ownership	false-reject	A write-through-borrow callee makes a move-only array type read as duplicable
+DEF-371	2026-10-18	residual-major-closeout-ii	ownership	false-accept	A literal argument to a generic callee's concrete parameter is not context-typed
+DEF-372	2026-10-18	residual-major-closeout-ii	ownership	memory-safety	An element-read store over a loaned element misses the shared-loan report
+DEF-373	2026-10-18	residual-major-closeout-ii	ownership	memory-safety	A conditional-source view-array copy transfers no loans
+DEF-374	2026-10-18	residual-major-closeout-ii	ownership	memory-safety	A conditional take over borrow elements excludes the element arm roots
+DEF-375	2026-10-18	residual-major-closeout-ii	ownership	memory-safety	The deref operand materialization is gated on the declaration-time drop predicate
+DEF-376	2026-10-18	residual-major-closeout-ii	ownership	memory-safety	A guarded deref take keeps the inline call and double-frees
+DEF-377	2026-10-19	residual-major-closeout-ii	ownership	miscompile	A member-store target over a conditional base is accepted and silently dropped
+DEF-378	2026-10-19	residual-major-closeout-ii	ownership	false-accept	A call-valued view-array field drops its hidden destination in the read positions
+DEF-379	2026-10-19	residual-major-closeout-ii	ownership	other	An owning nested conditional under a guard runs a call on the skipped path
+DEF-380	2026-10-19	residual-major-closeout-ii	codegen	invalid-c	A multi-extent view-array field with call rows emits invalid C
+DEF-381	2026-10-19	residual-major-closeout-ii	ownership	memory-safety	A nested literal with an owned-array call field double-frees on the take spelling
+DEF-382	2026-10-29	def-zero-closeout	ownership	miscompile	The argument route loses literal-context typing
+DEF-383	2026-10-29	def-zero-closeout	ownership	false-accept	An inferred call's null literal at a nullable instance is rejected
+DEF-384	2026-10-19	residual-major-closeout-ii	codegen	invalid-c	A nullable scalar type argument escapes the nullable rule and erases in the ABI
+DEF-385	2026-10-19	residual-major-closeout-ii	codegen	false-accept	A qualified type path's instance emits mismatched C
+DEF-386	2026-10-19	residual-major-closeout-ii	ownership	other	Concrete positions do not context-type a negated literal
+DEF-387	2026-10-29	def-zero-closeout	codegen	false-accept	A bare member read matching a visible free function escapes the unknown-member report
+DEF-388	2026-10-29	def-zero-closeout	codegen	invalid-c	An unknown member on a null base falls through unreported
+DEF-389	2026-10-29	def-zero-closeout	sema	other	A module-path method-shaped call reports the member error where the base reported the undeclared path
+DEF-390	2026-10-20	residual-major-closeout-ii	ownership	other	A qualified function call is typed as the module's function but emitted as the caller's
+DEF-391	2026-10-20	residual-major-closeout-ii	ownership	memory-safety	The own argument check resolves callees by simple name across modules
+DEF-392	2026-10-30	def-zero-closeout	codegen	other	The `sizeof` constant fold declines enums, handles, and views
+DEF-393	2026-10-30	def-zero-closeout	codegen	other	`offsetof` is wrong outside the acceptance checks
+DEF-394	2026-10-20	residual-major-closeout-ii	codegen	other	A forward-declared local callee resolves to the not-yet-initialized local
+DEF-395	2026-10-17	opaque-store-call-residue	codegen	invalid-c	A generic dot call returning its type parameter emits the unsubstituted type
+DEF-396	2026-10-17	opaque-store-call-residue	codegen	false-accept	A qualified function call bypasses the direct-call checker
+DEF-397	2026-10-20	qualified-access-residue	codegen	false-accept	A generic dot call accepts uninferable parameters and callable-bound violations
+DEF-398	2026-10-20	qualified-access-residue	codegen	false-accept	A qualified function value is accepted but emitted as a C path
+DEF-399	2026-10-20	qualified-access-residue	ownership	other	A qualified intrinsic or ffi call is rejected although qualified access is always available
+DEF-400	2026-10-20	qualified-access-residue	ownership	miscompile	A qualified call whose head is an imported value is treated as a dot call
+DEF-401	2026-10-17	opaque-store-call-residue	ownership	invalid-c	Explicit type arguments on a dot call are ignored by the checker
+DEF-402	2026-10-17	opaque-store-call-residue	codegen	other	A self-qualified generic call in a module initializer emits a missing instance
+DEF-403	2026-10-17	residual-major-completion	codegen	other	A qualified free-function dot call through a module global in an initializer fails the C build
+DEF-404	2026-10-29	def-zero-closeout	codegen	false-accept	A dot or qualified call rejects a str literal for a cstring parameter
+DEF-405	2026-10-29	def-zero-closeout	sema	false-accept	An explicit-type-argument generic call rejects a literal the parameter context would type
+DEF-406	2026-10-17	opaque-store-call-residue	ownership	memory-safety	A generic caller whose callee parameter is compound and whose own type parameter shares the name is falsely rejected
+DEF-407	2026-10-17	opaque-store-call-residue	codegen	false-accept	A qualified generic call returning a fixed array as a loop iterable emits a placeholder element type
+DEF-408	2026-10-17	residual-major-completion	codegen	false-accept	A substituted member read at a str call-argument position emits no widening
+DEF-409	2026-10-17	residual-major-completion	codegen	other	A substituted member read at a conditional-arm position emits no widening
+DEF-410	2026-10-19	residual-major-completion	ownership	memory-safety	An owned conditional store of a generic borrowed parameter double-frees
+DEF-411	2026-10-27	def-critical-major-closeout	sema	false-accept	A null-arm conditional in a guard, cast, binary, unannotated-let, or loop-head context is accepted
+DEF-412	2026-10-27	def-critical-major-closeout	ownership	false-accept	A substituted view-array return is falsely rejected
+DEF-413	2026-10-27	def-critical-major-closeout	ownership	invalid-c	A nested element of an unknown substitution emits a placeholder and invalid C
+DEF-414	2026-10-28	def-zero-closeout	ownership	miscompile	A nullable-gated instance reports a redundant null-arm error after its nullable rejection
+DEF-415	2026-10-27	def-critical-major-closeout	codegen	false-accept	A same-arm nullable conditional at a non-nullable str destination synthesizes zero views
+DEF-416	2026-10-27	def-critical-major-closeout	ownership	other	Two modules declaring the same simple type name collapse to one type-table entry
+DEF-417	2026-10-29	def-zero-closeout	sema	false-accept	TY-4 does not reach every declaration and type position
+DEF-418	2026-10-27	residual-major-completion	ownership	miscompile	Explicit type arguments on a non-generic callee are silently ignored
+DEF-419	2026-10-29	def-zero-closeout	codegen	invalid-c	Import-renamed type names do not resolve
+DEF-420	2026-10-29	def-zero-closeout	sema	false-accept	A negated float literal at an f32 destination reports a conversion error
+DEF-421	2026-10-19	residual-major-completion	ownership	miscompile	A deref-rooted member store is accepted and silently dropped
+DEF-422	2026-10-29	def-zero-closeout	sema	false-accept	A standalone raw-prefix store is rejected although the prefix is the unsafe context
+DEF-423	2026-10-19	residual-major-completion	ownership	memory-safety	The whole-element store evaluates the RHS before the target index is pinned
+DEF-424	2026-10-19	residual-major-completion	ownership	miscompile	The fixed-array literal save and clear run before the RHS, so a self-read sees cleared storage
+DEF-425	2026-10-21	global-borrow-conformance	ownership	false-accept	A generic body accepts an owned element move through a borrow parameter
+DEF-426	2026-10-19	residual-major-completion	sema	other	A generic compound division or remainder omits the zero and minimum guard
+DEF-427	2026-10-19	residual-major-completion	sema	memory-safety	A len call on a runtime-indexed String element folds to zero
+DEF-428	2026-10-19	residual-major-completion	ownership	memory-safety	An exact whole-binding self-assignment erases the element loans
+DEF-429	2026-10-19	residual-major-completion	ownership	miscompile	A composite copy source stored into an element or projected destination loses the loans
+DEF-430	2026-10-19	residual-major-completion	ownership	miscompile	A runtime-index element store followed by a constant element-read copy loses the loan
+DEF-431	2026-10-19	residual-major-completion	ownership	miscompile	A single-view copy of a deeper projection after a shorter-path recording loses the loan
+DEF-432	2026-10-19	residual-major-completion	ownership	memory-safety	A temporary-derived element in a view-array literal escapes
+DEF-433	2026-10-19	residual-major-completion	ownership	memory-safety	A call-mediated element-view result escapes
+DEF-434	2026-10-29	def-zero-closeout	ownership	other	A direct-owner literal overwritten at its element still reports through the provenance fallback
+DEF-435	2026-10-19	residual-major-completion	ownership	false-accept	An element-store nested fill with a fresh member value rejects the direct read but accepts the copy
+DEF-436	2026-10-19	residual-major-completion	ownership	false-accept	The whole-element runtime-index store and the raw-deref-target store bypass the owning-deref materializer
+DEF-437	2026-10-19	residual-major-completion	ownership	memory-safety	A member projection of a raw pointee is not materialized
+DEF-438	2026-10-30	def-zero-closeout	ownership	other	An eager take deref argument hoists its pointer fill above an earlier argument's read
+DEF-439	2026-10-19	residual-major-completion	ownership	memory-safety	A guarded take through a raw pointer aliasing a conditional store's destination double-frees
+DEF-440	2026-10-19	residual-major-completion	ownership	other	A guarded intrinsic or borrow argument binds and releases a raw-deref pointee
+DEF-441	2026-10-19	residual-major-completion	ownership	memory-safety	A guarded take of a member over a raw pointer leaves the pointee owned
+DEF-442	2026-10-17	residual-major-completion	ownership	memory-safety	A guarded take of a conditional of literals with an owning deref field copies without emptying
+DEF-443	2026-10-17	residual-major-completion	ownership	memory-safety	A guarded struct-literal field whose value is an owned conditional with an impure deref arm double-frees
+DEF-444	2026-10-29	def-zero-closeout	ownership	other	A place-deref take in a loop head moves the same pointee twice without a report
+DEF-445	2026-10-19	residual-major-completion	ownership	invalid-c	The conditional-of-literals read base is accepted and emits invalid C
+DEF-446	2026-10-19	residual-major-completion	ownership	invalid-c	A take conditional literal argument in an eager ternary arm is accepted and emits invalid C
+DEF-447	2026-10-19	residual-major-completion	ownership	memory-safety	An inline read-base owning literal leaks its trailing fields
+DEF-448	2026-10-19	residual-major-completion	ownership	invalid-c	A take of a conditional array literal of places is accepted and emits invalid C
+DEF-449	2026-10-19	memory-value-integrity	ownership	miscompile	A conditional carrier copy of view-holding struct places loses its element loans
+DEF-450	2026-10-19	memory-value-integrity	ownership	memory-safety	A cross-frame out-slot escape through a borrowed aggregate argument
+DEF-451	2026-10-19	memory-value-integrity	ownership	memory-safety	A call-mediated view of an inline temporary view-array escapes
+DEF-452	2026-10-19	memory-value-integrity	ownership	memory-safety	The generated-owner lifetime extension contradicts the D5 temporary rule
+DEF-453	2026-10-19	memory-value-integrity	ownership	false-accept	A call-mediated view stored in a global is accepted and dangles
+DEF-454	2026-10-26	def-critical-major-closeout	ownership	memory-safety	A guarded struct-literal call argument or receiver copies a raw-deref owning field instead of moving it
+DEF-455	2026-10-26	def-critical-major-closeout	ownership	memory-safety	A conditional fixed-array assignment consumes its destination through a raw-deref take and still releases the saved array
+DEF-456	2026-10-26	def-critical-major-closeout	ownership	memory-safety	The conditional-save alias test is address equality, not containment
+DEF-457	2026-10-26	def-critical-major-closeout	ownership	memory-safety	A conditional-store take alias capture is lost through a nested temporary materialization
+DEF-458	2026-10-26	def-critical-major-closeout	ownership	memory-safety	A named-place take in a skipped `\
+DEF-459	2026-10-19	non-lexical-lifetimes	ownership	memory-safety	A pure pointer place mutated by the callee is re-read by the move-out and alias test
+DEF-460	2026-10-26	def-critical-major-closeout	ownership	miscompile	A conditional self-move through a raw pointer loses the destination
+DEF-461	2026-10-26	def-critical-major-closeout	ownership	memory-safety	A take fixed-array parameter that aliases the raw store target is not guarded
+DEF-462	2026-10-26	def-critical-major-closeout	codegen	memory-safety	A raw-field target's intermediate field is not pinned before a side-effecting RHS
+DEF-463	2026-10-29	def-zero-closeout	codegen	other	The raw-store RHS pointer binding reports a false unused-local warning
+DEF-464	2026-10-26	def-critical-major-closeout	ownership	memory-safety	A post-conditional-store source read is an accepted use-after-move
+DEF-465	2026-10-26	def-critical-major-closeout	ownership	memory-safety	A duplicable fixed-array literal self-read uses the cleared destination
+DEF-466	2026-10-26	def-critical-major-closeout	ownership	miscompile	A raw alias element store whose RHS pointee is the destination loses the value
+DEF-467	2026-10-29	def-zero-closeout	ownership	false-accept	An out-slot borrow raw self-assign is accepted
+DEF-468	2026-10-19	non-lexical-lifetimes	ownership	memory-safety	A generic conditional return of a lend arm is accepted and double-frees
+DEF-469	2026-10-19	non-lexical-lifetimes	ownership	memory-safety	A generic field-projection conditional arm is accepted and double-frees
+DEF-470	2026-10-23	def-critical-major-closeout	ownership	false-accept	A generic field-projected take later move is accepted
+DEF-471	2026-10-27	def-critical-major-closeout	sema	other	A hidden generic deref-chain division omits the E11210 guard
+DEF-472	2026-10-27	def-critical-major-closeout	ownership	memory-safety	A maybe-target generic conditional with a concrete lend double-frees
+DEF-473	2026-10-27	def-critical-major-closeout	ownership	false-accept	A maybe-target take + concrete local conditional use-after-move is accepted
+DEF-474	2026-10-28	def-zero-closeout	ownership	false-accept	A generic view conditional return diverges from the concrete twin
+DEF-475	2026-10-27	def-critical-major-closeout	ownership	invalid-c	An owned mixed conditional read base is accepted and emits invalid C
+DEF-476	2026-10-27	def-critical-major-closeout	codegen	invalid-c	A guarded duplicable conditional literal read base emits invalid C
+DEF-477	2026-10-27	def-critical-major-closeout	ownership	invalid-c	Nested conditional arms in a literal store or guarded take emit invalid C
+DEF-478	2026-10-27	def-critical-major-closeout	ownership	miscompile	A duplicable struct conditional take in a guarded operand fills eagerly
+DEF-479	2026-10-27	def-critical-major-closeout	codegen	other	A guarded nested-literal field evaluates in declaration order
+DEF-480	2026-10-27	def-critical-major-closeout	ownership	invalid-c	An owning fresh-root projection read base is accepted and emits invalid C
+DEF-481	2026-10-27	def-critical-major-closeout	ownership	memory-safety	An owning conditional read base over call arms leaks
+DEF-482	2026-10-28	def-zero-closeout	sema	other	An all-fresh guarded read base with mixed call/literal arms has mismatched C arm types
+DEF-483	2026-10-29	def-zero-closeout	codegen	other	The scalar-`len` fold reports `0` for a `u8` argument
+DEF-484	2026-10-30	def-zero-closeout	ownership	false-accept	A local static view carrier through a loop alias is falsely rejected
+DEF-485	2026-10-20	memory-critical-completion	ownership	miscompile	A `const` conditional carrier copy loses its element loans
+DEF-486	2026-10-20	memory-critical-completion	ownership	miscompile	A global conditional carrier copy loses its element loans
+DEF-487	2026-10-20	memory-critical-completion	ownership	memory-safety	A function-returned call-mediated view escapes
+DEF-488	2026-10-20	memory-critical-completion	ownership	memory-safety	An inline call-result carrier with a local backing escapes
+DEF-489	2026-10-20	memory-critical-completion	other	memory-safety	A conditional mix of a static literal and a call carrier escapes
+DEF-490	2026-10-30	def-zero-closeout	ownership	other	An inline static aggregate literal is falsely rejected
+DEF-491	2026-10-29	def-zero-closeout	sema	other	A frame-backed literal arm reports an extra `E10033`
+DEF-492	2026-10-30	def-zero-closeout	sema	false-accept	A zero-argument static factory carrier is falsely rejected
+DEF-493	2026-10-20	memory-critical-completion	other	miscompile	A plain carrier copy from a carrier-returning call loses its views
+DEF-494	2026-10-28	def-zero-closeout	ownership	miscompile	A taken view parameter reports twice
+DEF-495	2026-10-20	memory-critical-completion	ownership	memory-safety	Direct call-mediated views miss closure, wrapper, and generic forms
+DEF-496	2026-10-20	memory-critical-completion	ownership	memory-safety	A dot-call receiver is not judged as a view source
+DEF-497	2026-10-20	memory-critical-completion	ownership	memory-safety	A mixed aggregate carrier masks a frame-owned owned field
+DEF-498	2026-10-20	memory-critical-completion	ownership	miscompile	A conditional shadow copy loses its loans
+DEF-499	2026-10-20	memory-critical-completion	ownership	miscompile	An alias element return loses its loans
+DEF-500	2026-10-30	def-zero-closeout	codegen	invalid-c	Three strict-build residual classes fail `-Werror`
+DEF-501	2026-10-20	memory-critical-completion	ownership	false-accept	A generic conditional take of an opaque projected member is accepted
+DEF-502	2026-10-20	memory-critical-completion	ownership	false-accept	A lend field projection through a raw pointer is accepted by the instance audit
+DEF-503	2026-10-20	memory-critical-completion	ownership	false-accept	A generic conditional arm in an owning struct-literal field or projected assignment is accepted
+DEF-504	2026-10-20	memory-critical-completion	ownership	false-accept	A projection over a conditional of type-parameter places is accepted
+DEF-505	2026-10-27	def-critical-major-closeout	ownership	false-accept	A nested projection of a type-parameter place is falsely joined
+DEF-506	2026-10-27	def-critical-major-closeout	sema	false-accept	A mixed aggregate whose only viewed position is static is falsely rejected
+DEF-507	2026-10-27	def-critical-major-closeout	ownership	memory-safety	A helper with one lend parameter that returns static storage is falsely rejected at a view return
+DEF-508	2026-10-20	memory-critical-residue	ownership	memory-safety	A projected member of a carrier-returning call escapes
+DEF-509	2026-10-20	memory-critical-residue	ownership	false-accept	A two-source carrier-returning call is accepted
+DEF-510	2026-10-20	memory-critical-residue	codegen	invalid-c	Inline lambda and conditional func-value calls are not resolved
+DEF-511	2026-10-20	memory-critical-residue	ownership	false-accept	A closure capture writing a borrowed out-slot escapes
+DEF-512	2026-10-20	memory-critical-residue	ownership	false-accept	A carrier return through a `take` or non-candidate source escapes
+DEF-513	2026-10-27	def-critical-major-closeout	ownership	false-accept	An alias return over an inline iterable temporary escapes
+DEF-514	2026-10-20	memory-critical-residue	ownership	memory-safety	A conditional take of a `take` parameter's owning member double-frees
+DEF-515	2026-10-20	memory-critical-residue	ownership	memory-safety	An `unsafe`-wrapped conditional take is not judged
+DEF-516	2026-10-20	memory-critical-completion	ownership	false-accept	A take of a projection over a conditional of type-parameter places is accepted
+DEF-517	2026-10-20	memory-critical-completion	ownership	false-accept	A struct-literal field or projected assignment of a projection over a conditional is accepted
+DEF-518	2026-10-20	memory-critical-residue	ownership	false-accept	A generic conditional element in an owned array literal is accepted
+DEF-519	2026-10-20	memory-critical-residue	ownership	false-accept	A carrier call inside a returned struct literal escapes through statement storage
+DEF-520	2026-10-20	memory-critical-completion	ownership	false-accept	A binding of a projection over a conditional of type-parameter places is accepted
+DEF-521	2026-10-20	memory-critical-residue	ownership	memory-safety	An `unsafe`- or cast-wrapped generic conditional source is not judged
+DEF-522	2026-10-27	def-critical-major-closeout	ownership	invalid-c	A view-member projection over a type-parameter conditional is conservatively rejected
+DEF-523	2026-10-20	memory-critical-residue	ownership	false-accept	A nested write clears the moved state of its whole field
+DEF-524	2026-10-29	def-zero-closeout	ownership	other	Two distinct later-use sites with the same moved-path set share one report
+DEF-525	2026-10-20	opaque-store-call-residue	ownership	invalid-c	A local view stored into an opaque type-parameter member escapes and emits invalid C
+DEF-526	2026-10-20	opaque-store-call-residue	ownership	other	A parameter-backed view written through a captured local is conservatively rejected when it later escapes
+DEF-527	2026-10-20	opaque-store-call-residue	codegen	invalid-c	A slice of `func` type emits an invalid C typedef
+DEF-528	2026-10-20	opaque-store-call-residue	sema	other	A conditional of capturing closures is rejected with a misleading E10200
+DEF-529	2026-10-20	evaluation-residue	ownership	memory-safety	A run-time-index view store leaks the moved handle
+DEF-530	2026-10-28	def-zero-closeout	sema	miscompile	Two carrier return sites report one escape
+DEF-531	2026-10-20	evaluation-residue	ownership	other	A non-call effectful fixed-array `len` operand is folded without evaluation
+DEF-532	2026-10-20	evaluation-residue	ownership	false-accept	Module initializers skip the own call check
+DEF-533	2026-10-21	global-borrow-conformance	ownership	false-accept	The module-qualified global-borrow oracle conflicts with BR-9
+DEF-538	2026-10-21	global-borrow-conformance	codegen	invalid-c	An aliased view builder bypasses the BR-9 source check and emits invalid C
+DEF-539	2026-10-21	global-borrow-conformance	ownership	memory-safety	A multi-extent take element move leaks the selected handle
+DEF-540	2026-10-21	caller-view-escape	ownership	memory-safety	A stored view is not invalidated when its backing is reassigned in the caller
+DEF-541	2026-10-22	out-slot-view-escape	ownership	memory-safety	A whole out-slot assignment stores a view of another lend parameter
+DEF-542	2026-10-29	def-zero-closeout	ownership	false-accept	A generic non-nullable view out-slot store is accepted and the write is lost
+DEF-543	2026-10-26	def-critical-major-closeout	ownership	false-accept	A same-frame conditional write launders a local view into an out-slot
+DEF-544	2026-10-28	def-zero-closeout	ownership	memory-safety	A plain (borrow) parameter moved into an owned conditional store double-frees
+DEF-545	2026-10-28	def-zero-closeout	ownership	memory-safety	A take capture clears only the last of several consumed subranges
+DEF-546	2026-10-28	def-zero-closeout	ownership	memory-safety	A concrete lend returned through a maybe-owning conditional is accepted and double-frees
+DEF-547	2026-10-28	def-zero-closeout	ownership	false-reject	Literal-element, conditional-take, and read maybe-target stores false-reject valid view instances
+DEF-548	2026-10-28	def-zero-closeout	codegen	invalid-c	A runtime-index StorePointer bypasses the struct-store path and emits invalid C
+DEF-549	2026-10-28	def-zero-closeout	codegen	invalid-c	A literal zero divisor is emitted and fails strict C
+DEF-550	2026-10-28	def-zero-closeout	ownership	memory-safety	A view-destination maybe-target store records no loan or escape duty
+DEF-551	2026-10-28	def-zero-closeout	codegen	other	Expression-form and nested-row array fills evaluate the fill once per element/row
+DEF-552	2026-10-28	def-zero-closeout	other	other	A later order-mismatched argument is hoisted before an earlier argument's effects
+DEF-553	2026-10-28	def-zero-closeout	ownership	memory-safety	A module-initializer store-needing literal leaks its owning fields
+DEF-554	2026-10-28	def-zero-closeout	ownership	memory-safety	An owned String widened into a view slot is not released
+DEF-555	2026-10-28	def-zero-closeout	ownership	other	A module-initializer nested owning call field evaluates before earlier source fields
+DEF-556	2026-10-28	def-zero-closeout	ownership	memory-safety	A generic T view return skips the lend-candidate count and lets a caller hold a dangling view
+DEF-557	2026-10-28	def-zero-closeout	ownership	miscompile	A generic caller-returned static view is rejected through a borrow parameter
+DEF-534	2026-10-21	deferred-evaluation-completion	sema	other	Conditionally evaluated non-call `len` operands still fold without effects
+DEF-535	2026-10-21	deferred-evaluation-completion	ownership	memory-safety	A conditional of borrowed places is rejected at a view-instance opaque store
+DEF-536	2026-10-20	evaluation-residue	ownership	memory-safety	A bare discarded fixed-array conditional moves a caller place arm
+DEF-537	2026-10-21	global-borrow-conformance	ownership	miscompile	Func-typed global/field initializer calls skip the borrow rule
+DEF-558	2026-11-13	compiler-throughput	ownership	memory-safety	A user function named `cl_lambda_<site>` reuses a lifted lambda body
+DEF-559	2026-11-15	real-workload-audit	runtime	platform	The hosted-amiga `UnlockPubScreen` prototype disagrees with the NDK and fails the vbcc `bench-shape` leg
+DEF-581	2026-11-21	Findings	other	other	Phase4 major review corrections
+DEF-580	2026-11-21	Decision	other	other	Editor implementation verification ordering
+DEF-579	2026-11-21	Handoff	other	false-accept	Verified receipt fix and Phase3 disposition
+DEF-578	2026-11-21	Findings	other	other	Independent receipt regression author unavailable
+DEF-577	2026-11-20	Findings	other	other	Pending-receipt cleanup correction ruling
+DEF-576	2026-11-20	Findings	other	other	Phase 3 review correction ruling
+DEF-575	2026-11-19	Decision	tooling	other	Installer implementation verification ordering
+DEF-574	2026-11-19	Decision	tooling	other	Installer/bootstrap authoring contracts
+DEF-573	2026-11-19	Handoff	other	other	Verified RV-301 and Phase 2 disposition
+DEF-572	2026-11-19	Findings	other	other	Artifact-directory-alias correction ruling
+DEF-571	2026-11-19	Decision	other	other	Snapshot executable oracle amendment
+DEF-570	2026-11-19	Findings	other	other	Phase 2 review correction ruling
+DEF-569	2026-11-19	Decision	tooling	other	Actual LSP core-version entry
+DEF-568	2026-11-19	Decision	other	other	Native ROM filename representation
+DEF-567	2026-11-19	Decision	tooling	other	Native installed-layout contract
+DEF-566	2026-11-18	Decision	other	other	GCC SDK relocation into space paths
+DEF-565	2026-11-18	Decision	runtime	other	Greenlet runtime wheel test contents
+DEF-564	2026-11-18	Decision	ownership	other	Ubuntu loader package-ownership oracle
+DEF-563	2026-11-18	Decision	other	other	Git-ident checkout-byte identity ruling
+DEF-562	2026-11-18	Decision	front-end	other	Real Ubuntu package-name grammar ruling
+DEF-561	2026-11-18	Decision	other	platform	Native-object format and lock-order ruling
+DEF-560	2026-11-17	Evidence	ownership	platform	libamiga legal review — user-owned
+DEF-01	2026-09-23	backlog-ledger	sema	false-accept	Compiler accepts a bare `return;` in a non-void function
+DEF-02	2026-09-23	backlog-ledger	ownership	miscompile	`for (let i = 0; i < n; i++)` drops the loop step
+DEF-03	2026-09-23	backlog-ledger	codegen	other	Compound assignment stores the right-hand side (`x += 2` → `x = 2`)
+DEF-04	2026-09-23	backlog-ledger	ownership	other	A discarded expression drops an embedded side effect (`f() + 1;`, `j++ + 1;`)
+DEF-05	2026-09-25	backlog-ledger	codegen	memory-safety	Callable-bound generic rejects a concrete function when `T` is inferred from a generic-struct field
+DEF-06	2026-09-25	backlog-ledger	sema	false-accept	Generic struct instance bypasses the by-value overlay ban
+DEF-07	2026-09-25	backlog-ledger	ownership	other	Generic struct duplicability ignores its type arguments
+DEF-08	2026-09-25	backlog-ledger	ownership	memory-safety	Drop not emitted for a generic struct holding a handle
+DEF-09	2026-09-25	backlog-ledger	codegen	invalid-c	Nested generic zero value emits C that fails `-Werror`
+DEF-10	2026-09-25	backlog-ledger	ownership	other	Remaining unsubstituted generic-field reads
+DEF-11	2026-09-25	backlog-ledger	ownership	memory-safety	Self-referential struct-literal reassignment double-frees
+DEF-12	2026-09-26	backlog-ledger	ownership	false-accept	Generic substitution bypasses the view-field and fill guards
+rows 582
+class	memory-safety	163	plans 38	recurring
+class	other	140	plans 35	recurring
+class	invalid-c	118	plans 26	recurring
+class	false-accept	100	plans 26	recurring
+class	miscompile	51	plans 22	recurring
+class	false-reject	5	plans 3	recurring
+class	platform	5	plans 5	recurring
+component	ownership	353
+component	codegen	144
+component	sema	47
+component	other	26
+component	runtime	5
+component	tooling	4
+component	stdlib	2
+component	front-end	1
+month	2026-09	other 11, memory-safety 7, invalid-c 5, false-accept 4, miscompile 3, false-reject 1
+month	2026-10	memory-safety 155, invalid-c 113, other 110, false-accept 95, miscompile 48, false-reject 4, platform 2
+month	2026-11	other 19, platform 3, memory-safety 1, false-accept 1
