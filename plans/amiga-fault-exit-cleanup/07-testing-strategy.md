@@ -10,7 +10,7 @@
 | Code type | Target |
 | --------- | ------ |
 | Registry, hook phases, worker fault path, break routine | every branch exercised by an ST-case or an impl test |
-| Registration sites (52 kinds) | every acquire and remove point checked by an emitted-shim shape test |
+| Registration sites (52 registered `std.amiga` kinds; `Task` uses the worker phase) | every acquire and remove point checked by an emitted-shim shape test |
 | Docs and gate wiring | reviewed |
 
 - Rust test names state behavior (`a_lock_is_released_when_the_program_faults`).
@@ -44,7 +44,7 @@ and fuzz-smoke suites, rc 0, observed 2026-11-26 09:14 at `1462063e`.
 >
 > Test code quotes the behavior in plain language, never an ST/AR identifier or a `plans/` path.
 
-**Leak pattern** (used by ST-1..ST-7 and ST-19): a `vamos` output line matching
+**Leak pattern** (used by ST-1..ST-7, ST-3b, and ST-19): a `vamos` output line matching
 `can't expunge|mem_alloc:WARNING:\s+orphan|shutdown: can't expunge` is a leak (AR-20).
 
 **Walker equality** (used by ST-10..ST-18): the `after` walker line equals the `before` line
@@ -57,6 +57,7 @@ field for field, apart from the tag ([03-05 §A500 gate](03-05-gates-and-docs.md
 | ST-1 | `lock-fault.clo`: `lockPath("")` and `pathInfo("")` (the current directory), then index 5 of a 2-element array | stdout line 1 `error E11211: index out of range`; exit status 20; no leak line | FR-1, FR-2, AR-1, AR-2; dos `Lock`/exec `AllocMem` autodocs |
 | ST-2 | `port-fault.clo`: `createMsgPort()` and `createPublicPort("ClFaultCleanup")`, then integer division by zero | line 1 `error E11210: integer division by zero`; exit 20; no leak line | FR-1, AR-1 |
 | ST-3 | `message-fault.clo`: reply port and destination port (both own), `createMessage(reply, 7)`, `putMsg(dest, msg)`, then index fault | line 1 `error E11211: index out of range`; exit 20; no leak line | FR-5, AR-15, AR-21 |
+| ST-3b | `reply-fault.clo`: reply port and destination port (both own), `createMessage(reply, 7)`, `putMsg(dest, msg)`, `getMsg(dest)`, `replyMsg`, then an index fault before the reply is fetched from `reply` | line 1 `error E11211: index out of range`; exit 20; no leak line | FR-5, AR-21 |
 | ST-4 | `library-fault.clo`: `openLibrary("dos.library", 33)`, then index fault | line 1 `error E11211: index out of range`; exit 20; no leak line | FR-1, AR-1; exec `OpenLibrary`/`CloseLibrary` autodoc |
 | ST-5 | `panic-after-acquire.clo`: `lockPath("")`, then `panic("stop")` | line 1 `panic: stop`; exit 20; no leak line | FR-2, AR-2 |
 | ST-6 | `assert-after-acquire.clo`: `lockPath("")`, then `assert(false)` | line 1 `error E11213: assertion failed`; exit 20; no leak line | FR-2, AR-2 |
@@ -80,7 +81,7 @@ field for field, apart from the tag ([03-05 §A500 gate](03-05-gates-and-docs.md
 | ST-18 | `worker-fault-unjoined.clo`: the worker divides by zero; the parent calls `timerWait(timer, 50)`, then indexes out of range without joining | `error E11211: index out of range`, then `error E11210: integer division by zero`, then `rc fail`; walker equality (`workers 0`) | FR-3, AR-10 |
 
 **Red-phase expectations** (baseline behaviour, from the assessment verifier runs):
-- These fail before implementation: ST-1..ST-6 and ST-19 (orphan memory or open count), ST-9 (no hook
+- These fail before implementation: ST-1..ST-6, ST-3b, and ST-19 (orphan memory or open count), ST-9 (no hook
   exists), ST-10..ST-13 and ST-17 (walker mismatch), ST-14 and ST-18 (hang), ST-15 (`done`
   line, no `***Break`).
 - These may pass before implementation and are regression guards, with the justification
@@ -94,8 +95,8 @@ field for field, apart from the tag ([03-05 §A500 gate](03-05-gates-and-docs.md
 
 | Test File | ST Cases Covered | Component |
 | --------- | ---------------- | --------- |
-| `compiler/tests/amiga_fault_cleanup_spec_test.rs` | ST-1..ST-6, ST-8, ST-9, ST-19 | registry, hook, vamos kinds |
-| `docker/scripts/run-fault-amiga.sh` | ST-7 (and ST-1..ST-6, ST-19 as run-fault cases) | fault leg |
+| `compiler/tests/amiga_fault_cleanup_spec_test.rs` | ST-1..ST-6, ST-3b, ST-8, ST-9, ST-19 | registry, hook, vamos kinds |
+| `docker/scripts/run-fault-amiga.sh` | ST-7 (and ST-1..ST-6, ST-3b, ST-19 as run-fault cases) | fault leg |
 | `docker/scripts/a500-fault-cleanup-smoke.sh` | ST-10..ST-18 | A500 acceptance |
 
 ### Implementation Tests (edge cases, internals)
@@ -103,7 +104,7 @@ field for field, apart from the tag ([03-05 §A500 gate](03-05-gates-and-docs.md
 | Test File | Description | Priority |
 | --------- | ----------- | -------- |
 | `compiler/tests/amiga_fault_cleanup_impl_test.rs` | emitted-shim shape: every acquire site in the 03-02 table registers after success and every listed remove point unregisters; every base site uses `cl_lib_open`; no bare `OpenLibrary` for a shim base | High |
-| same | `cl_trap`/`cl_panic` test the worker-list head and never read `tc_UserData`; the worker path has no stdio or `exit` | High |
+| same | `cl_trap`/`cl_panic` test the worker-list head, never read `tc_UserData`, and never name `cl_exit_hook`; the worker-path walk runs under `Forbid`; the worker path has no stdio or `exit` | High |
 | same | each breakable wait includes `SIGBREAKF_CTRL_C` and drops it under `cl_exiting`; the unbreakable sites are unchanged; `cl_timer_free` aborts a pending request | High |
 | same | hook phases appear in the order servers → workers → registry → chip state → library bases; the registry loop pops before release | Med |
 | same | cross-build of a program that imports every `std.amiga` module on both profiles with `-Werror` (both CRTs) | High |
@@ -136,7 +137,7 @@ None; every leg runs the real runtime.
 
 Exec safety is the boundary (01 §Security):
 - ST-10, ST-14, ST-18 prove that no server or worker runs in freed code.
-- ST-3 proves the own-port message rule (AR-21).
+- ST-3 and ST-3b prove the own-port message rule, including a replied own message (AR-21).
 - Licensed-media handling is checked by review of the gate script (AR-17). No other input
   surface changes.
 

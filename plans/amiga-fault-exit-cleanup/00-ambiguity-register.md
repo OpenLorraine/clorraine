@@ -67,6 +67,12 @@ Direct user decision: approved larger (simplified as the challenger recommended)
 
 **AR-9 rules:** (1) pop each record before its release; a walking flag makes a fault, panic, or break during the walk print its line, finish the remaining records, and leave with `_exit(20)` (libnix re-runs atexit hooks on a nested `exit`); (2) a typed release thunk `static void cl_release_<kind>(void *)` per kind (casting the BPTR/Library deleters fails `-Werror`); (3) unregister where the resource is really freed or handed off — `cl_window_destroy`, `cl_task_join_record`, `cl_put_msg`, ARexx send/reply, the copper move into a Display — keyed by record, not pointer value; (4) when a side record or the `atexit` install fails, the acquire releases what it just got and returns its existing failure (null, or E1 where it already traps); (5) libc-managed resources (`File` via `fopen`, malloc buffers) are not registered; (6) workers are removed at exit with Forbid/RemTask/Permit, FreeSignal, FreeMem — never the joining drop; (7) worker detection compares `FindTask(NULL)` with recorded worker task pointers and never dereferences `tc_UserData`; (8) a worker's panic text is printed by the parent before `RemTask`; (9) library bases are closed only when the shim's own `OpenLibrary` opened them; (10) the hook prints nothing on a clean exit.
 
+**AR-9 rule 1 refinement (preflight PF-001, user ruling 2026-11-26):** the "walking flag" is
+`cl_exiting`, which the hook sets and the waits read; `cl_trap`/`cl_panic` get no re-entry
+branch and never call the hook. Their unchanged `exit(20)` re-runs libnix's current exit
+priority, and that re-run is the drain. A direct call would link the hook into every program
+(AR-18). Preflight PF-002..PF-006 refinements are recorded in `00-preflight-report.md`.
+
 **AR-11:** reopened AR-5's exit code on new evidence (libnix `__chkabort.o`/`raise.o`: `***Break`, `exit(20)`); the user chose rc 20.
 
 **AR-8..AR-19:** round 2, answered by the user in chat on 2026-11-26; AR-8 by a direct choice on its visible STOP packet.

@@ -36,7 +36,7 @@ function name.
 | Window (`intuition`) | `cl_open_window` :1504, `cl_open_workbench_window` :1588 | `cl_window_destroy` :1670 (not `cl_close_window`; the close defers while `console_refs`/`ui_refs` > 0, :1709-1712) | E (`cl_window`) | public-screen lock released inside destroy (:1685) |
 | MsgPort (`exec`) | `cl_create_msg_port` :3000, `cl_create_public_port` :3011 | `cl_delete_msg_port` :3015 | S | in-flight rule ([03-01 §Messages in flight](03-01-exit-registry.md#messages-in-flight)) (AR-15, AR-21) |
 | NewMessage (`exec`) | `cl_create_message` :3025 | `cl_free_message` :3082; **hand-off** `cl_put_msg` :3046 moves it to the in-flight set | E (`cl_message`) | AR-9 rule 3 |
-| Message (`exec`, received) | `cl_get_msg` :3065 (also leaves the in-flight set) | `cl_reply_msg` :3072, `cl_release_message` :3091 | S | same pointer as an earlier NewMessage uses a different thunk (AR-20) |
+| Message (`exec`, received) | `cl_get_msg` :3065 (also leaves the in-flight set) | `cl_reply_msg` :3072, `cl_release_message` :3091; replying a program-created message is a **hand-off** back into the in-flight set ([03-01 §Messages in flight](03-01-exit-registry.md#messages-in-flight)) | S | same pointer as an earlier NewMessage uses a different thunk (AR-20) |
 | Library (`exec`, user) | `cl_open_library` :3247 | `cl_close_library` :3251 | S | separate from the library-base table |
 | Device (`exec`) | `cl_open_device` :3392, `cl_open_console` :3419 | `cl_device_close` path of `cl_close_device` :3428 | E (`cl_device`) | pending I/O aborted in release (existing :3361-3364); see [03-04](03-04-ctrl-c.md) for `pending` |
 | Lock (`dos`) | `cl_dos_lock` :223 | `cl_dos_unlock` :232 | S | [03-01 Example 1](03-01-exit-registry.md#example-1-a-raw-pointer-kind-dos-lock) |
@@ -102,8 +102,8 @@ add no registry record (AR-8).
 
 ## Testing Requirements
 
-- Spec: ST-1..ST-6 cover representative kinds on `vamos` (Lock, PathInfo, MsgPort, NewMessage,
-  the user `Library`). ST-10..ST-13, ST-15, and ST-17 cover the FS-UAE kinds (servers, Display,
+- Spec: ST-1..ST-6 and ST-3b cover representative kinds on `vamos` (Lock, PathInfo, MsgPort,
+  NewMessage, a replied own Message, the user `Library`). ST-10..ST-13, ST-15, and ST-17 cover the FS-UAE kinds (servers, Display,
   Window, Font and the diskfont base, Timer). ST-19 covers the optional suffix kinds on `vamos`
   ([07](07-testing-strategy.md)).
 - Impl: one shape test per file that every acquire site in the table is followed by its

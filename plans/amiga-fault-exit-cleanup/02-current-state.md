@@ -29,7 +29,8 @@ per-kind registration table derived from it is owned by
   and a nested `exit()`/`_exit()` re-runs the exit list. libnix `__chkabort` runs on every stdio
   read/write; on `SIGBREAKF_CTRL_C` it raises SIGINT, whose default handler prints `***Break` and
   calls `exit(20)`. vbcc's `vc.lib` provides `atexit` in both the 2.0 and kick13 trees.
-- **Owned handles.** 53 `freedBy` handle kinds across `stdlib/std.amiga.*.clo` and `std.io.clo`;
+- **Owned handles.** 53 `freedBy` handle kinds in `stdlib/std.amiga.*.clo` (52 registered plus
+  `Task`, which uses the worker phase), plus the libc-backed `File` (`std.io`) and `Buffer` (`std.mem`);
   the generated drop is `if (x) { deleter(x); } x = NULL;` (`compiler/src/codegen/drop.rs:34-38`).
   Some kinds are shim wrapper structs (`cl_window` `:1456`, `cl_message` `:2989`, `cl_task`
   `:3109`, `cl_device` `:3270`, video, sprite, audio, timer, font, layer, and the optional
@@ -121,7 +122,8 @@ FR-4. **Fix Required:** [03-04](03-04-ctrl-c.md).
 | Risk | Likelihood | Impact | Mitigation |
 | ---- | ---------- | ------ | ---------- |
 | A missed unregister point causes a double release at exit | Med | High | unregister at the real free or hand-off point (AR-9 rule 3); impl tests per kind; amiga-platform-reviewer |
-| Nested `exit` during the walk re-runs libnix's exit list | Med | High | pop-before-release, walking flag, idempotent hook (AR-9 rule 1) |
+| Nested `exit` during the walk re-runs libnix's exit list | Med | High | pop- or mark-before-act in every phase, idempotent hook; the re-run is the drain path (AR-9 rule 1) |
+| Fault-path additions link hook code into every program | Med | Med | `cl_trap`/`cl_panic` add one static load and compare and never name the hook; ST-9 and the bench guard check it (AR-18) |
 | Size growth breaks the 1% bench guard | Low | Med | zero-cost rule and bench gates (AR-18) |
 | Debug (`-O0`, no section GC) images grow by the registry code on the 512 KB A500 | Med | Low | measured in the closing phase; release gates unaffected |
 | Changing waits shifts an existing FS-UAE gate | Low | Med | `make verify` runs every gate (AR-19) |

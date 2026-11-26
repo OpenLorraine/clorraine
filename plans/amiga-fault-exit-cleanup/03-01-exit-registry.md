@@ -26,8 +26,10 @@ exit(rc) from main return, cl_trap, cl_panic, break, or libnix ***Break
         └─► cl_exit_hook: phase 1 servers → 2 workers → 3 registry (reverse) → 4 chip state → 5 library bases
 ```
 
-`cl_trap` and `cl_panic` keep their text, order, and `exit(20)`; they add only the worker check
-([03-03](03-03-worker-faults.md)) and the walking-flag check (§Re-entry) (AR-2, AR-9 rule 10).
+`cl_trap` and `cl_panic` keep their text, order, and `exit(20)`. They add only the worker check
+([03-03](03-03-worker-faults.md)): one load and compare of a static. They gain no re-entry branch
+and reference no hook or registry code, so section GC keeps the hook out of programs that never
+register (§Re-entry) (AR-2, AR-9 rule 10, AR-18).
 
 ## Implementation Details
 
@@ -93,13 +95,16 @@ clean exit it prints nothing (AR-9 rule 10).
 
 ### Re-entry
 
-A fault, panic, or break while `cl_exiting` is set (a release function that traps E1, a fault in
-a release path) prints its own line as usual, calls `cl_exit_hook` to drain the remaining records
-(everything already released was popped, so nothing runs twice), and leaves with `_exit(20)`.
-libnix `_exit` re-runs its exit list, which calls `cl_exit_hook` again; the hook is idempotent
-because every phase pops before it acts (AR-9 rule 1; libnix `startup/ncrt0.S` and
-`nix/stdlib/atexit.c`, verified in planning). While `cl_exiting` is set, no shim wait includes
-the break bit ([03-04 §During the exit](03-04-ctrl-c.md#during-the-exit)).
+A fault or panic while the hook runs (a release function that traps E1, a fault in a release
+path) takes the unchanged `cl_trap`/`cl_panic` path: it prints its own line and calls
+`exit(20)`. libnix `exit` and `_exit` share one entry. That entry resets the stack and re-runs
+the current exit priority, and `__exitatexit` walks its list without unlinking, so the nested
+`exit` calls `cl_exit_hook` again. The re-run drains the remaining records. The hook is
+idempotent because every phase pops or marks before it acts, so nothing runs twice (AR-9 rule 1;
+libnix `startup/ncrt0.S:58-69,86-108` and `nix/stdlib/atexit.c:28-33`). `cl_trap` and `cl_panic`
+therefore never call or name `cl_exit_hook`; a direct call would link the whole hook into every
+program that has a fault site (AR-18, ST-9). `cl_exiting` is set for the whole hook run. While it
+is set, no shim wait includes the break bit ([03-04 §During the exit](03-04-ctrl-c.md#during-the-exit)).
 
 ### Library bases
 
@@ -131,7 +136,13 @@ the break bit ([03-04 §During the exit](03-04-ctrl-c.md#during-the-exit)).
   (a shim-internal list keyed by message pointer) (AR-9 rule 3, AR-15).
 - The message leaves the in-flight set when the program gets it back: `getMsg` returns it (as a
   reply on its reply port, or delivered to a program-owned port). From then on it is an owned
-  `Message` with its own record.
+  `Message` with its own record. A program-created message is recognised by leaving the
+  in-flight set, and its record uses its own thunk (AR-20).
+- Replying a program-created message is a hand-off. `cl_reply_msg`, whether called by the
+  program or by that record's exit thunk, removes the record and puts the message back in the
+  in-flight set before `ReplyMsg`. It is now queued on the program's own reply port, so the
+  port release below frees it (AR-21). A message from a foreign sender is replied as today and
+  never enters the set.
 - At exit, the `MsgPort` release first unlinks and frees every in-flight message still queued on
   that port (the program owns both ends; nobody else can reply) (AR-21). It then deletes the port
   unless an in-flight message still held by a foreign port names it as `mn_ReplyPort`. In that
@@ -150,8 +161,8 @@ shim (03-05 §Docs).
 
 ### Integration Points
 
-- Every acquire and release site of the 52 non-libc handle kinds
-  ([03-02](03-02-registration-sites.md)).
+- Every acquire and release site of the 52 registered `std.amiga` handle kinds; the 53rd,
+  `Task`, uses the worker phase ([03-02](03-02-registration-sites.md)).
 - `cl_trap`/`cl_panic` ([03-03](03-03-worker-faults.md), §Re-entry) and the break path
   ([03-04](03-04-ctrl-c.md)).
 
@@ -199,12 +210,12 @@ the executor confirms it builds warning-free on GCC and vbcc (AR-9 rule 2).
 | Side-record allocation fails at an acquire | Release the just-acquired resource; return the API's existing failure (null, or E1 where it already traps) | AR-9 rule 4 |
 | `atexit` install fails | Same as above, for the first acquisition | AR-9 rule 4 |
 | Library table full | Close the library; return NULL | AR-9 rule 4 |
-| A release traps during the walk | Print its line, drain, `_exit(20)`; hook idempotent | AR-9 rule 1 |
+| A release traps during the walk | Print its line and `exit(20)`; libnix re-runs the idempotent hook, which drains the rest | AR-9 rule 1 |
 | A release keeps its object (`p96CloseScreen`, `DeleteLayer` failure) | Its record is already popped; the object is leaked as today; walk continues | AR-9 rule 1 |
 | Port with an in-flight message held by a foreign port | Port and those messages stay allocated | AR-15 |
 
 ## Testing Requirements
 
-- Spec: ST-1..ST-9, ST-10..ST-13, ST-17 in [07](07-testing-strategy.md).
+- Spec: ST-1..ST-9 (including ST-3b), ST-10..ST-13, ST-17 in [07](07-testing-strategy.md).
 - Impl: registry list operations, pop-before-release, idempotent hook, `cl_lib_open` recording
   rules, in-flight set ([07 §Implementation Tests](07-testing-strategy.md#implementation-tests-edge-cases-internals)).

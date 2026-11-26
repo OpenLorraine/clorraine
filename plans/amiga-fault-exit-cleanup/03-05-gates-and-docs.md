@@ -22,6 +22,7 @@ ST-cases in [07](07-testing-strategy.md); this list only names the programs.
 | `lock-fault.clo` | vamos | `lockPath`, `pathInfo`; index fault | ST-1 |
 | `port-fault.clo` | vamos | `createMsgPort`, `createPublicPort`; division fault | ST-2 |
 | `message-fault.clo` | vamos | two own ports, `createMessage`, `putMsg` to own port; index fault | ST-3 |
+| `reply-fault.clo` | vamos | two own ports, `createMessage`, `putMsg`, `getMsg` on the destination, `replyMsg`; index fault before the reply is fetched | ST-3b |
 | `library-fault.clo` | vamos | `openLibrary("dos.library", 33)`; index fault | ST-4 |
 | `panic-after-acquire.clo` | vamos | `lockPath`; `panic("stop")` | ST-5 |
 | `assert-after-acquire.clo` | vamos | `lockPath`; failing `assert` | ST-6 |
@@ -34,7 +35,7 @@ ST-cases in [07](07-testing-strategy.md); this list only names the programs.
 | `break-timer.clo` | A500 | `addHandler`, `openTimer`; prints `waiting`; `timerWait` of 3000 ticks, then prints `done` | ST-15 |
 | `break-own-mask.clo` | A500 | prints `waiting`; `waitSignals(0x1000)`; prints `break bit` | ST-16 |
 | `clean-exit.clo` | A500 | `addHandler` without `removeHandler`, `openDiskFont`; returns 0 | ST-17 |
-| `worker-fault-unjoined.clo` | A500 | worker divides by zero; the parent then faults before joining | ST-18 |
+| `worker-fault-unjoined.clo` | A500 | `openTimer`; worker divides by zero; the parent calls `timerWait(timer, 50)`, then faults before joining | ST-18 |
 
 ## `vamos` leg
 
@@ -59,14 +60,28 @@ ST-cases in [07](07-testing-strategy.md); this list only names the programs.
 - **Walker.** `docker/scripts/fault-cleanup-walker.c` (test-only C, AR-20) prints one line. It
   takes the system state under `Forbid` and prints it after `Permit`:
   `<tag> vertb <servers on the VERTB chain> port <1 if "ClFaultCleanup" exists else 0> workers <tasks named "clorraine.worker" on TaskReady+TaskWait> view <sys when GfxBase->ActiView is &IntuitionBase->ViewLord, else other> windows <windows on the Workbench screen> diskfont <diskfont.library open count, 0 when not loaded>`.
-- **Startup-sequence** (`failat 100`). For each probe:
-  1. walker `before`;
-  2. the probe;
-  3. `IF FAIL` → `echo "rc fail"`;
-  4. walker `after`.
+- **Capture disk.** FS-UAE holds the HDF locked while it runs, so the HDF can be read only
+  after the run (`a500-diskfont-smoke.sh:131-137`). The gate therefore also mounts a blank
+  capture ADF, created per run with `xdftool`, in DF1 (`--floppy-drive-1`). DF0 stays empty, so
+  Kickstart 1.3 still boots the HDF; a disk in DF0 would come first in the boot order. Every
+  walker line, every probe's output, the `***Break` line, and the `rc fail` echo are redirected
+  to files on `DF1:`. The host greps the raw ADF while FS-UAE runs (the
+  `a500-gui-smoke.sh:185-197` pattern) and reads the files with `xdftool` after the run.
+- **Startup-sequence** (`failat 100`, on the HDF). For each probe:
+  1. walker `before`, written to `DF1:`;
+  2. the probe, with its output redirected to `DF1:`;
+  3. `IF FAIL` → `echo "rc fail"`, written to `DF1:`;
+  4. walker `after`, written to `DF1:`.
 
-  For the two break probes, the script sends `ctrl+c` to the FS-UAE window with `xdotool`
-  (the `a500-gui-smoke.sh` pattern) once the probe's `waiting` line appears in the capture.
+  Before each of the two break probes, the startup-sequence writes one line to the console
+  without redirection. That makes the boot CLI process, which runs the probe on 1.3, the
+  console's last user. The gate polls the capture ADF for the probe's `waiting` line, focuses
+  the FS-UAE window, and sends `ctrl+c` with `xdotool` (the `a500-gui-smoke.sh` focus-and-key
+  pattern) once. It does not retry: a stray second break could reach the next command. It then
+  waits, with a bound, for `***Break` (ST-15) or `break bit` (ST-16) to appear in the capture.
+  Break delivery to a probe with redirected output on Kickstart 1.3 is an unproven assumption.
+  The Phase 5 red phase (task 5.1.2, through ST-16's `break bit`) must show it before any
+  implementation; if it fails, stop and ask the user (AR-17).
   The gate fails on a timeout, a missing line, or any `before`/`after` mismatch.
 - **Make wiring.** A `Makefile` target `sdk-a500-fault-cleanup` is added, listed in `.PHONY` and
   in the `verify` recipe after `sdk-a500-exec`. The `AGENTS.md` command table and the verify row

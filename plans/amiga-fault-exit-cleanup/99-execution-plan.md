@@ -2,7 +2,7 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-26 09:52
+> **Last Updated**: 2026-11-26 11:22
 > **Progress**: 0/55 tasks (0%)
 > **CodeOps Artifact Schema**: 1
 
@@ -73,12 +73,12 @@ Rules for every task:
 
 ### Step 1.1: Specification tests
 
-**Reference**: [07](07-testing-strategy.md) ST-1..ST-9 · [03-05 §vamos leg](03-05-gates-and-docs.md#vamos-leg) · AR-7, AR-20
+**Reference**: [07](07-testing-strategy.md) ST-1..ST-9, ST-3b · [03-05 §vamos leg](03-05-gates-and-docs.md#vamos-leg) · AR-7, AR-20
 **Objective**: Express the `vamos` fault-cleanup behaviour before any shim change.
 
-- [ ] 1.1.1 [spec-author] Write the six `vamos` probes from ST-1..ST-6 — `examples/robustness/fault-cleanup/{lock,port,message,library}-fault.clo`, `panic-after-acquire.clo`, `assert-after-acquire.clo`
-- [ ] 1.1.2 [spec-author] Write the spec test for ST-1..ST-6, ST-8, ST-9 (both profiles, leak pattern, SDK skip) — `compiler/tests/amiga_fault_cleanup_spec_test.rs`
-- [ ] 1.1.3 [spec-author] Extend the fault leg per ST-7: both profiles, the leak pattern on every case, the six probes as cases, a corrected header count — `docker/scripts/run-fault-amiga.sh`
+- [ ] 1.1.1 [spec-author] Write the seven `vamos` probes from ST-1..ST-6 and ST-3b — `examples/robustness/fault-cleanup/{lock,port,message,reply,library}-fault.clo`, `panic-after-acquire.clo`, `assert-after-acquire.clo`
+- [ ] 1.1.2 [spec-author] Write the spec test for ST-1..ST-6, ST-3b, ST-8, ST-9 (both profiles, leak pattern, SDK skip) — `compiler/tests/amiga_fault_cleanup_spec_test.rs`
+- [ ] 1.1.3 [spec-author] Extend the fault leg per ST-7: both profiles, the leak pattern on every case, the seven probes as cases, a corrected header count — `docker/scripts/run-fault-amiga.sh`
 - [ ] 1.1.4 Red phase: run `make -C docker exec CMD="cargo test --workspace --test amiga_fault_cleanup_spec_test"` and `make run-fault-amiga`; record each failing ST and the justification for any that pass (ST-7, ST-8 per 07 §Red-phase expectations) in this task line
 
 ### Step 1.2: Implementation
@@ -87,8 +87,8 @@ Rules for every task:
 **Objective**: Registry, hook, re-entry, and the exec/DOS kinds.
 
 - [ ] 1.2.1 Implement `cl_res` and `cl_res_add`/`cl_res_remove`/`cl_res_track`/`cl_res_untrack` with the once-only hook install, per 03-01 §New Types, §New Functions — `compiler/runtime/shim_hosted_amiga.c`
-- [ ] 1.2.2 Implement `cl_exit_hook` (phase 3, pop-before-release, idempotent) and the `cl_exiting` re-entry path in `cl_trap`/`cl_panic`, per 03-01 §Exit phases, §Re-entry — `compiler/runtime/shim_hosted_amiga.c`
-- [ ] 1.2.3 Register the exec kinds `MsgPort`, `NewMessage`, `Message`, and the user `Library`, with the in-flight set and the port release rule, per 03-01 §Messages in flight and the 03-02 rows — `compiler/runtime/shim_hosted_amiga.c`
+- [ ] 1.2.2 Implement `cl_exit_hook` (phase 3, pop-before-release, idempotent under libnix's nested-exit re-run) and `cl_exiting`, per 03-01 §Exit phases, §Re-entry; `cl_trap`/`cl_panic` keep `exit(20)` and never name the hook — `compiler/runtime/shim_hosted_amiga.c`
+- [ ] 1.2.3 Register the exec kinds `MsgPort`, `NewMessage`, `Message`, and the user `Library`, with the in-flight set (including the reply hand-off of a program-created message) and the port release rule, per 03-01 §Messages in flight and the 03-02 rows — `compiler/runtime/shim_hosted_amiga.c`
 - [ ] 1.2.4 Register `Lock`, `PathInfo`, `VolumeInfo`, and `Device` per the 03-02 rows — `compiler/runtime/shim_hosted_amiga.c`
 - [ ] 1.2.5 Green phase: rerun the 1.1.4 commands; every ST in 1.1.2 and 1.1.3 passes (fix the implementation, never the test)
 
@@ -101,7 +101,7 @@ Rules for every task:
 - [ ] 1.3.3 Phase gate: `make check` and `make run-fault-amiga`
 
 **Deliverables**:
-- [ ] ST-1..ST-9 green on both profiles
+- [ ] ST-1..ST-9 and ST-3b green on both profiles
 - [ ] All verification passing
 
 **Test slices**: vamos fault cleanup (task), run-fault leg (release)
@@ -121,7 +121,7 @@ Rules for every task:
 **Reference**: [07](07-testing-strategy.md) ST-10..ST-13, ST-17 · [03-05 §A500 gate](03-05-gates-and-docs.md#a500-gate-sdk-a500-fault-cleanup) · AR-7, AR-17, AR-20
 **Objective**: The A500 gate exists and fails on the baseline.
 
-- [ ] 2.1.1 [spec-author] Write the walker fixture and the gate script, plus a `Makefile` target `sdk-a500-fault-cleanup` (not yet in `verify`) — `docker/scripts/fault-cleanup-walker.c`, `docker/scripts/a500-fault-cleanup-smoke.sh`, `Makefile`
+- [ ] 2.1.1 [spec-author] Write the walker fixture and the gate script (HDF boot plus the per-run capture ADF in DF1, per 03-05 §A500 gate), plus a `Makefile` target `sdk-a500-fault-cleanup` (not yet in `verify`) — `docker/scripts/fault-cleanup-walker.c`, `docker/scripts/a500-fault-cleanup-smoke.sh`, `Makefile`
 - [ ] 2.1.2 [spec-author] Write the probes for ST-10..ST-13 and ST-17, and their gate expectations — `examples/robustness/fault-cleanup/{handler,display,window,font}-fault.clo`, `clean-exit.clo`, `docker/scripts/a500-fault-cleanup-smoke.sh`
 - [ ] 2.1.3 Red phase: `make sdk-a500-fault-cleanup`; record the walker mismatches per ST in this task line
 
@@ -173,7 +173,7 @@ Rules for every task:
 - [ ] 3.2.3 Register the UI and net kinds and their bases — `compiler/runtime/shim_hosted_amiga_optional_ui.c`, `compiler/runtime/shim_hosted_amiga_optional_net.c`
 - [ ] 3.2.4 Register the services kinds and their bases; apply the ARexx in-flight rule — `compiler/runtime/shim_hosted_amiga_optional_services.c`
 - [ ] 3.2.5 Register the RTG kinds and their bases — `compiler/runtime/shim_hosted_amiga_optional_rtg.c`
-- [ ] 3.2.6 Green phase: ST-19 and ST-1..ST-9 pass
+- [ ] 3.2.6 Green phase: ST-19, ST-1..ST-9, and ST-3b pass
 
 ### Step 3.3: Implementation tests and hardening
 
@@ -210,7 +210,7 @@ Rules for every task:
 
 ### Step 4.3: Implementation tests and hardening
 
-- [ ] 4.3.1 Write impl tests that detection never reads `tc_UserData`, the worker path has no stdio or `exit`, and the line is printed before `RemTask`; update the join pins — `compiler/tests/amiga_fault_cleanup_impl_test.rs`, `compiler/tests/amiga_exec_impl_test.rs`
+- [ ] 4.3.1 Write impl tests that detection never reads `tc_UserData` and walks under `Forbid`, `cl_trap`/`cl_panic` never name `cl_exit_hook`, the worker path has no stdio or `exit`, and the record is marked reported before the line is printed and the line before `RemTask`; update the join pins — `compiler/tests/amiga_fault_cleanup_impl_test.rs`, `compiler/tests/amiga_exec_impl_test.rs`
 - [ ] 4.3.2 Phase gate: `make check`, `make sdk-a500-fault-cleanup`, `make sdk-a500-exec`
 
 **Deliverables**:
@@ -231,7 +231,7 @@ Rules for every task:
 **Reference**: [07](07-testing-strategy.md) ST-15, ST-16 · [03-04](03-04-ctrl-c.md) · AR-5, AR-11–13, AR-17
 
 - [ ] 5.1.1 [spec-author] Write the ST-15 and ST-16 probes and the `xdotool` Ctrl-C steps in the gate — `examples/robustness/fault-cleanup/break-timer.clo`, `break-own-mask.clo`, `docker/scripts/a500-fault-cleanup-smoke.sh`
-- [ ] 5.1.2 Red phase: `make sdk-a500-fault-cleanup`; record ST-15 failing (`done`, no `***Break`) and ST-16's pre-implementation pass with its justification
+- [ ] 5.1.2 Red phase: `make sdk-a500-fault-cleanup`; record ST-15 failing (`done`, no `***Break`) and ST-16's pre-implementation pass with its justification. ST-16's `break bit` proves that the console Ctrl-C reaches a probe with redirected output; if it does not appear, mark this task `[!]` and ask the user before any implementation (03-05 §A500 gate)
 
 ### Step 5.2: Implementation
 

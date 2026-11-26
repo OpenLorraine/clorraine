@@ -33,7 +33,7 @@ route and reaches the same hook (AR-11).
 
 | Site | Today | New wait | AR |
 |---|---|---|---|
-| `cl_window_next_event` (`shim_hosted_amiga.c:2922`) | `WaitPort` | loop: check break, `GetMsg`, `Wait(port bit \| CTRL_C)` | AR-12 |
+| `cl_window_next_event` (`shim_hosted_amiga.c:2922`) | `WaitPort` | only when `wait` is true: loop: check break, `GetMsg`, `Wait(port bit \| CTRL_C)`. A poll (`wait == false`) is not a wait and stays unchanged: it never checks the break | AR-12 |
 | `cl_wait_signals` (`:3061`, `waitSignals`) | `Wait(mask)` | the caller's mask includes the break bit: unchanged (`Wait(mask)`, the bit is returned). Otherwise: `Wait(mask \| CTRL_C)`, and a break exits | AR-13a |
 | Task join (`:3148`) | `Wait(join bit)` | `Wait(join bit \| CTRL_C)`. A recorded worker fault wins ([03-03 §Report at join](03-03-worker-faults.md#report-at-join)). Otherwise a break exits | AR-12, AR-13c |
 | `cl_device_do_io` (`:3518`, `deviceDoIO`) | `DoIO` | `SendIO`, `pending = 1`, `Wait(reply port bit \| CTRL_C)` until `CheckIO`, then `WaitIO`, `pending = 0`. On a break: abort, reap, break exit | AR-12 |
