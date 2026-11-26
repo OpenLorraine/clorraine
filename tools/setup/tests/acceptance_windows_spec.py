@@ -104,7 +104,7 @@ class WindowsAcceptanceSpecTests(unittest.TestCase):
             self.check(record)
         self.assertIn(key, str(caught.exception))
 
-    # ST-70: a valid Windows record passes, and so does the Linux fixture record.
+    # A valid Windows record passes, and so does the Linux fixture record.
     def test_should_accept_a_valid_windows_record(self) -> None:
         self.check(self.evidence)
 
@@ -121,7 +121,7 @@ class WindowsAcceptanceSpecTests(unittest.TestCase):
         finally:
             linux.tearDown()
 
-    # ST-71: each wrong Windows fact fails and names its key.
+    # Each wrong Windows fact fails and names its key.
     def test_should_reject_the_linux_rc24_pin_in_a_windows_record(self) -> None:
         self.assert_rejected(lambda record: record.update(toolchain={
             "tag": "v16.2-rc24",
@@ -138,7 +138,7 @@ class WindowsAcceptanceSpecTests(unittest.TestCase):
     def test_should_reject_an_unknown_platform(self) -> None:
         self.assert_rejected(lambda record: record.update(platform="macos"), "platform")
 
-    # ST-72: the record's version must be the candidate's archive version.
+    # The record's version must be the candidate's archive version.
     def test_should_reject_a_version_other_than_the_candidates(self) -> None:
         self.assert_rejected(lambda record: record.update(version="1.2.1"), "version")
 

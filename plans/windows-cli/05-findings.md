@@ -56,3 +56,13 @@
 | RV-101 | 6 | MINOR | tools/setup/install.ps1 | fixed |
 | RV-102 | 6 | MINOR | tools/setup/install.ps1 | fixed |
 | RV-103 | 6 | MINOR | plans/windows-cli/03-04-installer.md | fixed |
+| RV-701 | 7 | MAJOR | tools/setup/acceptance.ps1 | fixed |
+| RV-702 | 7 | MAJOR | tools/setup/acceptance.ps1 | fixed |
+| RV-703 | 7 | MINOR | tools/setup/pe_check.py | fixed |
+| RV-704 | 7 | MINOR | tools/setup/package.sh | fixed |
+| RV-705 | 7 | MINOR | tools/setup/package.sh | fixed |
+| RV-706 | 7 | MINOR | tools/setup/acceptance.ps1 | fixed |
+| RV-707 | 7 | MINOR | tools/setup/acceptance.ps1 | fixed |
+| RV-708 | 7 | MINOR | tools/setup/tests | fixed |
+| RV-709 | 7 | MINOR | tools/setup/tests | fixed |
+| RV-710 | 7 | MINOR | tools/setup/acceptance.py | fixed |

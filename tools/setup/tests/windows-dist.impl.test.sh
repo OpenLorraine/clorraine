@@ -85,7 +85,7 @@ a_leftover_pin_is_refused() {
     fixture
     local copy="$root/producer"
     mkdir -p "$copy"
-    cp "$package_script" "$repo/tools/setup/install.sh" "$copy/"
+    cp "$package_script" "$repo/tools/setup/install.sh" "$repo/tools/setup/pe_check.py" "$copy/"
     sed 's/^\$script:Version = .*/&\n$script:Extra = '"'"'@EXTRA_PIN@'"'"'/' "$repo/tools/setup/install.ps1" >"$copy/install.ps1"
     script="$copy/package.sh"
     check_status 1 "$(build --hello-amiga "$repo/examples/amiga/hello-intro.clo")" "leftover pin"
@@ -122,12 +122,66 @@ PY
     check_contains "$root/stderr" "exactly the release files" "extra-entry message"
 }
 
-# A Windows stage holding a symbolic link is refused.
+# A symbolic link is refused even at an allowed name.
 a_link_in_the_windows_stage_is_refused() {
     fixture
-    ln -s README.md "$wstage/LINK.md"
+    mv "$wstage/bin/clc.exe" "$root/clc.exe"
+    ln -s "$root/clc.exe" "$wstage/bin/clc.exe"
     check_status 1 "$(build)" "link in the stage"
-    check_contains "$root/stderr" "LINK.md" "link message"
+    check_contains "$root/stderr" "link in the Windows stage: bin/clc.exe" "link message"
+}
+
+# The version must be the one `--version` prints, not part of a longer one.
+a_longer_version_is_not_the_release_version() {
+    fixture
+    make_pe "$wstage/bin/clorraine.exe" 11.2.0
+    check_status 1 "$(build)" "version 11.2.0 for 1.2.0"
+    check_contains "$root/stderr" "bin/clorraine.exe does not carry the version 1.2.0" "longer-version message"
+}
+
+# Verification rebuilds install.ps1: a changed body or line end fails even
+# with every checked pin and SHA256SUMS rewritten.
+a_changed_installer_body_fails_verification() {
+    fixture
+    check_status 0 "$(build)" "package build"
+    printf 'Write-Host extra\r\n' >>"$output/install.ps1"
+    rewrite_sums
+    check_status 1 "$(run_package "$package_script" --verify --output "$output" --version 1.2.0)" "changed body"
+    check_contains "$root/stderr" "differs from the template" "changed-body message"
+}
+
+# Verification checks each zip entry's type, mode, and date and re-checks the
+# executables read from the zip.
+a_zip_entry_that_is_not_a_release_entry_fails_verification() {
+    local case
+    for case in elf link date; do
+        fixture
+        check_status 0 "$(build)" "package build ($case)"
+        python3 - "$output/$zip_name" "$case" <<'PY'
+import sys, zipfile
+path, case = sys.argv[1], sys.argv[2]
+source = zipfile.ZipFile(path)
+entries = [(info, source.read(info)) for info in source.infolist()]
+source.close()
+with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as target:
+    for info, data in entries:
+        if case == "elf" and info.filename.endswith("/bin/clc.exe"):
+            data = b"\x7fELF fixture"
+        if case == "link" and info.filename.endswith("/README.md"):
+            info.external_attr = 0o120777 << 16
+        if case == "date":
+            info.date_time = (2020, 1, 1, 0, 0, 0)
+        target.writestr(info, data)
+PY
+        local bytes digest
+        bytes="$(wc -c <"$output/$zip_name")"
+        digest="$(sha256sum "$output/$zip_name" | awk '{print $1}')"
+        sed -i -e "s/^\\\$script:ArchiveBytes = .*/\$script:ArchiveBytes = '$bytes'/" \
+            -e "s/^\\\$script:ArchiveSha256 = .*/\$script:ArchiveSha256 = '$digest'/" "$output/install.ps1"
+        rewrite_sums
+        check_status 1 "$(run_package "$package_script" --verify --output "$output" --version 1.2.0)" "zip entry ($case)"
+        check_contains "$root/stderr" "$zip_name entry" "zip-entry message ($case)"
+    done
 }
 
 the_zip_is_reproducible
@@ -138,4 +192,7 @@ a_leftover_pin_is_refused
 a_stale_powershell_pin_fails_verification
 an_extra_zip_entry_fails_verification
 a_link_in_the_windows_stage_is_refused
+a_longer_version_is_not_the_release_version
+a_changed_installer_body_fails_verification
+a_zip_entry_that_is_not_a_release_entry_fails_verification
 finish

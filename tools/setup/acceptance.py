@@ -36,6 +36,7 @@ TOOLCHAIN_PINS = {
     "windows": (48_065_003, "9dd6973539bb2d514fc1b1e6c0a107cac6f30a9c4076cf4014cbe13013c95512",
                 "the pinned rc24 Windows setup"),
 }
+FS_UAE_DOWNLOAD_VERSION = "3.2.35"
 FS_UAE_ZIP_BYTES = 49_123_213
 FS_UAE_ZIP_SHA256 = "b402e2802d518a085c878be96c5c0a656fa3dec57dcf0019d226f3285069063e"
 MINIMUM_GLIBC = (2, 38)
@@ -193,6 +194,8 @@ def _check_windows_fs_uae(value: object) -> None:
     entry = _keys(value, keys, "fs_uae")
     _check_fs_uae_version(entry["version"], "fs_uae.version")
     if source == "downloaded":
+        _require(entry["version"] == FS_UAE_DOWNLOAD_VERSION,
+                 f"fs_uae.version must be {FS_UAE_DOWNLOAD_VERSION} for the pinned download")
         _require(_integer(entry["bytes"], "fs_uae.bytes") == FS_UAE_ZIP_BYTES,
                  f"fs_uae download must be {FS_UAE_ZIP_BYTES} bytes")
         _require(_digest(entry["sha256"], "fs_uae.sha256") == FS_UAE_ZIP_SHA256,
@@ -216,7 +219,8 @@ def _check_windows_facts(entry: dict) -> None:
     _require(build >= MINIMUM_WINDOWS_BUILD,
              f"os_build {build} is older than Windows 11 ({MINIMUM_WINDOWS_BUILD})")
     hello = _keys(entry["host_hello"], HOST_HELLO_KEYS, "host_hello")
-    _text(hello["compiler"], "host_hello.compiler")
+    _require("gcc" in _text(hello["compiler"], "host_hello.compiler").lower(),
+             "host_hello.compiler must be GCC")
     _require(_text(hello["result"], "host_hello.result") == "ok",
              "host_hello.result must be ok")
     _require(entry["existing_registration"] == "reused",
