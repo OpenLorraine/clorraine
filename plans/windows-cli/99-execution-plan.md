@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-26 21:28
-> **Progress**: 41/75 tasks (55%)
+> **Last Updated**: 2026-11-26 21:48
+> **Progress**: 43/75 tasks (57%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -221,15 +221,15 @@ on Linux in this worktree; Windows runs go through the remote helper (AR-5, AR-2
 
 ## Phase 6: Installer toolchain, emulator, hellos, editor, starter
 
-> **Phase baseline tree**: _(recorded by exec-plan)_
+> **Phase baseline tree**: ef1514604663ca0efa3a6fefc687f3aae3685d6d
 > **Reasoning**: xhigh — the only privilege boundary (elevated rc24 step)
 
 ### Step 6.1: Specification tests
 
 **Reference**: 03-04 §Flow 4–8, §Elevated rc24 step · ST-50 – ST-58
 
-- [ ] 6.1.1 [spec-author] Write ST-50 – ST-58 — `tools/setup/tests/install.spec.test.ps1`
-- [ ] 6.1.2 Run on the Windows host and confirm they fail (red)
+- [x] 6.1.1 [spec-author] Write ST-50 – ST-58 — `tools/setup/tests/install.spec.test.ps1` ✅ (completed: 2026-11-26 21:48) — 9 cases; recording stubs for downloads, elevation, and the installed CLI
+- [x] 6.1.2 Run on the Windows host and confirm they fail (red) ✅ (completed: 2026-11-26 21:48) — all 9 fail on the missing behaviour (one harness defect fixed: an empty result unrolled to null); the 19 Phase 5 cases still pass
 
 ### Step 6.2: Implementation
 
