@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-26 19:58
-> **Progress**: 8/75 tasks (11%)
+> **Last Updated**: 2026-11-26 20:01
+> **Progress**: 12/75 tasks (16%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -100,13 +100,13 @@ on Linux in this worktree; Windows runs go through the remote helper (AR-5, AR-2
 
 **Reference**: 03-01
 
-- [ ] 2.2.1 Add `c_string_body` and use it in both `#line` writers — `compiler/src/codegen.rs`, `compiler/src/codegen/cleanup.rs`
-- [ ] 2.2.2 Add `native_syscalls_for`, guard the shim's syscall branches and `uintptr_t` — `compiler/src/clorraine/toolchain.rs`, `compiler/runtime/shim_freestanding.c`
-- [ ] 2.2.3 Run the spec suite — all of ST-3 – ST-8 pass (green)
+- [x] 2.2.1 Add `c_string_body` and use it in both `#line` writers — `compiler/src/codegen.rs`, `compiler/src/codegen/cleanup.rs` ✅ (completed: 2026-11-26 20:00)
+- [x] 2.2.2 Add `native_syscalls_for`, guard the shim's syscall branches and `uintptr_t` — `compiler/src/clorraine/toolchain.rs`, `compiler/runtime/shim_freestanding.c` ✅ (completed: 2026-11-26 20:00) — plus the shim's `offsetof` through `uintptr_t` (AR-56); MinGW `-Werror` builds and the corpus program's output matches on the Windows host
+- [x] 2.2.3 Run the spec suite — all of ST-3 – ST-8 pass (green) ✅ (completed: 2026-11-26 20:00) — 7/7; freestanding suite 17/17
 
 ### Step 2.3: Implementation tests and hardening
 
-- [ ] 2.3.1 Write escaping and predicate impl tests; update only the shim-text pins the AR-44 change moves — `compiler/tests/windows_cli_impl_test.rs`, existing pinned impl tests
+- [x] 2.3.1 Write escaping and predicate impl tests; update only the shim-text pins the AR-44 change moves — `compiler/tests/windows_cli_impl_test.rs`, existing pinned impl tests ✅ (completed: 2026-11-26 20:01) — 6/6; no existing test pins the changed shim text
 - [ ] 2.3.2 Phase gate — `make check IMAGE=clorraine-sdk:windows-cli`
 
 **Deliverables**:

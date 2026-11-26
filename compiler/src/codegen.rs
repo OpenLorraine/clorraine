@@ -811,7 +811,7 @@ impl<'a> Emitter<'a> {
     /// Writes a `#line` directive for a construct whose source is known.
     pub(super) fn emit_line_directive(&mut self, span: Span) {
         let line = self.line_of(span);
-        let path = self.path_of(span).to_owned();
+        let path = c_string_body(self.path_of(span));
         self.push(&format!("#line {line} \"{path}\""));
     }
 
@@ -1161,6 +1161,31 @@ impl<'a> Emitter<'a> {
 /// which can equal a user declaration's name, but they are emitted through the
 /// lifted path with their own signature. Occupying a declaration slot would
 /// let a lambda lowered first hand its body to the same-named user function.
+/// Escapes text for the inside of a C string literal, without the quotes.
+///
+/// `#line` directives carry source paths, and a path may hold a backslash
+/// (every Windows path), a double quote, or a control character. A backslash
+/// and a double quote are escaped with a backslash; every byte below 0x20 and
+/// 0x7F becomes a three-digit octal escape, so the next character can never
+/// extend it. All other bytes, including UTF-8 sequences, are kept, so a
+/// plain path is written exactly as given.
+///
+/// ```ignore
+/// assert_eq!(c_string_body("C:\\a\tb"), "C:\\\\a\\011b");
+/// ```
+pub(crate) fn c_string_body(text: &str) -> String {
+    let mut body = String::with_capacity(text.len());
+    for ch in text.chars() {
+        match ch {
+            '\\' => body.push_str("\\\\"),
+            '"' => body.push_str("\\\""),
+            '\u{0}'..='\u{1f}' | '\u{7f}' => body.push_str(&format!("\\{:03o}", ch as u32)),
+            other => body.push(other),
+        }
+    }
+    body
+}
+
 fn body_index(functions: &[ir::Function]) -> BTreeMap<String, BTreeMap<String, &ir::Function>> {
     let mut index: BTreeMap<String, BTreeMap<String, &ir::Function>> = BTreeMap::new();
     for function in functions.iter().filter(|f| f.lambda_site.is_none()) {
