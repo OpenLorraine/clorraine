@@ -1,6 +1,6 @@
 ## Ambiguity Register: Windows CLI and installer
 
-> **Status**: ✅ GATE PASSED — all 53 items resolved; AR-54 – AR-55 added and resolved during execution
+> **Status**: ✅ GATE PASSED — all 53 items resolved; AR-54 – AR-56 added and resolved during execution
 > **Last Updated**: 2026-11-26 18:30
 > **Evidence**: `spikes/08-windows-cli/README.md`
 
@@ -61,6 +61,7 @@
 | 53 | Naming & terminology | Flag for replacing another amiga-gcc registration (AR-11) | `-ReplaceToolchain` / interactive only | User accepted recommendation: `-ReplaceToolchain`; interactive runs ask (default No) | ✅ Resolved |
 | 54 | Technical (runtime) | The full image build cannot run: the toolchain stage clones vbcc's `master` branch, which upstream no longer has, and the build cache that AR-20 assumed is gone | Layer the committed Windows lines on the existing `clorraine-sdk:dev` / fix the toolchain stage now / add a Makefile target for the layered build | Layer the committed lines on `clorraine-sdk:dev` (see AR-54 resolution) | ✅ Resolved |
 | 55 | Technical (runtime) | The driver modules are private, so the integration spec suites cannot call `native_syscalls_for`, `validate_for`, `fs_uae_version_for`, or `launcher_for` as 03-01/03-02 name them | Re-export exactly those items from `clc::clorraine` and make `platform` public / make the whole modules public / move the spec cases into unit tests | Re-export the named items from `clc::clorraine`; `pub mod platform` (see AR-55 resolution) | ✅ Resolved |
+| 56 | Technical (runtime) | The freestanding shim's `offsetof` casts a pointer to `unsigned long`, which MinGW rejects under `-Werror` on Win64 (32-bit `long`), so freestanding programs using `offsetof` cannot build on Windows (W13) | Cast through the shim's `uintptr_t` / a second `_WIN64` branch for the macro / leave it as a limitation | Cast through `uintptr_t` (see AR-56 resolution) | ✅ Resolved |
 
 ## Coverage Map
 
@@ -200,4 +201,26 @@ Hardening: no challenger; internal crate, reversible
 Policy version: 1
 Root invocation ID: exec-windows-cli-20261126-1938
 Reopen triggers: a reviewer finds the facade exposes behaviour beyond the named functions
+```
+
+**AR-56 (runtime, auto-design):**
+
+```text
+Authority: AI — delegated by --auto-design
+Eligibility: necessary correction inside AR-23/AR-44 (freestanding works on Windows with minimal
+  shim guards); compiler/runtime mechanism only
+Objective: freestanding programs build under -Werror with MinGW on Win64; Linux and m68k compiled
+  output unchanged
+Decision: `#define offsetof(type, member) ((uintptr_t)&(((type *)0)->member))`
+Evidence: x86_64-w64-mingw32-gcc -std=c99 -ffreestanding -fno-builtin -Wall -Wextra -Werror on an
+  emitted program with `offsetof(Pair, b)` fails with -Werror=pointer-to-int-cast at the shim's
+  macro; `uintptr_t` is `unsigned long` on every non-_WIN64 target, so those builds are identical
+Rejected alternatives: a separate `_WIN64` branch for the macro (duplicates the guard the typedef
+  already carries); documenting a limitation (contradicts W13)
+Strongest counterargument: one more emitted-C text change on every target
+Confidence: High — would change if a target defines `uintptr_t` narrower than a pointer
+Hardening: no challenger; covered by the emission-integrity review of this phase
+Policy version: 1
+Root invocation ID: exec-windows-cli-20261126-1938
+Reopen triggers: a target where `uintptr_t` is not `unsigned long` outside _WIN64
 ```

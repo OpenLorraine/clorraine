@@ -23,13 +23,19 @@
 /* The generated cast from a raw pointer to an integer names the standard
  * pointer-sized integer. The freestanding shim includes no header, so it
  * supplies the C99 spelling here; on m68k `unsigned long` is 32-bit, matching
- * the profile's `usize`. */
+ * the profile's `usize`. 64-bit Windows keeps `long` at 32 bits, so a pointer
+ * needs `unsigned long long` there. */
+#if defined(_WIN64)
+typedef unsigned long long uintptr_t;
+#else
 typedef unsigned long uintptr_t;
+#endif
 
 /* The freestanding shim includes no header, so the generated `offsetof`
  * spelling needs the C99 macro here. The member is never evaluated; the
- * address arithmetic is a compile-time constant. */
-#define offsetof(type, member) ((unsigned long)&(((type *)0)->member))
+ * address arithmetic is a compile-time constant. The address goes through the
+ * pointer-sized integer, so 64-bit Windows does not narrow a pointer. */
+#define offsetof(type, member) ((uintptr_t)&(((type *)0)->member))
 
 /* --- portable runtime ---------------------------------------------------- */
 
@@ -120,7 +126,7 @@ static inline void cl_exit(int code)
     }
 }
 
-#elif defined(__x86_64__)
+#elif defined(__x86_64__) && defined(__linux__)
 
 static inline void cl_write_bytes(int fd, const void *data, unsigned long count)
 {
@@ -142,7 +148,7 @@ static inline void cl_exit(int code)
     }
 }
 
-#elif defined(__aarch64__)
+#elif defined(__aarch64__) && defined(__linux__)
 
 static inline void cl_write_bytes(int fd, const void *data, unsigned long count)
 {

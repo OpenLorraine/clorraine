@@ -326,7 +326,7 @@ impl<'a> Emitter<'a> {
             return;
         }
         let line = self.sources.location(span.file, last as usize).line;
-        let path = self.path_of(span).to_owned();
+        let path = super::c_string_body(self.path_of(span));
         self.push(&format!("#line {line} \"{path}\""));
     }
 

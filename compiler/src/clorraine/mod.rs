@@ -23,6 +23,8 @@ mod run;
 mod setup;
 mod toolchain;
 
+pub use toolchain::native_syscalls_for;
+
 use std::ffi::OsStr;
 
 use crate::diag::{format_error, format_from_args, registry, DiagnosticFormat};

@@ -208,11 +208,27 @@ pub fn tool(profile: Profile) -> Tool {
 /// True when the runtime shim has a hand-written syscall layer for this host.
 ///
 /// The freestanding host run uses raw `write`/`exit` syscalls only on the
-/// architectures the shim covers; every other host falls back to the platform
-/// C runtime. Keeping the answer in one function makes the fallback a single
+/// hosts the shim covers; every other host falls back to the platform C
+/// runtime. Keeping the answer in one function makes the fallback a single
 /// branch instead of a scatter of `cfg!` checks.
 pub fn native_syscalls() -> bool {
-    cfg!(any(target_arch = "x86_64", target_arch = "aarch64"))
+    native_syscalls_for(std::env::consts::OS, std::env::consts::ARCH)
+}
+
+/// True when the shim's raw syscall layer serves `target_os` on `target_arch`.
+///
+/// The layer issues Linux system call numbers, so only Linux on x86-64 or
+/// AArch64 qualifies; the same architectures on Windows or macOS use other
+/// numbers and take the C-runtime fallback. The names are the
+/// `std::env::consts` spellings.
+///
+/// ```
+/// use clc::clorraine::native_syscalls_for;
+/// assert!(native_syscalls_for("linux", "x86_64"));
+/// assert!(!native_syscalls_for("windows", "x86_64"));
+/// ```
+pub fn native_syscalls_for(target_os: &str, target_arch: &str) -> bool {
+    target_os == "linux" && matches!(target_arch, "x86_64" | "aarch64")
 }
 
 /// The C compiler that links a profile's host-run artifact, if it has one.
