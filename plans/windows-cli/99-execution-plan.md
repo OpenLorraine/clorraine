@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-26 20:43
-> **Progress**: 24/75 tasks (32%)
+> **Last Updated**: 2026-11-26 20:53
+> **Progress**: 26/75 tasks (35%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -156,15 +156,15 @@ on Linux in this worktree; Windows runs go through the remote helper (AR-5, AR-2
 
 ## Phase 4: Language server and editor
 
-> **Phase baseline tree**: _(recorded by exec-plan)_
+> **Phase baseline tree**: 1134422ca650e54a711fe6d15a12445d618d0628
 > **Reasoning**: high — a server/client contract on paths; silent-skip risk in the dirty-buffer guard
 
 ### Step 4.1: Specification tests
 
 **Reference**: 03-03 · ST-31 – ST-37 · AR-38
 
-- [ ] 4.1.1 [spec-author] Write ST-31 – ST-35 — `compiler/tests/windows_cli_spec_test.rs`; ST-36, ST-37 — `tools/vscode/test/windows.spec.test.ts`
-- [ ] 4.1.2 Run both suites and confirm ST-31 – ST-37 fail (red)
+- [x] 4.1.1 [spec-author] Write ST-31 – ST-35 — `compiler/tests/windows_cli_spec_test.rs`; ST-36, ST-37 — `tools/vscode/test/windows.spec.test.ts` ✅ (completed: 2026-11-26 20:53)
+- [x] 4.1.2 Run both suites and confirm ST-31 – ST-37 fail (red) ✅ (completed: 2026-11-26 20:53) — Rust: `parse_for`/`from_path_for`/`normalize_for` unresolved; extension: `out/paths.js` missing
 
 ### Step 4.2: Implementation
 
