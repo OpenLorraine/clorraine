@@ -257,6 +257,21 @@ finding's Verdict line and in `verification/verdicts-9.2.*.md`.
 | ST-11 | every Critical escalated; the Phase 9 upgrades (ASM-WS2-001, ASM-WS5-016) and the downgrade (ASM-WS5-003) recorded and told to the user |
 | ST-16 | dispatch and reasoning lines are medium, high, or xhigh |
 
+## Phase 10 gate (10.3.7)
+
+| Case | Result |
+|------|--------|
+| Task verify | drift check PASS |
+| ST-1..ST-9, ST-11 | as at the Phase 9 gate; the report review changed titles and summaries only (RV-002, RV-009, RV-010) |
+| ST-10 | the report's ten sections; §4 = the 58 surviving rows; DEF-582..DEF-612 map one-to-one to the 31 surviving Critical/Major findings (ST-10 checklist in the report) |
+| ST-12 | every measured quantity cites its record (review RV-006 resolved) |
+| ST-13 | the C references match their goldens on every lens (Phase 0 matrix, unchanged) |
+| ST-14, ST-15 | patched-C estimates and 68020 labels unchanged since their phase gates |
+| ST-16 | dispatch and reasoning lines are medium, high, or xhigh |
+| ST-17 | the approved list exists on `OpenLorraine/clorraine`: 14 theme parents (#40–#53), 34 finding issues as sub-issues of their themes (#54–#87), 7 tracking issues (#88–#94), comments on #20 and #15; every issue names its ASM ID (and DEF ID where it has one); the DEF rows, findings, ledger, and report appendix carry the issue numbers; labels per 03-04 |
+| ST-18 | `tools/assessment/README.md` documents the full, scoped, and delta modes; `drift-check.sh` and `measure.py` take the plan folder and baseline SHA; `template/` and `ref/` present; `.opencode/skills/clorraine-assessment/SKILL.md` (22 lines) force-tracked |
+| Roadmap | PLAN-47 set to Done; progress line updated |
+
 ## Report review
 
 Task 10.3.1: independent `correctness-reviewer` review of `10-assessment-report.md`,

@@ -1,7 +1,7 @@
 # Independent Assessment of Clorraine
 
 > **Feature**: A deep, strict, evidence-based assessment of the compiler, C codegen, optimizer question, runtime shims, standard library, and performance, delivered as one report that feeds later remediation plans
-> **Status**: Planning Complete — preflighted; execution starts with the user's confirmation of a settled tree (AR #7)
+> **Status**: Complete — 2026-11-26; report [10-assessment-report.md](10-assessment-report.md), ledger [05-findings.md](05-findings.md); issues #40–#94
 > **Created**: 2026-11-25
 > **Implements**: — (standalone plan; no RD)
 > **CodeOps Artifact Schema**: 1
