@@ -161,6 +161,48 @@ pub fn host_compilers(os: HostOs, override_cc: Option<&OsStr>) -> Vec<OsString> 
     names.iter().map(OsString::from).collect()
 }
 
+/// The `PATH` a toolchain program runs with, or `None` to keep the caller's.
+///
+/// A Windows compiler driver starts helper programs from other folders (the
+/// rc24 `cc1`, `as`, and `collect2`), and those load DLLs that only the
+/// driver's own folder holds. Windows looks for a program's DLLs in its own
+/// folder and on `PATH`, so a program named by a path gets its folder first on
+/// `PATH`. A bare name such as `gcc`, and every Unix command, keeps the
+/// caller's `PATH`.
+///
+/// ```
+/// use clc::clorraine::platform::{tool_search_path, HostOs};
+/// use std::ffi::{OsStr, OsString};
+/// assert_eq!(
+///     tool_search_path(HostOs::Windows, OsStr::new(r"C:\tc\bin\gcc.exe"), Some(OsStr::new(r"C:\Windows"))),
+///     Some(OsString::from(r"C:\tc\bin;C:\Windows"))
+/// );
+/// assert_eq!(tool_search_path(HostOs::Unix, OsStr::new("/tc/bin/gcc"), None), None);
+/// ```
+pub fn tool_search_path(os: HostOs, program: &OsStr, current: Option<&OsStr>) -> Option<OsString> {
+    if !matches!(os, HostOs::Windows) {
+        return None;
+    }
+    let text = program.to_string_lossy();
+    let folder = &text[..text.rfind(['\\', '/'])?];
+    if folder.is_empty() {
+        return None;
+    }
+    let mut path = OsString::from(folder);
+    if let Some(current) = current.filter(|current| !current.is_empty()) {
+        path.push(";");
+        path.push(current);
+    }
+    Some(path)
+}
+
+/// Puts a Windows toolchain program's folder first on its `PATH`.
+pub fn prepare_tool_command(command: &mut std::process::Command, program: &OsStr) {
+    if let Some(path) = tool_search_path(HostOs::current(), program, std::env::var_os("PATH").as_deref()) {
+        command.env("PATH", path);
+    }
+}
+
 /// The hint printed when no host C compiler is found.
 pub fn missing_compiler_hint(os: HostOs) -> &'static str {
     match os {

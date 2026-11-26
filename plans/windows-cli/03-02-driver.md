@@ -94,3 +94,12 @@ The existing functions keep their signatures and call these with `HostOs::curren
 ## Testing Requirements
 - ST-9 – ST-30 in [07-testing-strategy.md](07-testing-strategy.md); every Windows branch runs on
   Linux through `HostOs::Windows`.
+
+## Toolchain DLL search (found in Windows acceptance)
+
+The rc24 helper programs (`cc1`, `as`, `collect2`) live outside `bin` but load
+`bin\libwinpthread-1.dll`. Windows finds a program's DLLs in its own folder and on `PATH`, so on a
+machine without another copy on `PATH` every rc24 compile exits silently with
+`STATUS_DLL_NOT_FOUND`. Every driver spawn of a toolchain program named by a path (the version
+check, the setup probe, the build, and the emulator wrapper compile) puts that program's folder
+first on the child's `PATH` (`platform::tool_search_path`); bare names and Linux are unchanged.

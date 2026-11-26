@@ -47,7 +47,9 @@ pub(super) struct Storage {
 /// The command line is pinned: a different runtime or warning set would make a
 /// green guest run mean something different from the accepted recipe.
 pub(super) fn compile_wrapper(compiler: &Path, source: &Path, runner: &Path) -> Result<(), String> {
-    let output = Command::new(compiler)
+    let mut command = Command::new(compiler);
+    platform::prepare_tool_command(&mut command, compiler.as_os_str());
+    let output = command
         .args([
             "-std=c99",
             "-mcrt=nix20",

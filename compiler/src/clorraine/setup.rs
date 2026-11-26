@@ -407,6 +407,7 @@ fn check_glibc() -> Result<(), SetupError> {
 /// Returns the compiler's first `--version` line.
 fn compiler_version(compiler: &Path) -> Result<String, SetupError> {
     let mut command = Command::new(compiler);
+    platform::prepare_tool_command(&mut command, compiler.as_os_str());
     command.arg("--version");
     let output = run_limited(command, Duration::from_secs(10)).map_err(|cause| {
         error(
@@ -457,6 +458,7 @@ fn probe(compiler: &Path) -> Result<(), SetupError> {
     for runtime in ["nix20", "nix13"] {
         let output = root.join(format!("probe-{runtime}"));
         let mut command = Command::new(compiler);
+        platform::prepare_tool_command(&mut command, compiler.as_os_str());
         command
             .arg("-std=c99")
             .arg(format!("-mcrt={runtime}"))
