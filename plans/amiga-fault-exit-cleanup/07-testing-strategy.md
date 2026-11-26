@@ -72,7 +72,7 @@ field for field, apart from the tag ([03-05 §A500 gate](03-05-gates-and-docs.md
 |---|---|---|---|
 | ST-10 | `handler-fault.clo`: `addHandler(tick)`, `createPublicPort("ClFaultCleanup")`, index fault | `error E11211: index out of range`, then `rc fail`; walker equality (`vertb` and `port 0` unchanged) | FR-1, AR-1, AR-8; exec `AddIntServer` autodoc |
 | ST-11 | `display-fault.clo`: two `newBitmap`, `openDisplay`, `displayFlip`, index fault | `error E11211: index out of range`, `rc fail`; walker equality (`view sys`) | FR-1, AR-1; graphics `LoadView` autodoc |
-| ST-12 | `window-fault.clo`: `openWorkbenchWindow`, index fault | `error E11211: index out of range`, `rc fail`; walker equality (`windows` unchanged) | FR-1, AR-1 |
+| ST-12 | `window-fault.clo`: `openWorkbenchWindow`, `openConsole(window, 0)` left open, index fault | `error E11211: index out of range`, `rc fail`; walker equality (`windows` unchanged: the console device closes first, so its window reference no longer defers the window close) | FR-1, AR-1; Phase 1 review ruling SR-002 |
 | ST-13 | `font-fault.clo`: `openDiskFont` of the diskfont gate's font, index fault | `error E11211: index out of range`, `rc fail`; walker equality (`diskfont` open count unchanged) | FR-1, AR-1, AR-9 rule 9 |
 | ST-14 | `worker-fault.clo`: a `createTask` worker divides by zero; the parent joins it | `error E11210: integer division by zero`, `rc fail`; walker equality (`workers 0`); the gate goes on to the next probe | FR-3, AR-3; RKM: DOS calls need a Process |
 | ST-15 | `break-timer.clo`: `addHandler(tick)`, `openTimer`, prints `waiting`, `timerWait(timer, 3000)`; the gate sends Ctrl-C after `waiting` | `***Break`, `rc fail`; no `done` line; walker equality | FR-4, AR-5, AR-11, AR-12 |

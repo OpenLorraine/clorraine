@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-26 11:22
-> **Progress**: 0/55 tasks (0%)
+> **Last Updated**: 2026-11-26 12:40
+> **Progress**: 12/55 tasks (22%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -56,6 +56,11 @@ behaviour.
 > Timestamps come from `date '+%Y-%m-%d %H:%M'` — never invented. Failure to keep the marks
 > current means progress is invisible after crashes, context resets, or session handoffs.
 
+> **Push hold (Phase 1 review ruling SR-001, 2026-11-26):** from Phase 1 until Phase 3 is green,
+> a fault on `hosted-amiga` deletes ports still lent to an AppIcon, AppWindow, AppMenuItem,
+> commodity broker, or pending ARexx packet, because those holders register only in Phase 3.
+> Phases 1 and 2 are committed locally; nothing is pushed or released until Phase 3 passes.
+
 Rules for every task:
 - Source, tests, and doc comments restate rationale in plain language. They never cite AR/ST/ASM/
   DEF identifiers or `plans/` (AGENTS.md).
@@ -67,7 +72,8 @@ Rules for every task:
 
 ## Phase 1: Registry, exit hook, exec and DOS kinds
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill)_
+> **Phase baseline tree**: aa00e5fe795571c2e4a9d53ab0ce3fed7b833b8f (HEAD `5f283e71`; bench base for 6.1.4: `5a815590`, the preflight commit, same code)
+> **Scope mode**: strict · **Expected modification set**: `examples/robustness/fault-cleanup/`, `compiler/tests/amiga_fault_cleanup_{spec,impl}_test.rs`, `compiler/tests/amiga_exec_impl_test.rs`, `docker/scripts/run-fault-amiga.sh`, `compiler/runtime/shim_hosted_amiga.c`, this plan folder, `plans/00-roadmap.md`
 > **Reasoning**: xhigh — a new exit mechanism on the fault path of every hosted-amiga program;
 > re-entry and ordering hazards.
 
@@ -76,33 +82,33 @@ Rules for every task:
 **Reference**: [07](07-testing-strategy.md) ST-1..ST-9, ST-3b · [03-05 §vamos leg](03-05-gates-and-docs.md#vamos-leg) · AR-7, AR-20
 **Objective**: Express the `vamos` fault-cleanup behaviour before any shim change.
 
-- [ ] 1.1.1 [spec-author] Write the seven `vamos` probes from ST-1..ST-6 and ST-3b — `examples/robustness/fault-cleanup/{lock,port,message,reply,library}-fault.clo`, `panic-after-acquire.clo`, `assert-after-acquire.clo`
-- [ ] 1.1.2 [spec-author] Write the spec test for ST-1..ST-6, ST-3b, ST-8, ST-9 (both profiles, leak pattern, SDK skip) — `compiler/tests/amiga_fault_cleanup_spec_test.rs`
-- [ ] 1.1.3 [spec-author] Extend the fault leg per ST-7: both profiles, the leak pattern on every case, the seven probes as cases, a corrected header count — `docker/scripts/run-fault-amiga.sh`
-- [ ] 1.1.4 Red phase: run `make -C docker exec CMD="cargo test --workspace --test amiga_fault_cleanup_spec_test"` and `make run-fault-amiga`; record each failing ST and the justification for any that pass (ST-7, ST-8 per 07 §Red-phase expectations) in this task line
+- [x] 1.1.1 [spec-author] Write the seven `vamos` probes from ST-1..ST-6 and ST-3b — `examples/robustness/fault-cleanup/{lock,port,message,reply,library}-fault.clo`, `panic-after-acquire.clo`, `assert-after-acquire.clo` ✅ (completed: 2026-11-26 11:51; written inline, no spec-test-author agent in this session; all seven emit with zero diagnostics and build `-Werror` on nix20 and nix13; on `vamos` each prints the ST first line with rc 20 and a leak line)
+- [x] 1.1.2 [spec-author] Write the spec test for ST-1..ST-6, ST-3b, ST-8, ST-9 (both profiles, leak pattern, SDK skip) — `compiler/tests/amiga_fault_cleanup_spec_test.rs` ✅ (completed: 2026-11-26 11:55; builds warning-free; red run recorded in 1.1.4)
+- [x] 1.1.3 [spec-author] Extend the fault leg per ST-7: both profiles, the leak pattern on every case, the seven probes as cases, a corrected header count — `docker/scripts/run-fault-amiga.sh` ✅ (completed: 2026-11-26 11:56; 15 cases × 2 profiles; `bash -n` clean; behaviour shown by the 1.1.4 run)
+- [x] 1.1.4 Red phase: run `make -C docker exec CMD="cargo test --workspace --test amiga_fault_cleanup_spec_test"` and `make run-fault-amiga`; record each failing ST and the justification for any that pass (ST-7, ST-8 per 07 §Red-phase expectations) in this task line ✅ (completed: 2026-11-26 11:56). Red: spec test 8 failed, 1 passed — ST-1, ST-2, ST-3, ST-3b, ST-4, ST-5, ST-6 fail on the leak assertion (`mem_alloc:WARNING: orphan`; ST-4 also `can't expunge 'dos.library'`) on both profiles; ST-9 fails because `lock-fault` links neither `cl_exit_hook` nor `atexit` (hello already links neither). `make run-fault-amiga`: the 7 new cases fail with leak lines on both profiles. Passing guards: ST-7 — the 8 existing faults acquire nothing, keep their first line and exit 20, and show no leak line on both profiles (the `hosted-amiga-13` leg and the leak check are new); ST-8 — the clean `exec-self-test` and `hamurabi` transcripts already match on both profiles, so the test guards that the hook adds no output
 
 ### Step 1.2: Implementation
 
 **Reference**: [03-01](03-01-exit-registry.md) · [03-02 §Base shim](03-02-registration-sites.md#base-shim--both-hosted-profiles-shim_hosted_amigac) · AR-1, AR-2, AR-8, AR-9, AR-15, AR-18, AR-21
 **Objective**: Registry, hook, re-entry, and the exec/DOS kinds.
 
-- [ ] 1.2.1 Implement `cl_res` and `cl_res_add`/`cl_res_remove`/`cl_res_track`/`cl_res_untrack` with the once-only hook install, per 03-01 §New Types, §New Functions — `compiler/runtime/shim_hosted_amiga.c`
-- [ ] 1.2.2 Implement `cl_exit_hook` (phase 3, pop-before-release, idempotent under libnix's nested-exit re-run) and `cl_exiting`, per 03-01 §Exit phases, §Re-entry; `cl_trap`/`cl_panic` keep `exit(20)` and never name the hook — `compiler/runtime/shim_hosted_amiga.c`
-- [ ] 1.2.3 Register the exec kinds `MsgPort`, `NewMessage`, `Message`, and the user `Library`, with the in-flight set (including the reply hand-off of a program-created message) and the port release rule, per 03-01 §Messages in flight and the 03-02 rows — `compiler/runtime/shim_hosted_amiga.c`
-- [ ] 1.2.4 Register `Lock`, `PathInfo`, `VolumeInfo`, and `Device` per the 03-02 rows — `compiler/runtime/shim_hosted_amiga.c`
-- [ ] 1.2.5 Green phase: rerun the 1.1.4 commands; every ST in 1.1.2 and 1.1.3 passes (fix the implementation, never the test)
+- [x] 1.2.1 Implement `cl_res` and `cl_res_add`/`cl_res_remove`/`cl_res_track`/`cl_res_untrack` with the once-only hook install, per 03-01 §New Types, §New Functions — `compiler/runtime/shim_hosted_amiga.c` ✅ (completed: 2026-11-26 12:09; `make check` 4414 passed)
+- [x] 1.2.2 Implement `cl_exit_hook` (phase 3, pop-before-release, idempotent under libnix's nested-exit re-run) and `cl_exiting`, per 03-01 §Exit phases, §Re-entry; `cl_trap`/`cl_panic` keep `exit(20)` and never name the hook — `compiler/runtime/shim_hosted_amiga.c` ✅ (completed: 2026-11-26 12:09; mechanical correction: `cl_exit_hook` has external linkage instead of `static`, because the Amiga hunk linker drops local symbols and ST-9 reads the linked program's symbol table; section GC still drops it from hello)
+- [x] 1.2.3 Register the exec kinds `MsgPort`, `NewMessage`, `Message`, and the user `Library`, with the in-flight set (including the reply hand-off of a program-created message) and the port release rule, per 03-01 §Messages in flight and the 03-02 rows — `compiler/runtime/shim_hosted_amiga.c` ✅ (completed: 2026-11-26 12:09; refinement within AR-8's storage rule: a fetched own message is a shim wrapper, so it is recorded through its embedded node (no side record, no allocation failure); a foreign one gets a side record. The exit release of a held own message frees it directly, since the program owns both ends; replying it would only requeue it on the own reply port first. `cl_res_untrack` returns whether a record was found, which `cl_reply_msg` uses to tell foreign from own)
+- [x] 1.2.4 Register `Lock`, `PathInfo`, `VolumeInfo`, and `Device` per the 03-02 rows — `compiler/runtime/shim_hosted_amiga.c` ✅ (completed: 2026-11-26 12:09; Device also registered here, per the 03-02 base-shim row)
+- [x] 1.2.5 Green phase: rerun the 1.1.4 commands; every ST in 1.1.2 and 1.1.3 passes (fix the implementation, never the test) ✅ (completed: 2026-11-26 12:09; spec test 9/9 on both profiles; `make run-fault-amiga` all fifteen cases on both profiles)
 
 ### Step 1.3: Implementation tests and hardening
 
 **Reference**: [07 §Implementation Tests](07-testing-strategy.md#implementation-tests-edge-cases-internals)
 
-- [ ] 1.3.1 Write impl tests for the registry operations, hook phase order, pop-before-release, and the phase-1 kind registrations; update only the intentionally changed pins — `compiler/tests/amiga_fault_cleanup_impl_test.rs`, `compiler/tests/amiga_exec_impl_test.rs`
-- [ ] 1.3.2 Cross-check with the existing m68k corpus: `make corpus-amiga` (GCC and vbcc build-only legs warning-free)
-- [ ] 1.3.3 Phase gate: `make check` and `make run-fault-amiga`
+- [x] 1.3.1 Write impl tests for the registry operations, hook phase order, pop-before-release, and the phase-1 kind registrations; update only the intentionally changed pins — `compiler/tests/amiga_fault_cleanup_impl_test.rs`, `compiler/tests/amiga_exec_impl_test.rs` ✅ (completed: 2026-11-26 12:11; 9 cases pass; mutation check: dropping the untrack in `cl_dos_unlock` fails the normal-release case; no existing pin changed)
+- [x] 1.3.2 Cross-check with the existing m68k corpus: `make corpus-amiga` (GCC and vbcc build-only legs warning-free) ✅ (completed: 2026-11-26 12:12; GCC and vbcc build-only legs warning-free; all portable programs match)
+- [x] 1.3.3 Phase gate: `make check` and `make run-fault-amiga` ✅ (completed: 2026-11-26 12:17; `make check` 4423 passed; `make run-fault-amiga` all fifteen on both profiles)
 
 **Deliverables**:
-- [ ] ST-1..ST-9 and ST-3b green on both profiles
-- [ ] All verification passing
+- [x] ST-1..ST-9 and ST-3b green on both profiles
+- [x] All verification passing
 
 **Test slices**: vamos fault cleanup (task), run-fault leg (release)
 **Task verify**: `make check` — 4405 tests observed 2026-11-26
@@ -171,7 +177,7 @@ Rules for every task:
 - [ ] 3.2.1 Register the 2.0+ kinds and route their bases through `cl_lib_open` — `compiler/runtime/shim_hosted_amiga_20.c`
 - [ ] 3.2.2 Register the `_optional.c` kinds and route its bases through `cl_lib_open` (`UtilityBase` per 03-01 §Library bases) — `compiler/runtime/shim_hosted_amiga_optional.c`
 - [ ] 3.2.3 Register the UI and net kinds and their bases — `compiler/runtime/shim_hosted_amiga_optional_ui.c`, `compiler/runtime/shim_hosted_amiga_optional_net.c`
-- [ ] 3.2.4 Register the services kinds and their bases; apply the ARexx in-flight rule — `compiler/runtime/shim_hosted_amiga_optional_services.c`
+- [ ] 3.2.4 Register the services kinds and their bases; apply the ARexx in-flight rule, including the base-shim "port still in use" mark that keeps a pending packet's reply port (03-01 §Messages in flight) — `compiler/runtime/shim_hosted_amiga_optional_services.c`, `compiler/runtime/shim_hosted_amiga.c`
 - [ ] 3.2.5 Register the RTG kinds and their bases — `compiler/runtime/shim_hosted_amiga_optional_rtg.c`
 - [ ] 3.2.6 Green phase: ST-19, ST-1..ST-9, and ST-3b pass
 

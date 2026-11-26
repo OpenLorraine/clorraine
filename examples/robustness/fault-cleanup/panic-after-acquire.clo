@@ -1,0 +1,13 @@
+// Fault-exit cleanup probe: a DOS lock is live when the program panics. The
+// panic still skips every drop, but the runtime must release the lock at exit.
+module robustness.fault_cleanup.panic_after_acquire;
+
+import { Lock, lockPath } from std.amiga.dos;
+
+func main(): i32 {
+    let lock: Lock? = lockPath("");
+    if (lock == null) {
+        return 1;
+    }
+    panic("stop");
+}

@@ -29,7 +29,7 @@ ST-cases in [07](07-testing-strategy.md); this list only names the programs.
 | `utility-fault.clo` | vamos, `hosted-amiga` only | `newTagList`, `currentDateStamp`, `createSemaphore`; index fault | ST-19 |
 | `handler-fault.clo` | A500 | `addHandler`, `createPublicPort("ClFaultCleanup")`; index fault | ST-10 |
 | `display-fault.clo` | A500 | two `newBitmap`, `openDisplay`, `displayFlip`; index fault | ST-11 |
-| `window-fault.clo` | A500 | `openWorkbenchWindow`; index fault | ST-12 |
+| `window-fault.clo` | A500 | `openWorkbenchWindow`, `openConsole` on it (left open); index fault | ST-12 |
 | `font-fault.clo` | A500 | `openDiskFont` (the font the diskfont gate uses); index fault | ST-13 |
 | `worker-fault.clo` | A500 | worker divides by zero; parent joins | ST-14 |
 | `break-timer.clo` | A500 | `addHandler`, `openTimer`; prints `waiting`; `timerWait` of 3000 ticks, then prints `done` | ST-15 |

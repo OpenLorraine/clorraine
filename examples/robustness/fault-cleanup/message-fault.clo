@@ -1,0 +1,28 @@
+// Fault-exit cleanup probe: a message the program created is still queued on
+// one of its own ports when an index goes out of range. Nobody else can reply
+// to it, so the runtime must free the message along with both ports.
+module robustness.fault_cleanup.message_fault;
+
+import { MsgPort, NewMessage, createMsgPort, createMessage, putMsg } from std.amiga.exec;
+
+func main(): i32 {
+    let reply_opt: MsgPort? = createMsgPort();
+    if (reply_opt == null) {
+        return 1;
+    }
+    let reply: MsgPort = reply_opt;
+    let dest_opt: MsgPort? = createMsgPort();
+    if (dest_opt == null) {
+        return 2;
+    }
+    let dest: MsgPort = dest_opt;
+    let message_opt: NewMessage? = createMessage(reply, 7);
+    if (message_opt == null) {
+        return 3;
+    }
+    let message: NewMessage = message_opt;
+    putMsg(dest, message);
+    let xs: u32[2] = [1, 2];
+    let i: usize = 5;
+    return i32(xs[i]);   // error E11211: index out of range
+}

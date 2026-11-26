@@ -104,7 +104,7 @@ add no registry record (AR-8).
 
 - Spec: ST-1..ST-6 and ST-3b cover representative kinds on `vamos` (Lock, PathInfo, MsgPort,
   NewMessage, a replied own Message, the user `Library`). ST-10..ST-13, ST-15, and ST-17 cover the FS-UAE kinds (servers, Display,
-  Window, Font and the diskfont base, Timer). ST-19 covers the optional suffix kinds on `vamos`
+  Window and its console `Device`, Font and the diskfont base, Timer). ST-19 covers the optional suffix kinds on `vamos`
   ([07](07-testing-strategy.md)).
 - Impl: one shape test per file that every acquire site in the table is followed by its
   registration and every listed remove point unregisters

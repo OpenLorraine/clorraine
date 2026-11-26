@@ -1,0 +1,20 @@
+// Fault-exit cleanup probe: a DOS lock and a path-info block on the current
+// directory are live when an index goes out of range. The runtime must release
+// both on the way out, so vamos reports no leaked lock or orphan memory.
+module robustness.fault_cleanup.lock_fault;
+
+import { Lock, PathInfo, lockPath, pathInfo } from std.amiga.dos;
+
+func main(): i32 {
+    let lock: Lock? = lockPath("");
+    if (lock == null) {
+        return 1;
+    }
+    let info: PathInfo? = pathInfo("");
+    if (info == null) {
+        return 2;
+    }
+    let xs: u32[2] = [1, 2];
+    let i: usize = 5;
+    return i32(xs[i]);   // error E11211: index out of range
+}

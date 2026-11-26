@@ -97,6 +97,166 @@ ULONG cl_dos_ticks(void)
            (ULONG)stamp.ds_Tick;
 }
 
+/* --- Exit-time release of OS resources. ---------------------------------
+ *
+ * A runtime fault, a panic, or a break leaves through libnix `exit(20)` and
+ * skips every Clorraine drop, and even a normal return leaves behind what no
+ * drop covers. AmigaOS reclaims nothing a program leaves behind: a lock, a
+ * port, a library open, or a block of memory stays allocated until the next
+ * reboot. So every OS resource the runtime hands to the program gets one
+ * record here, and one `atexit` hook releases whatever is still recorded, on
+ * every kind of exit.
+ *
+ * A record is a node embedded in the shim's own wrapper struct, or a small
+ * side record for a raw OS pointer such as a lock or a port. The hook pops the
+ * newest record and only then calls its release function, so dependents go
+ * before what they depend on (a console before its window, a message before
+ * its port). When a release faults, the fault path's own `exit(20)` makes
+ * libnix run the exit list again, which calls the hook again; the popped
+ * record is already gone, so the second run finishes the remaining records and
+ * releases nothing twice.
+ *
+ * Contract for every handle kind:
+ * - acquire first, then register with `cl_res_add` (embedded node) or
+ *   `cl_res_track` (side record), naming a typed `void (void *)` release
+ *   function, never a cast deleter;
+ * - when registration fails, undo the acquisition and return the API's
+ *   existing failure;
+ * - unregister where the resource is really freed or handed to another owner,
+ *   never in a close that can defer;
+ * - assume no release order other than reverse acquisition.
+ *
+ * The hook is installed on the first registration, so a program that never
+ * acquires an OS resource links none of this in a release build. The fault and
+ * panic paths never name the hook for the same reason. */
+
+/* One release record. */
+typedef struct cl_res {
+    struct cl_res *prev;
+    struct cl_res *next;
+    void (*release)(void *handle);
+    void *handle;
+    UBYTE side;   /* 1: an AllocMem'd side record the registry frees */
+    UBYTE linked; /* 0 once popped or removed, so removal is idempotent */
+} cl_res;
+
+/* The record list, oldest first. */
+static cl_res *cl_res_head;
+static cl_res *cl_res_tail;
+
+static UBYTE cl_exit_hook_installed;
+
+/* Set for the whole exit-hook run. */
+static UBYTE cl_exiting;
+
+/* External like the other shim entry points, so the hook stays visible in a
+ * linked program's symbol table; section GC still drops it from a program that
+ * never registers anything. */
+void cl_exit_hook(void);
+
+/* Install the exit hook once. Returns 0 when libnix cannot record it. */
+static int cl_exit_hook_install(void)
+{
+    if (!cl_exit_hook_installed) {
+        if (atexit(cl_exit_hook) != 0) {
+            return 0;
+        }
+        cl_exit_hook_installed = 1;
+    }
+    return 1;
+}
+
+/* Append `node` as the newest record. */
+static void cl_res_link(cl_res *node, void (*release)(void *), void *handle)
+{
+    node->release = release;
+    node->handle = handle;
+    node->next = NULL;
+    node->prev = cl_res_tail;
+    if (cl_res_tail != NULL) {
+        cl_res_tail->next = node;
+    } else {
+        cl_res_head = node;
+    }
+    cl_res_tail = node;
+    node->linked = 1;
+}
+
+/* Unlink a linked record. */
+static void cl_res_unlink(cl_res *node)
+{
+    if (node->prev != NULL) {
+        node->prev->next = node->next;
+    } else {
+        cl_res_head = node->next;
+    }
+    if (node->next != NULL) {
+        node->next->prev = node->prev;
+    } else {
+        cl_res_tail = node->prev;
+    }
+    node->prev = NULL;
+    node->next = NULL;
+    node->linked = 0;
+}
+
+/* Record a handle through a node embedded in its wrapper. The node must be
+ * zeroed (the wrappers are allocated cleared) or previously removed. Returns 0
+ * when the exit hook cannot be installed; nothing is linked then. */
+int cl_res_add(cl_res *node, void (*release)(void *), void *handle)
+{
+    if (!cl_exit_hook_install()) {
+        return 0;
+    }
+    node->side = 0;
+    cl_res_link(node, release, handle);
+    return 1;
+}
+
+/* Remove an embedded record; a no-op for a node that is not linked. */
+void cl_res_remove(cl_res *node)
+{
+    if (node->linked) {
+        cl_res_unlink(node);
+    }
+}
+
+/* Record a raw OS pointer through a side record. Returns 0 when the record
+ * cannot be allocated or the hook cannot be installed; nothing is linked. */
+int cl_res_track(void (*release)(void *), void *handle)
+{
+    cl_res *node;
+
+    if (!cl_exit_hook_install()) {
+        return 0;
+    }
+    node = (cl_res *)AllocMem((ULONG)sizeof *node, MEMF_PUBLIC | MEMF_CLEAR);
+    if (node == NULL) {
+        return 0;
+    }
+    node->side = 1;
+    cl_res_link(node, release, handle);
+    return 1;
+}
+
+/* Remove and free the newest side record for `handle` with this release
+ * function. The release function names the kind, so two kinds whose handles
+ * share a pointer value never match each other. Returns 1 when a record was
+ * found. */
+int cl_res_untrack(void (*release)(void *), void *handle)
+{
+    cl_res *node;
+
+    for (node = cl_res_tail; node != NULL; node = node->prev) {
+        if (node->side && node->release == release && node->handle == handle) {
+            cl_res_unlink(node);
+            FreeMem(node, (ULONG)sizeof *node);
+            return 1;
+        }
+    }
+    return 0;
+}
+
 /* --- Amiga DOS: file positioning, locks, paths, and volumes. ------------ */
 
 /* A BCPL pointer stores an address divided by four. `InfoData.id_VolumeNode`
@@ -111,6 +271,7 @@ ULONG cl_dos_ticks(void)
 typedef struct cl_dos_pathinfo {
     struct FileInfoBlock fib;
     ULONG name_len;
+    cl_res res;
 } cl_dos_pathinfo;
 
 /* One captured InfoData plus the copied volume name and byte totals. */
@@ -120,6 +281,7 @@ typedef struct cl_dos_volumeinfo {
     ULONG name_len;
     LONG free_bytes;
     LONG used_bytes;
+    cl_res res;
 } cl_dos_volumeinfo;
 
 /* Bounded text length for a NUL-terminated DOS field. */
@@ -220,22 +382,39 @@ LONG cl_dos_file_length(BPTR file)
     return (LONG)end;
 }
 
+/* The exit release of a lock the program holds. */
+static void cl_release_lock(void *handle)
+{
+    UnLock((BPTR)handle);
+}
+
 /* A shared DOS lock, or zero. */
 BPTR cl_dos_lock(char *path)
 {
+    BPTR lock;
+
     if (path == NULL) {
         return 0;
     }
-    return Lock(path, SHARED_LOCK);
+    lock = Lock(path, SHARED_LOCK);
+    if (lock != 0 && !cl_res_track(cl_release_lock, (void *)lock)) {
+        UnLock(lock);
+        return 0;
+    }
+    return lock;
 }
 
 /* Release a lock; null-safe. */
 void cl_dos_unlock(BPTR lock)
 {
     if (lock != 0) {
+        cl_res_untrack(cl_release_lock, (void *)lock);
         UnLock(lock);
     }
 }
+
+void cl_dos_pathinfo_free(void *handle);
+void cl_dos_volumeinfo_free(void *handle);
 
 /* Capture one path's FileInfoBlock, releasing the lock before returning. */
 void *cl_dos_pathinfo_new(char *path)
@@ -265,14 +444,21 @@ void *cl_dos_pathinfo_new(char *path)
     info->name_len = cl_dos_text_length(
         (const char *)info->fib.fib_FileName,
         (ULONG)sizeof info->fib.fib_FileName);
+    if (!cl_res_add(&info->res, cl_dos_pathinfo_free, info)) {
+        FreeMem(info, (ULONG)sizeof *info);
+        return NULL;
+    }
     return info;
 }
 
 /* Release one path-info handle; null-safe. */
 void cl_dos_pathinfo_free(void *handle)
 {
-    if (handle != NULL) {
-        FreeMem(handle, (ULONG)sizeof(cl_dos_pathinfo));
+    cl_dos_pathinfo *info = (cl_dos_pathinfo *)handle;
+
+    if (info != NULL) {
+        cl_res_remove(&info->res);
+        FreeMem(info, (ULONG)sizeof *info);
     }
 }
 
@@ -365,14 +551,21 @@ void *cl_dos_volumeinfo_new(char *path)
     info->used_bytes = cl_dos_bytes(info->info.id_NumBlocksUsed,
                                     info->info.id_BytesPerBlock);
     UnLock(lock);
+    if (!cl_res_add(&info->res, cl_dos_volumeinfo_free, info)) {
+        FreeMem(info, (ULONG)sizeof *info);
+        return NULL;
+    }
     return info;
 }
 
 /* Release one volume-info handle; null-safe. */
 void cl_dos_volumeinfo_free(void *handle)
 {
-    if (handle != NULL) {
-        FreeMem(handle, (ULONG)sizeof(cl_dos_volumeinfo));
+    cl_dos_volumeinfo *info = (cl_dos_volumeinfo *)handle;
+
+    if (info != NULL) {
+        cl_res_remove(&info->res);
+        FreeMem(info, (ULONG)sizeof *info);
     }
 }
 
@@ -2985,11 +3178,149 @@ LONG cl_window_event_menu(void *window_handle)
 
 /* One message with a small integer payload the acceptance programs can read.
  * The embedded `struct Message` must stay first so exec's list nodes and the
- * reply path see an ordinary message. */
+ * reply path see an ordinary message.
+ *
+ * While the program holds the message (unsent, or fetched back) `res` records
+ * it. Between `putMsg` and the `getMsg` that returns it, a port owns it
+ * instead: it is unrecorded and linked into the in-flight list. */
 typedef struct cl_message {
     struct Message msg;
     LONG payload;
+    cl_res res;
+    struct cl_message *flight_prev;
+    struct cl_message *flight_next;
 } cl_message;
+
+/* The program's own messages currently owned by a port, newest first. */
+static cl_message *cl_flight_head;
+
+/* Add an own message to the in-flight list. */
+static void cl_flight_add(cl_message *message)
+{
+    message->flight_prev = NULL;
+    message->flight_next = cl_flight_head;
+    if (cl_flight_head != NULL) {
+        cl_flight_head->flight_prev = message;
+    }
+    cl_flight_head = message;
+}
+
+/* Remove an own message from the in-flight list. */
+static void cl_flight_remove(cl_message *message)
+{
+    if (message->flight_prev != NULL) {
+        message->flight_prev->flight_next = message->flight_next;
+    } else {
+        cl_flight_head = message->flight_next;
+    }
+    if (message->flight_next != NULL) {
+        message->flight_next->flight_prev = message->flight_prev;
+    }
+    message->flight_prev = NULL;
+    message->flight_next = NULL;
+}
+
+/* The in-flight own message at `pointer`, or NULL. Only pointers are compared,
+ * so a foreign message is never read as a `cl_message`. */
+static cl_message *cl_flight_find(const void *pointer)
+{
+    cl_message *message;
+
+    for (message = cl_flight_head; message != NULL;
+         message = message->flight_next) {
+        if ((const void *)message == pointer) {
+            return message;
+        }
+    }
+    return NULL;
+}
+
+void cl_free_message(void *message_handle);
+static void cl_release_msg_port(void *handle);
+
+/* True when `node` is queued on `port`. The caller holds Forbid. */
+static int cl_port_holds(struct MsgPort *port, struct Node *node)
+{
+    struct Node *queued;
+
+    for (queued = port->mp_MsgList.lh_Head; queued->ln_Succ != NULL;
+         queued = queued->ln_Succ) {
+        if (queued == node) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* True when `message` is queued on a port the program still owns. The caller
+ * holds Forbid. */
+static int cl_own_port_holds(cl_message *message)
+{
+    cl_res *record;
+
+    for (record = cl_res_head; record != NULL; record = record->next) {
+        if (record->release == cl_release_msg_port &&
+            cl_port_holds((struct MsgPort *)record->handle,
+                          &message->msg.mn_Node)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* The exit release of a port. Own messages queued on it are freed first: the
+ * program owns both ends, so nobody else can reply them. An own message queued
+ * on another port the program still owns, whose reply port is this one, is
+ * freed for the same reason. Any other own message that names this port as its
+ * reply port is held by a foreign task, which may still reply it, so the port
+ * and that message stay allocated. */
+static void cl_release_msg_port(void *handle)
+{
+    struct MsgPort *port = (struct MsgPort *)handle;
+    struct Node *node;
+    struct Node *next;
+    cl_message *message;
+    cl_message *following;
+    int keep = 0;
+
+    Forbid();
+    for (node = port->mp_MsgList.lh_Head; node->ln_Succ != NULL; node = next) {
+        next = node->ln_Succ;
+        message = cl_flight_find(node);
+        if (message != NULL) {
+            Remove(node);
+            cl_flight_remove(message);
+            FreeMem(message, (ULONG)sizeof *message);
+        }
+    }
+    for (message = cl_flight_head; message != NULL; message = following) {
+        following = message->flight_next;
+        if (message->msg.mn_ReplyPort != port) {
+            continue;
+        }
+        if (cl_own_port_holds(message)) {
+            Remove(&message->msg.mn_Node);
+            cl_flight_remove(message);
+            FreeMem(message, (ULONG)sizeof *message);
+        } else {
+            keep = 1;
+        }
+    }
+    Permit();
+    if (!keep) {
+        DeletePort(port);
+    }
+}
+
+/* Record a new port, deleting it again when it cannot be recorded. */
+static void *cl_msg_port_recorded(struct MsgPort *port)
+{
+    if (port != NULL && !cl_res_track(cl_release_msg_port, port)) {
+        DeletePort(port);
+        return NULL;
+    }
+    return (void *)port;
+}
 
 /* Create a private message port, or NULL when the system is out of signals or
  * memory. */
@@ -2997,7 +3328,7 @@ void *cl_create_msg_port(void)
 {
     /* CreatePort is the 1.3-compatible private-port constructor. Passing a
      * null name keeps the port private, matching CreateMsgPort's semantics. */
-    return (void *)CreatePort(NULL, 0);
+    return cl_msg_port_recorded(CreatePort(NULL, 0));
 }
 
 /* Create a public named message port, or NULL for a null/empty name or an
@@ -3008,7 +3339,7 @@ void *cl_create_public_port(char *name)
     if (name == NULL || name[0] == '\0') {
         return NULL;
     }
-    return (void *)CreatePort((STRPTR)name, 0);
+    return cl_msg_port_recorded(CreatePort((STRPTR)name, 0));
 }
 
 /* Delete a private message port. Null-safe; the caller has already drained it. */
@@ -3016,6 +3347,7 @@ void cl_delete_msg_port(void *port_handle)
 {
     struct MsgPort *port = (struct MsgPort *)port_handle;
     if (port != NULL) {
+        cl_res_untrack(cl_release_msg_port, port);
         DeletePort(port);
     }
 }
@@ -3033,6 +3365,10 @@ void *cl_create_message(void *reply_handle, LONG payload)
     message->msg.mn_Length = sizeof *message;
     message->msg.mn_ReplyPort = (struct MsgPort *)reply_handle;
     message->payload = payload;
+    if (!cl_res_add(&message->res, cl_free_message, message)) {
+        FreeMem(message, sizeof *message);
+        return NULL;
+    }
     return message;
 }
 
@@ -3042,10 +3378,15 @@ LONG cl_message_payload(void *message_handle)
     return ((const cl_message *)message_handle)->payload;
 }
 
-/* Queue `message_handle` on `port_handle` and wake the port owner. */
+/* Queue `message_handle` on `port_handle` and wake the port owner. The port
+ * owns the message from here until `cl_get_msg` returns it. */
 void cl_put_msg(void *port_handle, void *message_handle)
 {
-    PutMsg((struct MsgPort *)port_handle, (struct Message *)message_handle);
+    cl_message *message = (cl_message *)message_handle;
+
+    cl_res_remove(&message->res);
+    cl_flight_add(message);
+    PutMsg((struct MsgPort *)port_handle, &message->msg);
 }
 
 /* The signal mask that wakes the owner of `port_handle`. */
@@ -3061,35 +3402,96 @@ ULONG cl_wait_signals(ULONG mask)
     return Wait(mask);
 }
 
-/* Take the next message from `port_handle`, or NULL when the queue is empty. */
+/* The exit release of a fetched message another task sent: reply it, so the
+ * sender gets it back. A message without a reply port is left untouched. */
+static void cl_release_foreign_message(void *handle)
+{
+    struct Message *message = (struct Message *)handle;
+
+    if (message->mn_ReplyPort != NULL) {
+        ReplyMsg(message);
+    }
+}
+
+/* Take the next message from `port_handle`, or NULL when the queue is empty.
+ * One of the program's own messages leaves the in-flight list and is recorded
+ * through its own node again; any other message gets a side record. A message
+ * that cannot be recorded is handed back and NULL is returned. */
 void *cl_get_msg(void *port_handle)
 {
-    return (void *)GetMsg((struct MsgPort *)port_handle);
+    struct Message *message = GetMsg((struct MsgPort *)port_handle);
+    cl_message *own;
+
+    if (message == NULL) {
+        return NULL;
+    }
+    own = cl_flight_find(message);
+    if (own != NULL) {
+        cl_flight_remove(own);
+        if (!cl_res_add(&own->res, cl_free_message, own)) {
+            FreeMem(own, (ULONG)sizeof *own);
+            return NULL;
+        }
+        return own;
+    }
+    if (!cl_res_track(cl_release_foreign_message, message)) {
+        cl_release_foreign_message(message);
+        return NULL;
+    }
+    return message;
 }
 
 /* Reply a fetched message to its reply port. A message without a reply port is
- * left untouched; the wrapper's contract requires one. */
+ * left untouched; the wrapper's contract requires one. Replying one of the
+ * program's own messages hands it back to a port, so it rejoins the in-flight
+ * list. Every fetched message is recorded one way or the other, so a message
+ * with no side record is one of the program's own. */
 void cl_reply_msg(void *message_handle)
 {
     struct Message *message = (struct Message *)message_handle;
-    if (message != NULL && message->mn_ReplyPort != NULL) {
-        ReplyMsg(message);
+    cl_message *own;
+
+    if (message == NULL) {
+        return;
     }
+    if (cl_res_untrack(cl_release_foreign_message, message)) {
+        cl_release_foreign_message(message);
+        return;
+    }
+    if (message->mn_ReplyPort == NULL) {
+        return;
+    }
+    own = (cl_message *)message;
+    cl_res_remove(&own->res);
+    cl_flight_add(own);
+    ReplyMsg(message);
 }
 
 /* Release a message that has returned through its reply port. Do not call this
  * on a message still owned by another task. */
 void cl_free_message(void *message_handle)
 {
-    if (message_handle != NULL) {
-        FreeMem(message_handle, sizeof(cl_message));
+    cl_message *message = (cl_message *)message_handle;
+
+    if (message != NULL) {
+        cl_res_remove(&message->res);
+        FreeMem(message, sizeof *message);
     }
 }
 
 /* Release a fetched message that has returned through its reply port. The
- * typed wrapper uses this only for a message this program created. */
+ * typed wrapper uses this only for a message this program created; a foreign
+ * message passed here breaks that contract, and it is only unrecorded so the
+ * exit release never replies freed memory. */
 void cl_release_message(void *message_handle)
 {
+    if (message_handle == NULL) {
+        return;
+    }
+    if (cl_res_untrack(cl_release_foreign_message, message_handle)) {
+        FreeMem(message_handle, sizeof(cl_message));
+        return;
+    }
     cl_free_message(message_handle);
 }
 
@@ -3227,6 +3629,31 @@ void cl_task_free(void *handle)
     (void)cl_task_join_record((cl_task *)handle);
 }
 
+/* The `atexit` hook that releases every recorded OS resource on every exit.
+ *
+ * It prints nothing. Each record is popped before its release runs, and the
+ * loop rereads the tail each time instead of keeping a saved neighbour,
+ * because one release may remove other records. A nested `exit` from a release
+ * re-enters this hook through libnix, which then finishes the records still
+ * linked. Newest first means a dependent goes before what it depends on. */
+void cl_exit_hook(void)
+{
+    cl_res *node;
+
+    cl_exiting = 1;
+    while ((node = cl_res_tail) != NULL) {
+        void (*release)(void *) = node->release;
+        void *handle = node->handle;
+        UBYTE side = node->side;
+
+        cl_res_unlink(node);
+        if (side) {
+            FreeMem(node, (ULONG)sizeof *node);
+        }
+        release(handle);
+    }
+}
+
 /* ------------------------------------------------------------------------- */
 /* Exec libraries and generic devices.                                       */
 /*                                                                           */
@@ -3236,21 +3663,35 @@ void cl_task_free(void *handle)
 /* Intuition window because console.device is bound to a window.             */
 /* ------------------------------------------------------------------------- */
 
+/* The exit release of a library the program opened. */
+static void cl_release_library(void *handle)
+{
+    CloseLibrary((struct Library *)handle);
+}
+
 /* Open a library at or above `version`; a null name is rejected. The
  * `Library` handle maps to `struct Library *` in the FFI contract table, so
  * these signatures use that type rather than `void *`. */
 struct Library *cl_open_library(char *name, UWORD version)
 {
+    struct Library *library;
+
     if (name == NULL) {
         return NULL;
     }
-    return OpenLibrary((STRPTR)name, version);
+    library = OpenLibrary((STRPTR)name, version);
+    if (library != NULL && !cl_res_track(cl_release_library, library)) {
+        CloseLibrary(library);
+        return NULL;
+    }
+    return library;
 }
 
 /* Close a library exactly once; null-safe. */
 void cl_close_library(struct Library *library)
 {
     if (library != NULL) {
+        cl_res_untrack(cl_release_library, library);
         CloseLibrary(library);
     }
 }
@@ -3274,6 +3715,7 @@ typedef struct cl_device {
     ULONG buffer_length;
     cl_window *window_ref;   /* console window reference, or NULL */
     int pending;
+    cl_res res;              /* recorded once the device is open */
 } cl_device;
 
 /* Devices that need a request larger than IOStdReq. They keep their typed
@@ -3358,6 +3800,7 @@ static void cl_device_close(cl_device *device)
     if (device == NULL) {
         return;
     }
+    cl_res_remove(&device->res);
     if (device->pending) {
         (void)AbortIO((struct IORequest *)&device->request);
         (void)WaitIO((struct IORequest *)&device->request);
@@ -3373,6 +3816,22 @@ static void cl_device_close(cl_device *device)
     }
     FreeMem(device, (ULONG)sizeof *device);
     cl_window_release(window);
+}
+
+/* The exit release of an open device. */
+static void cl_release_device(void *handle)
+{
+    cl_device_close((cl_device *)handle);
+}
+
+/* Record an open device, closing it again when it cannot be recorded. */
+static void *cl_device_recorded(cl_device *device)
+{
+    if (!cl_res_add(&device->res, cl_release_device, device)) {
+        cl_device_close(device);
+        return NULL;
+    }
+    return device;
 }
 
 /* Open a generic device with one IOStdReq. Extended-request devices are
@@ -3394,7 +3853,7 @@ void *cl_open_device(char *name, LONG unit, ULONG flags)
         cl_device_discard(device);
         return NULL;
     }
-    return device;
+    return cl_device_recorded(device);
 }
 
 /* Open console.device on an Intuition window. The window is refcounted: closing
@@ -3421,7 +3880,7 @@ void *cl_open_console(void *window_handle, UBYTE unit)
         cl_device_discard(device);
         return NULL;
     }
-    return device;
+    return cl_device_recorded(device);
 }
 
 /* Close a device; null-safe. */

@@ -1,0 +1,16 @@
+// Fault-exit cleanup probe: a library the program opened is still open when
+// an index goes out of range. The runtime must close it, so vamos can expunge
+// every library at shutdown.
+module robustness.fault_cleanup.library_fault;
+
+import { Library, openLibrary } from std.amiga.exec;
+
+func main(): i32 {
+    let library: Library? = openLibrary("dos.library", 33);
+    if (library == null) {
+        return 1;
+    }
+    let xs: u32[2] = [1, 2];
+    let i: usize = 5;
+    return i32(xs[i]);   // error E11211: index out of range
+}

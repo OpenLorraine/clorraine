@@ -1,0 +1,19 @@
+// Fault-exit cleanup probe: a private and a public message port are live
+// when an integer division by zero faults. The runtime must delete both, so
+// the public name disappears and vamos reports no orphan memory.
+module robustness.fault_cleanup.port_fault;
+
+import { MsgPort, createMsgPort, createPublicPort } from std.amiga.exec;
+
+func main(): i32 {
+    let private_port: MsgPort? = createMsgPort();
+    if (private_port == null) {
+        return 1;
+    }
+    let public_port: MsgPort? = createPublicPort("ClFaultCleanup");
+    if (public_port == null) {
+        return 2;
+    }
+    let zero: i32 = 0;
+    return 10 / zero;   // error E11210: integer division by zero
+}

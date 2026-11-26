@@ -106,6 +106,10 @@ therefore never call or name `cl_exit_hook`; a direct call would link the whole 
 program that has a fault site (AR-18, ST-9). `cl_exiting` is set for the whole hook run. While it
 is set, no shim wait includes the break bit ([03-04 §During the exit](03-04-ctrl-c.md#during-the-exit)).
 
+The nested-exit re-run is a libnix guarantee (both `nix13` and `nix20` share `atexit.c`). The vbcc
+leg is build-only, and its `exit` ordering is unverified; the plan claims no vbcc runtime behaviour
+(Phase 1 review ruling).
+
 ### Library bases
 
 - Every lazy open site in every shim file calls `cl_lib_open` instead of `OpenLibrary` directly
@@ -148,7 +152,10 @@ is set, no shim wait includes the break bit ([03-04 §During the exit](03-04-ctr
   unless an in-flight message still held by a foreign port names it as `mn_ReplyPort`. In that
   case the port and those messages are left allocated (AR-15).
 - ARexx packets in `cl_rexx_lifetimes` whose reply has not arrived follow the same rule: they and
-  their reply port stay allocated; all other ARexx records release normally (AR-15).
+  their reply port stay allocated; all other ARexx records release normally (AR-15). A RexxMsg is
+  not a `cl_message`, so the in-flight list cannot see it. Phase 3 therefore adds a base-shim way
+  for a suffix holder to mark a port as still in use, which the port release honours (Phase 1
+  review, SR-001).
 
 ### Contract for later plans
 
