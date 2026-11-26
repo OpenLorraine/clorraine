@@ -14,4 +14,8 @@ for p in hosted-amiga:nix20 hosted-amiga-13:nix13; do
   m68k-amigaos-gcc -std=c99 -mcrt=$crt -m68000 -fwrapv -O2 -S -o "$out/$profile.s" "$out/$profile.c" || exit 1
   echo "== $profile: poke()"
   awk '/^_cl_Probe_Main_poke:/,/rts/' "$out/$profile.s"
+  # GCC inlines poke() into main at -O2; print main as well (Phase 9 fix: the first
+  # record held only the empty poke() sections).
+  echo "== $profile: main()"
+  awk '/^_main:/,/rts/' "$out/$profile.s"
 done
