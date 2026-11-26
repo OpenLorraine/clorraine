@@ -40,7 +40,7 @@ Main runs 2026-11-25 (logs under `build/tmp/assessment/WS3/`; committed records
 | WS3-03 | ASM-WS1-002, ASM-WS3-003 | Under the host UBSan line, the WS1 differential probes 039–043 (wrap at every width, MIN×−1, −MIN, shift masks, MIN/−1 and zero-divisor faults) and 311 (signed left shift: emitted through unsigned forms) are clean; probe 310 shows signed overflow in a value-position `++` (ASM-WS3-003). Call-argument order: ASM-WS1-002; binary operands with two calls are emitted unsequenced (C99 6.5p3), part of ASM-WS1-002 |
 | WS3-04 | `clean` | site list: no type-punning dereference in emitted code (aggregate copies use `memcpy`; `Array` element pointers come from `realloc`ed storage, which has no declared type); shims: `shim_hosted_amiga_optional.c:720` reads the `LONG *` that `ReadArgs` returns (API-mandated), the unions at `shim_host.c:354` and `shim_hosted_amiga.c:972` are tagged and read by the member written, colour tables are combined byte-wise (`shim_hosted_amiga.c:2767`, `:4362`) |
 | WS3-05 | `limit` | the detector cannot fire: `vamos` (68000) reads a word at an odd address without an address error (`320-odd-address.sh`, same output as `-C 68020`), so runtime detection needs FS-UAE on the A500. Code reading found no odd-address source: struct fields keep natural alignment (WS1-06 probe 048 matches m68k GCC), heap storage comes from `malloc`/`realloc`/`AllocMem`, IFF fields are read byte-wise (`stdlib/std.iff.clo:36-45`), and `str`/`u8[]` views are byte-accessed. Removed by an FS-UAE A500 run of a probe that indexes `u16`/`u32` data at computed offsets |
-| WS3-06 | `clean` | `331-mmio-width.sh` (-O2, hosted-amiga and hosted-amiga-13, `records/WS3-mmio.log`): one `move.w #-32256,14676118` ($DFF096), one `move.l #74560,14676096` ($DFF080, not split), the $BFE001 read and write as one `or.b #2,12574721` (one read cycle, then one write cycle, in order), and two separate `move.w (a0)` loads of $DFF006 (not merged). Probe 330 was a design error (uncalled function, removed by -O2), replaced by 331 |
+| WS3-06 | `clean` | `331-mmio-width.sh` (-O2, hosted-amiga and hosted-amiga-13, `records/WS3-mmio.log` — the first record was empty because `poke()` is inlined into `main`; the script now prints `main` and the record was regenerated in Phase 9; verifier ses_dea9a6112ffeMR984F2rpPTplg confirmed the outcome): one `move.w #-32256,14676118` ($DFF096), one `move.l #74560,14676096` ($DFF080, not split), the $BFE001 read and write as one `or.b #2,12574721` (one read cycle, then one write cycle, in order), and two separate `move.w (a0)` loads of $DFF006 (not merged). Probe 330 was a design error (uncalled function, removed by -O2), replaced by 331 |
 | WS3-07 | ASM-WS3-001, ASM-WS3-002 | probe 344 (300- and 1000-character identifiers) clean on three profiles; probe 343 was a design error (two user `ffi strdup` declarations, E11101) |
 | WS3-08 | `clean` | probes 350–358: inner extent of a 2-D array, `str` index, `Array.get`, `u8` division by zero, `i16` modulo by zero, `assert`, fixed-array field index, negative index, `slice` beyond the view — every fault code as specified on host, hosted-amiga, hosted-amiga-13 (debug and release, host ASan/UBSan) |
 | WS3-09 | ASM-WS3-006 | Phase 0: 93/93 cells byte-identical across two emissions, and debug `clc` = release `clc`; `360-determinism.sh`: repeat and debug identical, no date/time strings |
@@ -64,7 +64,7 @@ Main runs 2026-11-25 (logs under `build/tmp/assessment/WS3/`; committed records
 - **Effort**: S
 - **Related**: ASM-WS3-002; spec/17 §7; DEF-112 and DEF-138 (collisions with compiler-generated locals, fixed)
 - **Self-refutation (3.3.1)**: `docs/known-limitations.md` §7 covers function and global names against the shim and generated helpers, not locals against C keywords or header macros; no DEF row covers it. Stays Critical (accepted program, invalid C on every leg; plausible names).
-- **Verdict**: _(Phase 9)_
+- **Verdict**: confirmed (Critical, verified) — verifier ses_dea9a6112ffeMR984F2rpPTplg (9.2.3): `restrict`, `_Bool`, and header/NDK macros reach C unescaped; `is_c_keyword` (`compiler/src/codegen.rs:1204-1213`) lists the C89 keywords plus `inline` and `bool` only.
 
 ### ASM-WS3-002 — A module function can collide with a generic instance symbol
 
@@ -81,7 +81,7 @@ Main runs 2026-11-25 (logs under `build/tmp/assessment/WS3/`; committed records
 - **Effort**: S
 - **Related**: ASM-WS3-001; `docs/known-limitations.md` §7 (the user-symbol collision check renames functions that collide with shim names and with `cl_init_*`, `cl_zero_ClSlice_*`, `cl_lambda_*` helpers, but generic instance symbols `cl_<name>__<key>` are not in that list); DEF-140 (a different generic-key collision, fixed)
 - **Self-refutation (3.3.1)**: not documented and not covered by the existing rename mechanism. Rated Critical by the rubric (invalid C), with the rarity stated in Impact; Phase 9 may weigh likelihood.
-- **Verdict**: _(Phase 9)_
+- **Verdict**: confirmed (Critical, verified) — verifier ses_dea9a6112ffeMR984F2rpPTplg (9.2.3): probe 342 fails on all three profiles; the type-side analogue (`struct _i32` next to `Pair<i32>`) is escaped, so only function names collide.
 
 ### ASM-WS3-003 — A value-position `++`/`--` emits signed C increment, undefined on the host and vbcc legs at the limit
 
@@ -98,7 +98,7 @@ Main runs 2026-11-25 (logs under `build/tmp/assessment/WS3/`; committed records
 - **Effort**: S
 - **Related**: ASM-WS1-002 (the same expressions are where evaluation order is pinned)
 - **Self-refutation (3.3.1)**: the m68k GCC legs pass `-fwrapv`, so shipped GCC binaries are defined; the defect is real for the host profile and the vbcc leg, which spec/17 §14 covers ("or -fwrapv" applies only where the flag is passed). Stays Major (latent UB in emitted C).
-- **Verdict**: _(Phase 9)_
+- **Verdict**: confirmed (Major, verified) — verifier ses_dea9a6112ffeMR984F2rpPTplg (9.2.3): UBSan reports the overflow at `return ++y;`; the host line has no `-fwrapv`.
 
 ### ASM-WS3-004 — On the host profile `usize` is 32 bits, so a pointer round trip through `usize` crashes
 
@@ -115,7 +115,7 @@ Main runs 2026-11-25 (logs under `build/tmp/assessment/WS3/`; committed records
 - **Effort**: M
 - **Related**: spec/17 §3 (mapping table); WS1 probe 048 (layout) passed because no field is `usize`
 - **Self-refutation (3.3.1)**: spec/17 §3 itself maps `usize` to `ULONG`, which reads as an Amiga-ABI statement; together with spec/02 §2 the host case is ambiguous enough that a spec ruling may settle it. Minor (host only).
-- **Verdict**: _(Phase 9)_
+- **Verdict**: confirmed (Minor, verified) — verifier ses_dea9a6112ffeMR984F2rpPTplg (9.2.3).
 
 ### ASM-WS3-005 — Appended runtime code inherits the last `#line`, so its diagnostics and debug lines point into `.clo` files
 
@@ -132,7 +132,7 @@ Main runs 2026-11-25 (logs under `build/tmp/assessment/WS3/`; committed records
 - **Effort**: S
 - **Related**: ASM-WS3-001
 - **Self-refutation (3.3.1)**: no limitation or DEF covers it; affects tooling, not program behavior. Minor.
-- **Verdict**: _(Phase 9)_
+- **Verdict**: confirmed (Minor, verified) — verifier ses_dea9a6112ffeMR984F2rpPTplg (9.2.3); correction: `stdlib/std.io.clo` has 75 lines, not 80.
 
 ### ASM-WS3-006 — The emitted C depends on how the source path is spelled and embeds absolute paths
 
@@ -149,7 +149,7 @@ Main runs 2026-11-25 (logs under `build/tmp/assessment/WS3/`; committed records
 - **Effort**: S
 - **Related**: spec/13 §3 (determinism)
 - **Self-refutation (3.3.1)**: with one fixed invocation the output is byte-identical (Phase 0, 93/93), which is what the gates rely on; "logical source path" is undefined in the spec, so the finding is Minor and may become a spec question.
-- **Verdict**: _(Phase 9)_
+- **Verdict**: confirmed (Minor, verified) — verifier ses_dea9a6112ffeMR984F2rpPTplg (9.2.3): an absolute invocation embeds the repository root 58/27/224 times.
 
 ### ASM-WS3-007 — vbcc compile time grows about cubically with `switch` size
 
@@ -166,7 +166,27 @@ Main runs 2026-11-25 (logs under `build/tmp/assessment/WS3/`; committed records
 - **Effort**: M
 - **Related**: WS7-06 (compile-time scaling); `docs/known-limitations.md` lists vbcc limits for bsdsocket headers only
 - **Self-refutation (3.3.1)**: the root cause is in vbcc, not in an invalid emission; but the compile-matrix bound of 03-01 §Severity is exceeded for a plausible program shape (1,000-case `switch` 57 s, limit 12 s). Stays Major on the vbcc leg; no shipped GCC binary is affected.
-- **Verdict**: _(Phase 9)_
+- **Verdict**: confirmed (Major, verified) — verifier ses_dea9a6112ffeMR984F2rpPTplg (9.2.3): 1,000 cases take 57–158 s against the 12.2 s limit; `-O1` alone does not bring it under (57.4 s at 1,000), so the `-O1` recommendation is insufficient by itself.
+
+### ASM-WS3-008 — An `else if` chain of 127 or more arms makes vbcc crash or reject the emitted C
+
+- **Severity**: Major
+- **Confidence**: verified
+- **Lens**: vbcc leg of hosted-amiga (`vc +aos68k -c99 -O2 -cpu=68000`); the m68k GCC and host legs accept the same unit
+- **Location**: `compiler/src/codegen/control.rs:421-442` (`emit_conditional` emits each false branch inside a new `} else {` block), at e24a8752
+- **Checklist item**: WS3-11
+- **Author session**: ses_dea9a6112ffeMR984F2rpPTplg (raised by the 9.2.3 verifier; recorded by the executing session)
+- **Evidence**: Reproduction — `probes/WS3/verify-9.2.3/vbcc-nest.sh` (committed after the verifier's run), command `make -C docker exec CMD="bash plans/independent-assessment/probes/WS3/verify-9.2.3/vbcc-nest.sh"`: clc accepts every N; vbcc compiles 100, 124–126 arms; at 127 arms vbcc ends with `Segmentation fault (core dumped)`; at 128, 500, and 1,000 it fails with `error 9 … too many (128) nested blocks`; m68k GCC compiles every N. The emitted C nests one block per arm. A control with 127 nested plain source blocks compiles (plain blocks are flattened). C99 §5.2.4.1 guarantees only 127 nesting levels of blocks; 127 arms reach depth 128.
+- **Impact**: a program with a long `else if` dispatch (a command parser, an opcode or key table) cannot be built on the vbcc leg; it also rules out the `if`-chain workaround for ASM-WS3-007. Build-time failure, no wrong binary.
+- **Root cause**: each `else` arm opens a new C block instead of `} else if (…) {` at the same depth.
+- **Recommendation**: emit `} else if (cond) {` when the false branch is a single conditional with no hoisted declarations or cleanup; otherwise fall back to the existing `goto` form past a fixed depth (`control.rs:415`); add a vbcc build golden with a 200-arm chain.
+- **Effort**: S
+- **Related**: ASM-WS3-007; ASM-WS1-004
+- **Verdict**: _(Phase 9: needs a verification session other than ses_dea9a6112ffeMR984F2rpPTplg)_
+
+## Spec questions
+
+None (added in Phase 9: the section was missing from the Phase 3 file).
 
 ## Falsifiability log
 

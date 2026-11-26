@@ -197,6 +197,23 @@ container you start).
 - **Effort**: S
 - **Related**: ASM-WS5-016; ASM-WS8-002
 
+### Second added finding (raised by the 9.2.3 verifier)
+
+### ASM-WS3-008 — An `else if` chain of 127 or more arms makes vbcc crash or reject the emitted C
+
+- **Severity**: Major
+- **Confidence**: verified
+- **Lens**: vbcc leg of hosted-amiga (`vc +aos68k -c99 -O2 -cpu=68000`); the m68k GCC and host legs accept the same unit
+- **Location**: `compiler/src/codegen/control.rs:421-442` (`emit_conditional` emits each false branch inside a new `} else {` block), at e24a8752
+- **Checklist item**: WS3-11
+- **Author session**: ses_dea9a6112ffeMR984F2rpPTplg (raised by the 9.2.3 verifier; recorded by the executing session)
+- **Evidence**: Reproduction — `probes/WS3/verify-9.2.3/vbcc-nest.sh` (committed after the verifier's run), command `make -C docker exec CMD="bash plans/independent-assessment/probes/WS3/verify-9.2.3/vbcc-nest.sh"`: clc accepts every N; vbcc compiles 100, 124–126 arms; at 127 arms vbcc ends with `Segmentation fault (core dumped)`; at 128, 500, and 1,000 it fails with `error 9 … too many (128) nested blocks`; m68k GCC compiles every N. The emitted C nests one block per arm. A control with 127 nested plain source blocks compiles (plain blocks are flattened). C99 §5.2.4.1 guarantees only 127 nesting levels of blocks; 127 arms reach depth 128.
+- **Impact**: a program with a long `else if` dispatch (a command parser, an opcode or key table) cannot be built on the vbcc leg; it also rules out the `if`-chain workaround for ASM-WS3-007. Build-time failure, no wrong binary.
+- **Root cause**: each `else` arm opens a new C block instead of `} else if (…) {` at the same depth.
+- **Recommendation**: emit `} else if (cond) {` when the false branch is a single conditional with no hoisted declarations or cleanup; otherwise fall back to the existing `goto` form past a fixed depth (`control.rs:415`); add a vbcc build golden with a 200-arm chain.
+- **Effort**: S
+- **Related**: ASM-WS3-007; ASM-WS1-004
+
 ## Clean outcomes to sample
 
 From `findings/WS7-performance.md` §Checklist outcomes:

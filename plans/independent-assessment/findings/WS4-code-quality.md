@@ -90,7 +90,7 @@ the scalar benchmarks.
 - **Effort**: M
 - **Related**: WS4-09 template specialization; WS6-03 (hidden costs)
 - **Self-refutation (4.3.1)**: earlier plans measured Clorraine against earlier Clorraine, not against C; none settled the template builder's cost. The fairness of the C reference was checked: it allocates one heap block per string, formats with the same least-significant-first writer, and frees it — the gap is the generic builder only (attribution). Stays Major (≥10% on a shipped 68000 lens, ST-4).
-- **Verdict**: _(Phase 9)_
+- **Verdict**: confirmed (Major, verified) — verifier ses_dea9a6112ffeMR984F2rpPTplg (9.2.3): net +32.6% reproduced; patch 413 −23.8% of net, output identical.
 
 ### ASM-WS4-002 — `Array<T>` push and get cost 39% more instructions than equivalent C on the A500
 
@@ -107,7 +107,7 @@ the scalar benchmarks.
 - **Effort**: M
 - **Related**: WS4-09; DEF history of `Array` ownership (WS8); `plans/real-workload-audit/99-execution-plan.md` (concluded the `get`/`push` instances are inlined into `main` and left them unchanged; amortized reserve growth followed in `growable-array-growth`)
 - **Self-refutation (4.3.1)**: the earlier audit compared shapes, not C; this new measurement (patches 411/412: −7.1% and −23.0% with identical output) contradicts its "no change" conclusion for `get`/`push`. The C reference grows by the same doubling from 8 bytes and keeps the spec-required check, so the gap is the per-push call, the zeroing `memset`, and the view. Stays Major.
-- **Verdict**: _(Phase 9)_
+- **Verdict**: confirmed (Major, verified) — verifier ses_dea9a6112ffeMR984F2rpPTplg (9.2.3): net +38.5%; patches 412 −23.0% and 411 −7.1%.
 
 ### ASM-WS4-003 — The runtime fault writer pulls 16.6 KB of `printf` and soft-float code into every checked program
 
@@ -124,7 +124,7 @@ the scalar benchmarks.
 - **Effort**: S
 - **Related**: WS4-07; WS7-02 (A500 footprint)
 - **Self-refutation (4.3.1)**: no earlier plan measured the fault writer's link cost. Not a defect and not a gap against the C reference (which also uses `printf`), so Opportunity; listed as a quick win (effort S, −70% `.text`).
-- **Verdict**: _(Phase 9)_
+- **Verdict**: confirmed (Opportunity, verified) — verifier ses_dea9a6112ffeMR984F2rpPTplg (9.2.3): patch 417 `.text` −16,652 B, +12 instructions.
 
 ### ASM-WS4-004 — A module-level table with a constant initializer occupies RAM twice
 
@@ -141,7 +141,7 @@ the scalar benchmarks.
 - **Effort**: S
 - **Related**: WS7-02; `plans/constant-array-initializer` (introduced the template for module values)
 - **Self-refutation (4.3.1)**: `plans/real-workload-audit` checked function-local tables only ("already the compact shape"); module values were not measured for RAM. Opportunity.
-- **Verdict**: _(Phase 9)_
+- **Verdict**: confirmed (Opportunity, verified) — verifier ses_dea9a6112ffeMR984F2rpPTplg (9.2.3): patch 416 `.bss` −16,384 B; a static initializer changes what a read before module init sees, so the fix needs an init-order argument.
 
 ### ASM-WS4-005 — Every Amiga program links libamiga DOS stubs and `CreatePort` it does not use
 
@@ -158,7 +158,7 @@ the scalar benchmarks.
 - **Effort**: M
 - **Related**: ASM-WS4-003
 - **Self-refutation (4.3.1)**: `performance-levers-closeout` measured the GC gain (calibration 53,432 → 5,908 B on hosted-amiga-13) but did not attribute the remainder; consistent with this listing. Opportunity.
-- **Verdict**: _(Phase 9)_
+- **Verdict**: confirmed (Opportunity, verified), magnitude corrected — verifier ses_dea9a6112ffeMR984F2rpPTplg (9.2.3): the unused libamiga stubs and `CreatePort` are 440 B of the 776 B fixed `.text` gap, not the whole gap.
 
 ### ASM-WS4-006 — `-O3` and `-flto` beat the shipped release flags on the A500
 
@@ -175,7 +175,7 @@ the scalar benchmarks.
 - **Effort**: S
 - **Related**: WS7-03; `plans/performance-levers-closeout/00-ambiguity-register.md:146-156` (rejected `-O3` as "`.text` +14.9% on calibration; runtime equal; no win" and LTO+GC as "saves only 2–11% more than GC" with link-time risk)
 - **Self-refutation (4.3.1)**: the earlier rejection of `-O3` rested on calibration size and an equal runtime; the new A500 instruction traces contradict "runtime equal" on three benchmarks (−18.3%, −25.1%, −98.5%), which 03-01 §Independence allows to reopen. The size cost and the LTO toolchain risk the earlier plan named remain real, so this stays an Opportunity, not a defect.
-- **Verdict**: _(Phase 9)_
+- **Verdict**: confirmed (Opportunity, verified) — verifier ses_dea9a6112ffeMR984F2rpPTplg (9.2.3): `-O3` −25.1% strings, −18.3% container; `-flto` −7.3% container; `moves` −98.5% not re-measured.
 
 ## Spec questions
 
