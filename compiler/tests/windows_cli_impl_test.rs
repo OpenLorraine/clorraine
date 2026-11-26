@@ -108,6 +108,22 @@ fn should_escape_backslashes_and_quotes_together_in_a_line_directive_path() {
 }
 
 #[test]
+fn should_break_every_trigraph_in_a_line_directive_path() {
+    // The C compilers run with -std=c99, which turns trigraphs on; the strict
+    // build inside the helper fails on any trigraph that survives.
+    let (dir, body) = line_one_path("trigraph", "tri??=x.clo");
+    assert_eq!(body, format!("{dir}/tri?\\?=x.clo"));
+    let (dir, body) = line_one_path("trigraph-run", "a???=b??-c.clo");
+    assert_eq!(body, format!("{dir}/a?\\?\\?=b?\\?-c.clo"));
+}
+
+#[test]
+fn should_keep_a_single_question_mark_unescaped_in_a_line_directive_path() {
+    let (dir, body) = line_one_path("question", "why?.clo");
+    assert_eq!(body, format!("{dir}/why?.clo"));
+}
+
+#[test]
 fn should_reject_native_system_calls_for_other_linux_architectures_and_other_systems() {
     use clc::clorraine::native_syscalls_for;
     for (os, arch) in [

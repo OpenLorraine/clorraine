@@ -220,23 +220,26 @@ fn preprocess(c_path: &Path, flags: &[&str]) -> String {
 /// Macros that tell C code it is being compiled for Linux.
 const NOT_LINUX: [&str; 4] = ["-U__linux__", "-U__linux", "-Ulinux", "-U__gnu_linux__"];
 
+/// The raw system-call instruction the shim emits for this host's CPU.
+const SYSCALL_MARKER: &str = if cfg!(target_arch = "aarch64") { "\"svc #0\"" } else { "\"syscall\"" };
+
 #[test]
 fn should_use_raw_system_calls_only_on_linux_when_building_the_freestanding_runtime() {
     let scratch = ScratchDir::new("free-syscalls");
     let c_path = emit_freestanding(&scratch);
 
     let linux = preprocess(&c_path, &[]);
-    assert!(linux.contains("\"syscall\""), "Linux x86_64 keeps the raw system calls");
+    assert!(linux.contains(SYSCALL_MARKER), "Linux keeps the raw system calls");
 
     let mut windows = NOT_LINUX.to_vec();
     windows.push("-D_WIN64");
     let other = preprocess(&c_path, &windows);
     assert!(
-        !other.contains("\"syscall\""),
-        "a non-Linux x86_64 host must take the C-runtime fallback, not raw Linux system calls"
+        !other.contains(SYSCALL_MARKER),
+        "a non-Linux host must take the C-runtime fallback, not raw Linux system calls"
     );
     let plain_other = preprocess(&c_path, &NOT_LINUX);
-    assert!(!plain_other.contains("\"syscall\""), "any non-Linux host takes the fallback");
+    assert!(!plain_other.contains(SYSCALL_MARKER), "any non-Linux host takes the fallback");
 }
 
 #[test]

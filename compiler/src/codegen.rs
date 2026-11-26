@@ -1150,6 +1150,39 @@ impl<'a> Emitter<'a> {
     }
 }
 
+/// Escapes text for the inside of a C string literal, without the quotes.
+///
+/// `#line` directives carry source paths, and a path may hold a backslash
+/// (every Windows path), a double quote, or a control character. A backslash
+/// and a double quote are escaped with a backslash; every byte below 0x20 and
+/// 0x7F becomes a three-digit octal escape, so the next character can never
+/// extend it. The C compilers read the emitted C with trigraphs enabled
+/// (`-std=c99`), so every `?` that follows a `?` is written `\?` and a path
+/// can never form a trigraph. All other bytes, including UTF-8 sequences, are
+/// kept, so a plain path is written exactly as given.
+///
+/// ```ignore
+/// assert_eq!(c_string_body("C:\\a\tb"), "C:\\\\a\\011b");
+/// assert_eq!(c_string_body("a??=b"), "a?\\?=b");
+/// ```
+pub(crate) fn c_string_body(text: &str) -> String {
+    let mut body = String::with_capacity(text.len());
+    let mut after_question = false;
+    for ch in text.chars() {
+        match ch {
+            '\\' => body.push_str("\\\\"),
+            '"' => body.push_str("\\\""),
+            '\u{0}'..='\u{1f}' | '\u{7f}' => body.push_str(&format!("\\{:03o}", ch as u32)),
+            '?' if after_question => body.push_str("\\?"),
+            other => body.push(other),
+        }
+        // Every `?` after a `?` is escaped, so no two `?` ever touch in the
+        // output and a run like `???=` cannot leave a trigraph behind.
+        after_question = ch == '?';
+    }
+    body
+}
+
 /// Indexes lowered bodies by module and declaration name.
 ///
 /// A loop's speculative pass can lower one body twice, so the first record
@@ -1161,31 +1194,6 @@ impl<'a> Emitter<'a> {
 /// which can equal a user declaration's name, but they are emitted through the
 /// lifted path with their own signature. Occupying a declaration slot would
 /// let a lambda lowered first hand its body to the same-named user function.
-/// Escapes text for the inside of a C string literal, without the quotes.
-///
-/// `#line` directives carry source paths, and a path may hold a backslash
-/// (every Windows path), a double quote, or a control character. A backslash
-/// and a double quote are escaped with a backslash; every byte below 0x20 and
-/// 0x7F becomes a three-digit octal escape, so the next character can never
-/// extend it. All other bytes, including UTF-8 sequences, are kept, so a
-/// plain path is written exactly as given.
-///
-/// ```ignore
-/// assert_eq!(c_string_body("C:\\a\tb"), "C:\\\\a\\011b");
-/// ```
-pub(crate) fn c_string_body(text: &str) -> String {
-    let mut body = String::with_capacity(text.len());
-    for ch in text.chars() {
-        match ch {
-            '\\' => body.push_str("\\\\"),
-            '"' => body.push_str("\\\""),
-            '\u{0}'..='\u{1f}' | '\u{7f}' => body.push_str(&format!("\\{:03o}", ch as u32)),
-            other => body.push(other),
-        }
-    }
-    body
-}
-
 fn body_index(functions: &[ir::Function]) -> BTreeMap<String, BTreeMap<String, &ir::Function>> {
     let mut index: BTreeMap<String, BTreeMap<String, &ir::Function>> = BTreeMap::new();
     for function in functions.iter().filter(|f| f.lambda_site.is_none()) {
