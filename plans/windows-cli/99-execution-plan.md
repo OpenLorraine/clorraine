@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-26 21:48
-> **Progress**: 43/75 tasks (57%)
+> **Last Updated**: 2026-11-26 21:51
+> **Progress**: 47/75 tasks (63%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -233,10 +233,10 @@ on Linux in this worktree; Windows runs go through the remote helper (AR-5, AR-2
 
 ### Step 6.2: Implementation
 
-- [ ] 6.2.1 Add the registration check, the elevated staging script, and the rc24 step — `tools/setup/install.ps1`
-- [ ] 6.2.2 Add FS-UAE and ROM detection, the FS-UAE download, and the `setup` call — `tools/setup/install.ps1`
-- [ ] 6.2.3 Add the hellos, VS Code, the starter, and the summary — `tools/setup/install.ps1`
-- [ ] 6.2.4 Run on the Windows host — ST-50 – ST-58 pass (green); ST-39 – ST-49, ST-59 – ST-63 still pass
+- [x] 6.2.1 Add the registration check, the elevated staging script, and the rc24 step — `tools/setup/install.ps1` ✅ (completed: 2026-11-26 21:51)
+- [x] 6.2.2 Add FS-UAE and ROM detection, the FS-UAE download, and the `setup` call — `tools/setup/install.ps1` ✅ (completed: 2026-11-26 21:51)
+- [x] 6.2.3 Add the hellos, VS Code, the starter, and the summary — `tools/setup/install.ps1` ✅ (completed: 2026-11-26 21:51)
+- [x] 6.2.4 Run on the Windows host — ST-50 – ST-58 pass (green); ST-39 – ST-49, ST-59 – ST-63 still pass ✅ (completed: 2026-11-26 21:51) — spec 28/28 on Windows 11
 
 ### Step 6.3: Implementation tests and hardening
 
