@@ -2,7 +2,7 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-26 22:32
+> **Last Updated**: 2026-11-26 22:34
 > **Progress**: 49/75 tasks (65%)
 > **CodeOps Artifact Schema**: 1
 
@@ -273,7 +273,7 @@ on Linux in this worktree; Windows runs go through the remote helper (AR-5, AR-2
 
 ### Step 7.3: Implementation tests and hardening
 
-- [ ] 7.3.1 Write impl tests for the zip builder and the evidence schema — `tools/setup/tests/windows-dist.impl.test.sh`, `tools/setup/tests/acceptance_windows_impl.py`
+- [x] 7.3.1 Write impl tests for the zip builder and the evidence schema — `tools/setup/tests/windows-dist.impl.test.sh`, `tools/setup/tests/acceptance_windows_impl.py` ✅ (2026-11-26 22:34; shell 19 checks, Python 20 tests, both in `dist-check`; three mutations — installer-name rule, zip layout verify, fixed zip times — each fail their case)
 - [ ] 7.3.2 Build a candidate with `make dist` and `make dist-verify`
 - [ ] 7.3.3 Phase gate — `make check IMAGE=clorraine-sdk:windows-cli`
 
