@@ -182,7 +182,7 @@ Main runs 2026-11-25 (logs under `build/tmp/assessment/WS3/`; committed records
 - **Recommendation**: emit `} else if (cond) {` when the false branch is a single conditional with no hoisted declarations or cleanup; otherwise fall back to the existing `goto` form past a fixed depth (`control.rs:415`); add a vbcc build golden with a 200-arm chain.
 - **Effort**: S
 - **Related**: ASM-WS3-007; ASM-WS1-004
-- **Verdict**: _(Phase 9: needs a verification session other than ses_dea9a6112ffeMR984F2rpPTplg)_
+- **Verdict**: confirmed (Major, verified) — verifier ses_dea685c4bffegV12VLXpl04mC6 (9.2.5, a session other than the raiser): vbcc segfaults at 127 arms and reports "too many (128) nested blocks" at 128/200/500; GCC accepts all; plain nested blocks up to 128 compile.
 
 ## Spec questions
 

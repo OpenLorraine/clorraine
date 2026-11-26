@@ -42,11 +42,14 @@ Records: `records/WS8-assertions.tsv` (census and the 75-test sample), `records/
 | WS8-03 | ASM-WS8-002 | Census of 3,888 tests: value 1,400, diagnostic 810, text 580, sanitizer-only 282, compiles-only 192, no-panic-only 34, unrecognised 590 (read: generic `assert!(…contains…)` checks — text, stderr, or determinism). Spec suites (2,573): value 1,108, diagnostic 652, sanitizer-only 282, compiles-only 187. Five-per-area sample (75): value 27, diagnostic 22, text 9, other 14 (read by hand: 9 text pins on emitted C or scripts, 3 stderr-message checks, 2 determinism comparisons) |
 | WS8-04 | ASM-WS8-001 | The generators never produce a second function or a call, an owned `String`/`Array`/`Box`, a move or drop, a borrow, a generic, a closure, nesting, a module-level array, or an unusual identifier; the oracle compares printed output across host, ASan/UBSan, and m68k only |
 | WS8-05 | ASM-WS8-004 | Never under a sanitizer: `shim_hosted_amiga*.c` (10,404 lines) and every m68k-only path; substitute evidence: `vamos` corpus and fault runs (output and exit status), FS-UAE gates (report lines and captures), the WS5 leak detector (this assessment only) |
-| WS8-06 | `clean` | Text-pinning tests: 580 (15%), of which 569 are impl tests (43% of impl tests) — the repository policy lets an impl pin change with an intended emission change; the 11 spec text pins (`stage_spec_test.rs`) check shapes spec/17 mandates (cleanup ladder, ABI prototypes, `#line`, init order). The WS4 remedies would update `cl_string_concat` pins (11 in 5 template impl tests) and bounds-guard pins (`cl_trap("E11211"`, 35) — maintenance, not a block |
+| WS8-06 | `clean` (confirmed in Phase 9 with a count note: 773 tests carry some text pin, including 4 spec tests that pin spec/17's `__cl_tmp<N>` form) | Text-pinning tests: 580 (15%), of which 569 are impl tests (43% of impl tests) — the repository policy lets an impl pin change with an intended emission change; the 11 spec text pins (`stage_spec_test.rs`) check shapes spec/17 mandates (cleanup ladder, ABI prototypes, `#line`, init order). The WS4 remedies would update `cl_string_concat` pins (11 in 5 template impl tests) and bounds-guard pins (`cl_trap("E11211"`, 35) — maintenance, not a block |
 | WS8-07 | ASM-WS8-003 | 582 rows: memory-safety 163 (38 plans), invalid-C 118 (26), false-accept 100 (26), miscompile 51 (22), false-reject 5 (3), platform 5 (5), other 140 (read: process and tooling rows DEF-562..576, plus defects the patterns miss — DEF-04, DEF-44, DEF-52, DEF-86). Every class but `other` is recurring by the 3-rows/2-plans rule. Components: ownership 353, codegen 144, sema 47. By month: September 31 rows, October 527 (the closeout and residue series: `def-zero-closeout` 40, `conditional-projection-residue` 35, `def-critical-major-closeout` 20, `non-lexical-lifetimes` 18, …), November 24 (process and SDK). Scheme accuracy on 25 hand-read classified rows: 20 correct (80%); the misses are loan/escape gaps filed as memory-safety (DEF-373, DEF-391, DEF-550) and two notes-driven matches (DEF-378, DEF-408) |
 | WS8-08 | ASM-WS8-003 | Root causes per recurring class, presence at the baseline, and remedies in the finding |
 
 ### Gap linkage (WS8-02)
+
+Re-pointed in task 9.2.5: no finding was refuted or merged; the two findings raised in
+Phase 9 (ASM-WS3-008, ASM-WS5-023) are added below. Downgraded findings keep their rows.
 
 Reasons: **A** no test of that shape; **B** tests assert a weaker property; **C** a golden
 pins the defect; **D** the path never runs under test (Amiga shim, FS-UAE-only, fault
@@ -70,6 +73,7 @@ shows it (host UBSan, vbcc) is not tested for that shape.
 | ASM-WS3-005 | B — strict-build tests check pass or fail, not where a diagnostic points |
 | ASM-WS3-006 | A — `line_directives_name_the_logical_cli_path` passes a relative path only |
 | ASM-WS3-007 | F — vbcc legs build small units |
+| ASM-WS3-008 (Phase 9) | A, F — no vbcc build of a long `else if` chain |
 | ASM-WS4-001, -002 | B — `bench-compare` guards regressions against the base, not the gap to C |
 | ASM-WS5-001 | B, D — `run-fault-amiga` checks the message and exit status, not system state after exit |
 | ASM-WS5-002 | D — every gate opens a screen or window before using Intuition |
@@ -90,6 +94,7 @@ shows it (host UBSan, vbcc) is not tested for that shape.
 | ASM-WS5-017 | D — timing-dependent; captures follow `WaitTOF` |
 | ASM-WS5-018 | B — the GUI gate drives menus by Amiga-key shortcuts |
 | ASM-WS5-019..021 | A, D — per item |
+| ASM-WS5-023 (Phase 9) | B — `optional-services.clo` prints the constant `clip: ok n 4` once the write returns true; nothing reads the clip back from another program; `docs/known-limitations.md:62-64` attributed the empty read to the environment |
 | ASM-WS6-001 | A — no IO-error test |
 | ASM-WS6-002 | A — the appendix row for `slice` of a `str` has no test |
 | ASM-WS6-003 | A — float tests compare finite values |
@@ -114,7 +119,7 @@ shows it (host UBSan, vbcc) is not tested for that shape.
 - **Effort**: M
 - **Related**: ASM-WS8-003
 - **Self-refutation (8.3.1)**: the generator list is read from the code at the baseline. Minor (test debt).
-- **Verdict**: _(Phase 9)_
+- **Verdict**: confirmed (Minor, verified) — verifier ses_dea685c4bffegV12VLXpl04mC6 (9.2.5); wording: "no user function or call with effectful arguments" (the only call is `println`); 810's component labels are noisy (about 4 of 11 sampled "ownership" rows belong elsewhere), the conclusion holds.
 
 ### ASM-WS8-002 — Tests and gates assert weaker properties than the behavior they cover
 
@@ -131,7 +136,8 @@ shows it (host UBSan, vbcc) is not tested for that shape.
 - **Effort**: M
 - **Related**: ASM-WS5-008, ASM-WS2-001, ASM-WS5-001
 - **Self-refutation (8.3.1)**: sanitizer-only and compiles-only tests are useful as crash guards; the finding is that some of them are the only test for a behavior. Minor.
-- **Verdict**: _(Phase 9)_
+- **Phase 9 correction**: the 800 classifier misses programs whose exit status is computed from values; the census should read "282 spec tests assert a clean sanitizer run plus, at most, a computed exit code (about 32 check the sanitizer only)" and "about 141 compiles-only".
+- **Verdict**: confirmed (Minor, verified) with a census correction — verifier ses_dea685c4bffegV12VLXpl04mC6 (9.2.5): about 250 of the 282 "sanitizer-only" spec tests also assert a computed exit code (`assert_exit(…, 0)` on a program whose status is computed from values), and 46 of the 187 "compiles-only" do too; the B/C gap rows hold.
 
 ### ASM-WS8-003 — Memory-safety and invalid-C defects recur because drop and emission decisions are made per expression shape, in two stages
 
@@ -148,7 +154,8 @@ shows it (host UBSan, vbcc) is not tested for that shape.
 - **Effort**: XL
 - **Related**: ASM-WS2-003, ASM-WS8-001; the `non-lexical-lifetimes` and closeout plans
 - **Self-refutation (8.3.1)**: checked against the code at e24a8752 — `codegen/drop.rs:283` `needs_drop` re-derives from `TypeTable::duplicable`, not from an ownership record; the emitter builds C with `format!` (709 sites); E10305 is reported only on the inference route (`sema/call.rs:792`, `:1325`), which is why explicit arguments bypass it; `own/call.rs` sequences arguments only when they contain a syntactic update. Rated Minor by the rubric (maintainability debt that has caused recorded DEF rows); it is the report's main structural recommendation.
-- **Verdict**: _(Phase 9)_
+- **Phase 9 narrowing**: this finding covers causes (2) invalid C from string-composed emission, (3) route-specific checks, and (4) unsequenced effects; cause (1), the second drop decision in codegen, is ASM-WS2-003 and its remedy ("codegen emits only recorded drops") is that finding's. ASM-WS7-001 is not evidence for these classes.
+- **Verdict**: confirmed (Minor; counts verified, structure probable), narrowed to causes (2)–(4) — verifier ses_dea685c4bffegV12VLXpl04mC6 (9.2.5): cause (1) is ASM-WS2-003's defect and is cited, not counted again; ASM-WS7-001 removed from the "still present" list (a performance blow-up, not one of the four classes); site counts 149 (`own/`), 87, 712.
 
 ### ASM-WS8-004 — The Amiga shims never run under a sanitizer, and UBSan covers a third of the ASan suites
 
@@ -165,7 +172,7 @@ shows it (host UBSan, vbcc) is not tested for that shape.
 - **Effort**: M
 - **Related**: ASM-WS5-001, ASM-WS5-013
 - **Self-refutation (8.3.1)**: the core runtime already exists twice (host and Amiga) and the host copy is sanitized; the gap is the Amiga-only code. Minor.
-- **Verdict**: _(Phase 9)_
+- **Verdict**: confirmed (Minor, verified) — verifier ses_dea685c4bffegV12VLXpl04mC6 (9.2.5); wording: many WS5 defects are protocol errors no sanitizer would catch, so the gap explains why they were invisible, not that a sanitizer would have found them.
 
 ## Spec questions
 

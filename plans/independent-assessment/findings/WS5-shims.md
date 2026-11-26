@@ -492,7 +492,8 @@ Runs 2026-11-25 (vamos logs under `build/tmp/assessment/WS5/`, FS-UAE output und
 - **Recommendation**: wrap text in an IFF `FTXT`/`CHRS` clip on write and unwrap on read (or expose an IFF-level API); make the gate read the clip back from a second program; or document that raw clips are unsupported and return false.
 - **Effort**: S
 - **Related**: ASM-WS5-016; ASM-WS8-002
-- **Verdict**: _(Phase 9: needs a verification session other than ses_dea9a6107ffefWXd6gFWNJQszZ)_
+- **Phase 9 correction**: impact — `clipboardWrite` returns true while a raw clip is either dropped (no clip yet) or stored altered (padded to 8 bytes after an IFF clip exists); root cause — the device treats clips as IFF and has no defined behavior for non-IFF data; the known-limitations entry (`docs/known-limitations.md:62-64`) misattributes this symptom to the environment.
+- **Verdict**: confirmed (Major, verified) with a corrected impact and root cause — verifier ses_dea685c4bffegV12VLXpl04mC6 (9.2.5, a session other than the raiser): on a fresh unit a raw write is discarded; after an IFF clip exists the same 4-byte raw write is stored as an 8-byte clip and read back as 8 bytes; both report success. `docs/known-limitations.md:62-64` attributes the same symptom to the probe environment.
 
 ## Spec questions
 

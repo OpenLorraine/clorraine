@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-26 03:02
-> **Progress**: 82/95 tasks (86%)
+> **Last Updated**: 2026-11-26 03:21
+> **Progress**: 85/95 tasks (89%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -380,12 +380,12 @@ this plan's folder and the roadmap; 03-01 §Ground rules)
 - [x] 9.2.2 Verify WS2 findings and its clean sample in a fresh session ✅ (completed: 2026-11-26 02:16)
 - [x] 9.2.3 Verify WS3 and WS4 findings and their clean samples in a fresh session ✅ (completed: 2026-11-26 02:51)
 - [x] 9.2.4 Verify WS5 findings and its clean sample in a fresh session ✅ (completed: 2026-11-26 02:43)
-- [ ] 9.2.5 Last: verify WS7 and WS8 findings and their clean samples in a fresh session, and re-point WS8 gap links and themes for every refuted or merged ID
+- [x] 9.2.5 Last: verify WS7 and WS8 findings and their clean samples in a fresh session, and re-point WS8 gap links and themes for every refuted or merged ID ✅ (completed: 2026-11-26 03:20)
 
 ### Step 9.3: Ledger and gate
 
-- [ ] 9.3.1 Build `05-findings.md` per 03-04: ledger, clean sample, merges, refuted, spec questions, escalations
-- [ ] 9.3.2 Phase gate: Task verify and the Phase 9 row of `07` §Check points; commit, local only
+- [x] 9.3.1 Build `05-findings.md` per 03-04: ledger, clean sample, merges, refuted, spec questions, escalations ✅ (completed: 2026-11-26 03:21)
+- [x] 9.3.2 Phase gate: Task verify and the Phase 9 row of `07` §Check points; commit, local only ✅ (completed: 2026-11-26 03:21)
 
 **Test slices**: N/A — no test map
 **Verify (gate)**: `bash plans/independent-assessment/probes/WS0/drift-check.sh plans/independent-assessment`, then the Phase 9 row of `07` §Check points (AR #20)
