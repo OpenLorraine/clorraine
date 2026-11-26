@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-26 21:22
-> **Progress**: 38/75 tasks (51%)
+> **Last Updated**: 2026-11-26 21:24
+> **Progress**: 40/75 tasks (53%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -207,8 +207,8 @@ on Linux in this worktree; Windows runs go through the remote helper (AR-5, AR-2
 
 ### Step 5.3: Implementation tests and hardening
 
-- [ ] 5.3.1 Write impl tests (zip validator, reparse walker, mutex abandonment, PATH normalization) — `tools/setup/tests/install.impl.test.ps1`
-- [ ] 5.3.2 Run both PowerShell suites on the Windows host
+- [x] 5.3.1 Write impl tests (zip validator, reparse walker, mutex abandonment, PATH normalization) — `tools/setup/tests/install.impl.test.ps1` ✅ (completed: 2026-11-26 21:24) — 13/13; also native-argument quoting, checksum forms, owned-link rule, switch rollback
+- [x] 5.3.2 Run both PowerShell suites on the Windows host ✅ (completed: 2026-11-26 21:24) — spec 19/19, impl 13/13; no scratch keys left
 - [ ] 5.3.3 Phase gate — `make check IMAGE=clorraine-sdk:windows-cli`
 
 **Deliverables**:
