@@ -1,0 +1,213 @@
+# WS7 runs 2026-11-26: 700 (m700.log), 710 (m710.log), 730 (m730.log), 740 (fill.log), 750 gdb samples (sample-own.log, sample-gen.log innermost frames), red checks (red.log).
+=== red.log
+PASS calibration clo: runs 5 min 1365 us median 1415 us max 1476 us spread 8.1%
+PASS calibration c: runs 5 min 1363 us median 1398 us max 1598 us spread 17.2%
+PASS container clo: runs 5 min 1355 us median 1411 us max 1461 us spread 7.8%
+PASS container c: runs 5 min 1420 us median 1509 us max 1523 us spread 7.2%
+PASS local-table clo: runs 5 min 1418 us median 1461 us max 1642 us spread 15.8%
+PASS local-table c: runs 5 min 1342 us median 1385 us max 1415 us spread 5.4%
+PASS lookup clo: runs 5 min 1328 us median 1353 us max 1658 us spread 24.9%
+PASS lookup c: runs 5 min 1402 us median 1454 us max 1504 us spread 7.3%
+PASS matrix clo: runs 5 min 1402 us median 1440 us max 1536 us spread 9.5%
+PASS matrix c: runs 5 min 1363 us median 1374 us max 1445 us spread 6.0%
+PASS moves clo: runs 5 min 1440 us median 1492 us max 1568 us spread 8.9%
+PASS moves c: runs 5 min 1359 us median 1426 us max 1558 us spread 14.6%
+FAIL sieve clo: runs 5 min 1512 us median 1523 us max 1622 us spread 7.3%
+FAIL sieve c: runs 5 min 1344 us median 1401 us max 1941 us spread 44.3%
+PASS strings clo: runs 5 min 1469 us median 1535 us max 1580 us spread 7.6%
+PASS strings c: runs 5 min 1435 us median 1512 us max 1630 us spread 13.6%
+PASS text-scan clo: runs 5 min 1456 us median 1563 us max 1638 us spread 12.5%
+PASS text-scan c: runs 5 min 1357 us median 1432 us max 1467 us spread 8.1%
+net (median minus own calibration median), clo vs c:
+  container: clo -5 us c 110 us delta -104.1%
+  local-table: clo 46 us c -14 us delta +nan%
+  lookup: clo -63 us c 55 us delta -211.2%
+  matrix: clo 25 us c -25 us delta +nan%
+  moves: clo 77 us c 27 us delta +183.3%
+  sieve: clo 107 us c 2 us delta +5152.5%
+  strings: clo 119 us c 113 us delta +6.0%
+  text-scan: clo 148 us c 33 us delta +340.6%
+host-time: 2 failure(s)
+
+make: *** [Makefile:74: exec] Error 1
+700 rc=2
+FAIL seeded-1000: exit [1] wall 3 ms cpu 2 ms rss 16064 KB c 0 B
+compile-scaling: 1 failure(s)
+
+make: *** [Makefile:74: exec] Error 1
+710 rc=2
+program                                              text     data      bss    total pct512
+
+make: *** [Makefile:74: exec] Error 130
+730 rc=124
+=== m700.log
+PASS calibration clo: runs 15 min 1320 us median 1358 us max 1708 us spread 29.4%
+PASS calibration c: runs 15 min 1351 us median 1414 us max 3506 us spread 159.4%
+PASS container clo: runs 15 min 1307 us median 1352 us max 1428 us spread 9.3%
+PASS container c: runs 15 min 1317 us median 1353 us max 1467 us spread 11.3%
+PASS local-table clo: runs 15 min 1367 us median 1437 us max 2205 us spread 61.3%
+PASS local-table c: runs 15 min 995 us median 2056 us max 3213 us spread 222.9%
+PASS lookup clo: runs 15 min 1387 us median 1539 us max 3982 us spread 187.0%
+PASS lookup c: runs 15 min 1322 us median 1419 us max 1955 us spread 47.9%
+PASS matrix clo: runs 15 min 1360 us median 1476 us max 3420 us spread 151.4%
+PASS matrix c: runs 15 min 1396 us median 1931 us max 4781 us spread 242.5%
+PASS moves clo: runs 15 min 1393 us median 1465 us max 3873 us spread 177.9%
+PASS moves c: runs 15 min 1351 us median 1394 us max 1479 us spread 9.4%
+PASS sieve clo: runs 15 min 1353 us median 1543 us max 4953 us spread 265.9%
+PASS sieve c: runs 15 min 926 us median 1634 us max 5259 us spread 467.7%
+PASS strings clo: runs 15 min 1057 us median 1447 us max 4478 us spread 323.6%
+PASS strings c: runs 15 min 1362 us median 1418 us max 3719 us spread 173.0%
+PASS text-scan clo: runs 15 min 925 us median 1654 us max 4147 us spread 348.2%
+PASS text-scan c: runs 15 min 1338 us median 1406 us max 3748 us spread 180.0%
+net (median minus own calibration median), clo vs c:
+  container: clo -7 us c -62 us delta +nan%
+  local-table: clo 79 us c 641 us delta -87.7%
+  lookup: clo 180 us c 4 us delta +3653.2%
+  matrix: clo 118 us c 516 us delta -77.1%
+  moves: clo 107 us c -21 us delta +nan%
+  sieve: clo 185 us c 219 us delta -15.6%
+  strings: clo 89 us c 3 us delta +2459.4%
+  text-scan: clo 296 us c -9 us delta +nan%
+host-time: 0 failure(s)
+=== m710.log
+PASS ownership-1000: exit [0] wall 658 ms cpu 641 ms rss 65224 KB c 1786034 B
+PASS ownership-2000: exit [0] wall 2711 ms cpu 2445 ms rss 124264 KB c 3557934 B
+PASS ownership-4000: exit [0] wall 8775 ms cpu 8641 ms rss 242484 KB c 7101724 B
+PASS ownership-8000: exit [0] wall 45475 ms cpu 44182 ms rss 490248 KB c 14189314 B
+exponent ownership: time 2.37 rss 1.02
+PASS generic-1000: exit [0] wall 1039 ms cpu 1030 ms rss 32144 KB c 2698450 B
+PASS generic-2000: exit [0] wall 3301 ms cpu 3251 ms rss 58076 KB c 5422350 B
+PASS generic-4000: exit [0] wall 14203 ms cpu 12441 ms rss 110080 KB c 10870140 B
+PASS generic-8000: exit [0] wall 77566 ms cpu 72217 ms rss 214396 KB c 21765730 B
+exponent generic: time 2.45 rss 0.96
+PASS closure-1000: exit [0] wall 228 ms cpu 224 ms rss 27940 KB c 1218702 B
+PASS closure-2000: exit [0] wall 564 ms cpu 560 ms rss 50032 KB c 2437617 B
+PASS closure-4000: exit [0] wall 1857 ms cpu 1796 ms rss 94280 KB c 4881407 B
+PASS closure-8000: exit [0] wall 6973 ms cpu 6177 ms rss 182768 KB c 9768997 B
+exponent closure: time 1.91 rss 0.95
+PASS locals-1000: exit [0] wall 58 ms cpu 55 ms rss 19396 KB c 228167 B
+PASS locals-2000: exit [0] wall 131 ms cpu 117 ms rss 19464 KB c 437067 B
+PASS locals-4000: exit [0] wall 379 ms cpu 363 ms rss 29112 KB c 854857 B
+PASS locals-8000: exit [0] wall 1287 ms cpu 1256 ms rss 52516 KB c 1696453 B
+exponent locals: time 1.76 rss 0.85
+PASS functions-1000: exit [0] wall 61 ms cpu 49 ms rss 19404 KB c 347558 B
+PASS functions-2000: exit [0] wall 93 ms cpu 91 ms rss 24840 KB c 674458 B
+PASS functions-4000: exit [0] wall 191 ms cpu 180 ms rss 43540 KB c 1328248 B
+PASS functions-8000: exit [0] wall 441 ms cpu 369 ms rss 81332 KB c 2635838 B
+exponent functions: time 1.21 rss 0.90
+compile-scaling: 0 failure(s)
+=== m730.log
+program                                              text     data      bss    total pct512
+spec/tests/corpus/buffer-container/program.clo      24580      280      120    24980     4%
+spec/tests/corpus/file-copier/program.clo           27924      292      152    28368     5%
+spec/tests/corpus/freestanding/program.clo           5972      272      120     6364     1%
+spec/tests/corpus/graphics/program.clo              23932      280      160    24372     4%
+spec/tests/corpus/interrupt-counter/program.clo      6648      276      188     7112     1%
+spec/tests/corpus/string-parser/program.clo         24664      280      128    25072     4%
+spec/tests/corpus/volatile-mmio/program.clo          5936      272      124     6332     1%
+benchmarks/calibration/program.clo                   5900      272      120     6292     1%
+benchmarks/container/program.clo                    24056      280      120    24456     4%
+benchmarks/local-table/program.clo                  24520      280      120    24920     4%
+benchmarks/lookup/program.clo                       39832      280    16504    56616    10%
+benchmarks/matrix/program.clo                       23544      280      120    23944     4%
+benchmarks/moves/program.clo                        23632      280      120    24032     4%
+benchmarks/sieve/program.clo                        23772      280      120    24172     4%
+benchmarks/strings/program.clo                      23920      280      120    24320     4%
+benchmarks/text-scan/program.clo                    24084      280      128    24492     4%
+examples/amiga/boing-showcase.clo                   31516      280      124    31920     6%
+examples/amiga/boing.clo                            30968      280      124    31372     5%
+examples/amiga/diskfont.clo                         23552      280      128    23960     4%
+examples/amiga/exec-demo.clo                        32424      296      236    32956     6%
+examples/amiga/exec-self-test.clo                   24780      280      120    25180     4%
+examples/amiga/first-light.clo                      34288      280      124    34692     6%
+examples/amiga/gui.clo                              39016      292      168    39476     7%
+examples/amiga/hamurabi.clo                         31892      304      176    32372     6%
+examples/amiga/hello-intro.clo                      38636      280      124    39040     7%
+examples/amiga/imageviewer.clo                      37504      292      164    37960     7%
+examples/amiga/message-drop.clo                      7508      272      120     7900     1%
+examples/amiga/paddle.clo                           27684      280      160    28124     5%
+examples/amiga/prism.clo                            34812      280      124    35216     6%
+examples/amiga/scroller.clo                         28908      280      132    29320     5%
+examples/amiga/sprite-demo.clo                      28580      280      160    29020     5%
+footprint: 0 report(s)
+=== fill.log
+module-1024: C 7216 lines 221587 B; gcc 3030 ms; output '1'
+local-1024: C 6193 lines 187876 B; gcc 2228 ms; output '1'
+module-16384: C 22576 lines 750218 B; gcc 38431 ms; output '1'
+local-16384: C 6193 lines 187884 B; gcc 2380 ms; output '1'
+module-65536: C 71728 lines 2470538 B; gcc 163103 ms; output '1'
+local-65536: C 6193 lines 187884 B; gcc 2203 ms; output '1'
+=== sample-own.log (frames #0-#3)
+#0  0x0000555555845a60 in <clc::own::FunctionChecker>::resolved_callee
+#1  0x000055555583b944 in <clc::own::FunctionChecker>::call_may_write_globals
+#2  0x000055555586c3db in <clc::own::FunctionChecker>::eval
+#3  0x000055555586e8a0 in <clc::own::FunctionChecker>::eval
+#0  0x00005555558d9a9a in clc::own::function_identity
+#1  0x00005555558349d8 in <clc::own::FunctionChecker>::check_call_expr
+#2  0x000055555586c2c6 in <clc::own::FunctionChecker>::eval
+#3  0x000055555586d3c1 in <clc::own::FunctionChecker>::eval
+#0  __memcmp_sse2
+#1  0x0000555555845a14 in <clc::own::FunctionChecker>::resolved_callee
+#2  0x0000555555845d44 in <clc::own::FunctionChecker>::infer_call_types
+#3  0x0000555555842c08 in <clc::own::FunctionChecker>::lower_call
+#0  0x0000555555845a01 in <clc::own::FunctionChecker>::resolved_callee
+#1  0x000055555583b944 in <clc::own::FunctionChecker>::call_may_write_globals
+#2  0x000055555586c3db in <clc::own::FunctionChecker>::eval
+#3  0x000055555586d3c1 in <clc::own::FunctionChecker>::eval
+#0  0x00005555558459f7 in <clc::own::FunctionChecker>::resolved_callee
+#1  0x0000555555848dc6 in <clc::own::FunctionChecker>::lower_intrinsic_call
+#2  0x0000555555878b9d in <clc::own::FunctionChecker>::lower_value
+#3  0x00005555558cd4c5 in <clc::own::FunctionChecker>::prepare_store
+#0  0x0000555555845a01 in <clc::own::FunctionChecker>::resolved_callee
+#1  0x00005555558a9a31 in <clc::own::FunctionChecker>::call_view_source
+#2  0x00005555558aa853 in <clc::own::FunctionChecker>::call_view_sources
+#3  0x00005555558a85ee in <clc::own::FunctionChecker>::expr_view_roots
+#0  0x0000555555845a60 in <clc::own::FunctionChecker>::resolved_callee
+#1  0x0000555555848dc6 in <clc::own::FunctionChecker>::lower_intrinsic_call
+#2  0x0000555555878b9d in <clc::own::FunctionChecker>::lower_value
+#3  0x0000555555878d53 in <clc::own::FunctionChecker>::lower_value
+#0  _int_malloc
+#1  0x00007ffff7cb422a in _int_realloc
+#2  0x00007ffff7cb582f in __GI___libc_realloc
+#3  0x00005555556b2b2f in <alloc::raw_vec::RawVecInner>::finish_grow
+=== sample-gen.log (frames #0-#3)
+#0  0x0000555555845a60 in <clc::own::FunctionChecker>::resolved_callee
+#1  0x0000555555848dc6 in <clc::own::FunctionChecker>::lower_intrinsic_call
+#2  0x0000555555878b9d in <clc::own::FunctionChecker>::lower_value
+#3  0x00005555558c5da9 in <clc::own::FunctionChecker>::check_stmt
+#0  0x00007ffff7cb2475 in _int_malloc
+#1  0x00007ffff7cb3d7f in __libc_malloc2
+#2  0x00005555556ed06b in <alloc::vec::Vec<clc::types::Ty> as core::clone::Clone>::clone
+#3  0x00005555558f428c in <clc::types::TyKind as core::clone::Clone>::clone
+#0  __memcmp_sse2
+#1  0x00005555557df137 in <clc::types::table::TypeTable>::duplicable_at
+#2  0x000055555588f31f in <clc::own::FunctionChecker>::materialize_owned_argument
+#3  0x0000555555842d2b in <clc::own::FunctionChecker>::lower_call
+#0  0x0000555555845fcd in <clc::own::FunctionChecker>::infer_call_types
+#1  0x0000555555842c08 in <clc::own::FunctionChecker>::lower_call
+#2  0x00005555558d271f in <clc::own::FunctionChecker>::check_expr_statement
+#3  0x00005555558c0a68 in <clc::own::FunctionChecker>::check_stmt
+#0  0x0000555555845a50 in <clc::own::FunctionChecker>::resolved_callee
+#1  0x00005555558380ac in <clc::own::FunctionChecker>::check_dot_receiver
+#2  0x000055555583493c in <clc::own::FunctionChecker>::check_call_expr
+#3  0x000055555586c2c6 in <clc::own::FunctionChecker>::eval
+#0  0x00005555558459f7 in <clc::own::FunctionChecker>::resolved_callee
+#1  0x000055555583b944 in <clc::own::FunctionChecker>::call_may_write_globals
+#2  0x000055555586c3db in <clc::own::FunctionChecker>::eval
+#3  0x00005555558d6e21 in <clc::own::FunctionChecker>::check_let
+#0  0x00005555558459f0 in <clc::own::FunctionChecker>::resolved_callee
+#1  0x0000555555848dc6 in <clc::own::FunctionChecker>::lower_intrinsic_call
+#2  0x00005555558d1b76 in <clc::own::FunctionChecker>::check_expr_statement
+#3  0x00005555558c0a68 in <clc::own::FunctionChecker>::check_stmt
+#0  __memcmp_sse2
+#1  0x000055555579bc55 in <clc::ir::mono::Monomorphization>::record
+#2  0x00005555556bdd67 in clc::own::generics::record_call_instance
+#3  0x00005555556ba6b2 in clc::own::generics::walk_value
+#0  __memcmp_sse2
+#1  0x000055555591b8b7 in <clc::types::TyKind as core::cmp::PartialEq>::eq
+#2  0x000055555579baac in <clc::ir::mono::Monomorphization>::record_struct
+#3  0x00005555556bceb4 in clc::own::generics::record_struct_type
+#0  0x000055555599f143 in <clc::codegen::Emitter>::slice_element_types
+#1  0x0000555555929213 in <clc::codegen::Emitter>::run
+#2  0x00005555559b7b23 in clc::codegen::emit
+#3  0x00005555556a03b4 in clc::driver::run

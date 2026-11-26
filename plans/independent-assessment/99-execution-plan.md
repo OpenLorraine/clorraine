@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-26 00:34
-> **Progress**: 61/95 tasks (64%)
+> **Last Updated**: 2026-11-26 01:59
+> **Progress**: 68/95 tasks (71%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -312,19 +312,19 @@ this plan's folder and the roadmap; 03-01 §Ground rules)
 **Objective**: WS7's own probes and their expectations fixed before measuring.
 
 - [x] 7.1.1 Write WS7's probes under `probes/WS7/`: the host-time runner (≥5 runs), the ownership-heavy, generic, and closure scaling generators that `compile_time.py` lacks, and the FS-UAE frame-timing probe used only if WS5/WS6 flagged a shim cost; expectations are the golden outputs or the generator's documented size; commit them, local only ✅ (completed: 2026-11-26 00:34)
-- [ ] 7.1.2 Red check: each script rejects a run whose output differs from its expectation; log in `findings/WS7-performance.md`
+- [x] 7.1.2 Red check: each script rejects a run whose output differs from its expectation; log in `findings/WS7-performance.md` ✅ (completed: 2026-11-26 01:46)
 
 ### Step 7.2: Analysis
 
-- [ ] 7.2.1 WS7-01: analyze the Phase 0 matrix per lens and add host time
-- [ ] 7.2.2 WS7-02, WS7-04: corpus and `examples/amiga/` footprint against the A500 budget; chip vs. fast placement
-- [ ] 7.2.3 WS7-03, WS7-05: 68020 probe gains (citing WS4-08 for flags) and the profile-variant question; frame timing only where WS5/WS6 recorded a suspected shim cost
-- [ ] 7.2.4 WS7-06, WS7-07: compile time and RSS scaling over the `compile_time.py` series and the WS7 generators; hotspot attribution by scaling exponent and code reading
+- [x] 7.2.1 WS7-01: analyze the Phase 0 matrix per lens and add host time ✅ (completed: 2026-11-26 01:59)
+- [x] 7.2.2 WS7-02, WS7-04: corpus and `examples/amiga/` footprint against the A500 budget; chip vs. fast placement ✅ (completed: 2026-11-26 01:59)
+- [x] 7.2.3 WS7-03, WS7-05: 68020 probe gains (citing WS4-08 for flags) and the profile-variant question; frame timing only where WS5/WS6 recorded a suspected shim cost ✅ (completed: 2026-11-26 01:59)
+- [x] 7.2.4 WS7-06, WS7-07: compile time and RSS scaling over the `compile_time.py` series and the WS7 generators; hotspot attribution by scaling exponent and code reading ✅ (completed: 2026-11-26 01:59)
 
 ### Step 7.3: Hardening and gate
 
-- [ ] 7.3.1 Self-refutation against `compiler-throughput` and `performance-levers-closeout` (a new measurement is required to contradict them)
-- [ ] 7.3.2 Phase gate: Task verify and the Phases 1–8 row of `07` §Check points for `findings/WS7-performance.md` and `probes/WS7/`; commit, local only
+- [x] 7.3.1 Self-refutation against `compiler-throughput` and `performance-levers-closeout` (a new measurement is required to contradict them) ✅ (completed: 2026-11-26 01:59)
+- [x] 7.3.2 Phase gate: Task verify and the Phases 1–8 row of `07` §Check points for `findings/WS7-performance.md` and `probes/WS7/`; commit, local only ✅ (completed: 2026-11-26 01:59)
 
 **Test slices**: N/A — no test map
 **Verify (gate)**: `bash plans/independent-assessment/probes/WS0/drift-check.sh plans/independent-assessment`, then the Phases 1–8 row of `07` §Check points (AR #20)
