@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-26 03:23
-> **Progress**: 86/95 tasks (90%)
+> **Last Updated**: 2026-11-26 03:25
+> **Progress**: 88/95 tasks (92%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -406,8 +406,8 @@ this plan's folder and the roadmap; 03-01 §Ground rules)
 
 ### Step 10.2: Writing
 
-- [ ] 10.2.1 Write sections 1–7 (summary, scope and limits, scorecard, findings, themes, performance, quick wins) from `05-findings.md` and the workstream files, citing surviving findings only
-- [ ] 10.2.2 Write sections 8–10 (remediation roadmap with unranked recommendations, spec questions, appendix without DEF IDs yet)
+- [x] 10.2.1 Write sections 1–7 (summary, scope and limits, scorecard, findings, themes, performance, quick wins) from `05-findings.md` and the workstream files, citing surviving findings only ✅ (completed: 2026-11-26 03:25)
+- [x] 10.2.2 Write sections 8–10 (remediation roadmap with unranked recommendations, spec questions, appendix without DEF IDs yet) ✅ (completed: 2026-11-26 03:25)
 
 ### Step 10.3: Review, DEF rows, issues, repeatability, and gate
 
