@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-26 21:08
-> **Progress**: 31/75 tasks (41%)
+> **Last Updated**: 2026-11-26 21:12
+> **Progress**: 33/75 tasks (44%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -187,15 +187,15 @@ on Linux in this worktree; Windows runs go through the remote helper (AR-5, AR-2
 
 ## Phase 5: Installer core
 
-> **Phase baseline tree**: _(recorded by exec-plan)_
+> **Phase baseline tree**: 6259c9843301480ece90549868931c575705f542
 > **Reasoning**: xhigh — deletion, PATH, and junction handling change user state irreversibly
 
 ### Step 5.1: Specification tests
 
 **Reference**: 03-04 §Flow 1–3, §PATH, §Uninstall and purge, §Presentation, §Template · ST-39 – ST-49, ST-59 – ST-63
 
-- [ ] 5.1.1 [spec-author] Write ST-39 – ST-49 and ST-59 – ST-63 with the dot-source seam and a scratch registry key — `tools/setup/tests/install.spec.test.ps1`
-- [ ] 5.1.2 Run on the Windows host against the empty template and confirm they fail (red)
+- [x] 5.1.1 [spec-author] Write ST-39 – ST-49 and ST-59 – ST-63 with the dot-source seam and a scratch registry key — `tools/setup/tests/install.spec.test.ps1` ✅ (completed: 2026-11-26 21:12) — 19 cases; fixture zips around a compiled stand-in clorraine.exe; seams per AR-59
+- [x] 5.1.2 Run on the Windows host against the empty template and confirm they fail (red) ✅ (completed: 2026-11-26 21:12) — 18 of 19 fail (`Invoke-Installer` missing); the ASCII case passes because the placeholder is ASCII
 
 ### Step 5.2: Implementation
 
