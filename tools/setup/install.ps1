@@ -333,16 +333,15 @@ function Remove-TreeSafe([string]$Path) {
 # A new private folder under the user's temporary folder.
 function New-PrivateTemp([string]$Tag) {
     $path = Join-Path ([IO.Path]::GetTempPath()) ("clorraine-$Tag-" + [guid]::NewGuid().ToString('N').Substring(0, 12))
-    New-Item -ItemType Directory -Path $path | Out-Null
-    Set-PrivateAccess $path
+    New-PrivateFolder $path
     return $path
 }
 
-# Gives a folder this installer created an access list of its own: full
-# control for the current user, SYSTEM, and Administrators, nothing inherited.
-# A shared TMP or a prefix such as C:\Clorraine would otherwise let another
-# local user replace a verified file before it is used.
-function Set-PrivateAccess([string]$Path) {
+# Creates a folder with an access list of its own, in one step: full control
+# for the current user, SYSTEM, and Administrators, nothing inherited. A shared
+# TMP or a prefix such as C:\Clorraine would otherwise let another local user
+# replace a verified file before it is used.
+function New-PrivateFolder([string]$Path) {
     $security = New-Object System.Security.AccessControl.DirectorySecurity
     $security.SetAccessRuleProtection($true, $false)
     $inherit = [System.Security.AccessControl.InheritanceFlags]'ContainerInherit, ObjectInherit'
@@ -355,7 +354,7 @@ function Set-PrivateAccess([string]$Path) {
         $rule = New-Object System.Security.AccessControl.FileSystemAccessRule($sid, 'FullControl', $inherit, 'None', 'Allow')
         $security.AddAccessRule($rule)
     }
-    (New-Object System.IO.DirectoryInfo $Path).SetAccessControl($security)
+    [void][IO.Directory]::CreateDirectory($Path, $security)
 }
 
 # The lowercase SHA-256 of a file.
@@ -468,7 +467,9 @@ function Test-CandidateZip([string]$Path) {
 # than the check above, so the result is checked as well.
 function Test-ExtractedTree([string]$Staging, [string]$Top) {
     $children = @(Get-ChildItem -LiteralPath $Staging -Force)
-    if ($children.Count -ne 1 -or -not [string]::Equals($children[0].Name, $Top, [StringComparison]::Ordinal)) {
+    if ($children.Count -ne 1 -or -not [string]::Equals($children[0].Name, $Top, [StringComparison]::Ordinal) -or
+        -not $children[0].PSIsContainer -or
+        ($children[0].Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
         Stop-Install 1 'the extracted archive does not hold exactly one top folder'
     }
     $tree = Join-Path $Staging $Top
@@ -485,9 +486,11 @@ function Test-ExtractedTree([string]$Staging, [string]$Top) {
             $found.Add($item.FullName.Substring($tree.Length + 1).Replace('\', '/'))
         }
     }
-    $sorted = @($found | Sort-Object)
-    $wanted = @($script:CandidateFiles | Sort-Object)
-    if (($sorted -join '|') -cne ($wanted -join '|')) {
+    $sorted = $found.ToArray()
+    [Array]::Sort($sorted, [StringComparer]::Ordinal)
+    $wanted = [string[]]$script:CandidateFiles.Clone()
+    [Array]::Sort($wanted, [StringComparer]::Ordinal)
+    if (-not [string]::Equals(($sorted -join '|'), ($wanted -join '|'), [StringComparison]::Ordinal)) {
         Stop-Install 1 'the extracted archive does not hold exactly the expected files'
     }
     return $tree
@@ -639,8 +642,9 @@ function Resolve-Prefix([string]$Path) {
     }
     $full = [IO.Path]::GetFullPath($Path).TrimEnd('\')
     if (-not (Test-Path -LiteralPath $full)) {
-        New-Item -ItemType Directory -Force -Path $full | Out-Null
-        Set-PrivateAccess $full
+        $parent = Split-Path -Parent $full
+        if ($parent -and -not (Test-Path -LiteralPath $parent)) { New-Item -ItemType Directory -Force -Path $parent | Out-Null }
+        New-PrivateFolder $full
     }
     return $full
 }
@@ -706,6 +710,12 @@ function Install-Archive([string]$Root, [string]$ArchivePath) {
             [IO.Directory]::Move($tree, $folder)
             $created = $true
         }
+        # A `current` that is not ours is refused before the switch starts, so
+        # the cleanup below never touches it.
+        if ($null -ne (Get-Item -LiteralPath $current -Force -ErrorAction SilentlyContinue) -and
+            -not (Test-OwnedLink $current $versions)) {
+            Stop-Install 1 "'$current' exists and is not a Clorraine link; remove it and retry"
+        }
         $switching = $true
         Set-CurrentVersion $Root $folder
         $completed = $true
@@ -715,7 +725,9 @@ function Install-Archive([string]$Root, [string]$ArchivePath) {
                 if ($null -ne (Get-Item -LiteralPath $pending -Force -ErrorAction SilentlyContinue)) { Remove-Link $pending }
                 $now = Get-JunctionTarget $current
                 $restore = -not ($previous -and $now -and (Test-SamePath $now $previous))
-                if ($restore) {
+                $present = $null -ne (Get-Item -LiteralPath $current -Force -ErrorAction SilentlyContinue)
+                # Only a missing `current` or one of our own links is replaced.
+                if ($restore -and (-not $present -or (Test-OwnedLink $current $versions))) {
                     if ($null -ne (Get-Item -LiteralPath $current -Force -ErrorAction SilentlyContinue)) { Remove-Link $current }
                     if ($previous) { New-Item -ItemType Junction -Path $current -Target $previous | Out-Null }
                 }
