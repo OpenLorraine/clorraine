@@ -839,6 +839,590 @@ function Invoke-Uninstall([string]$Root, [bool]$AlsoPurge) {
     Write-Line '  Remove rc24 under Settings > Apps > Installed apps (m68k-amigaos-gcc).'
 }
 
+# --- The installed CLI -------------------------------------------------------
+
+# The installation folder of this run, set once the prefix is resolved.
+$script:InstallRoot = ''
+
+# Runs the installed clorraine.exe through the stable `current` link and
+# returns its exit code and output.
+function Invoke-Clorraine([string[]]$Arguments, [string]$WorkingDirectory = '') {
+    $clorraine = Join-Path $script:InstallRoot 'current\bin\clorraine.exe'
+    return Invoke-Native $clorraine $Arguments $WorkingDirectory
+}
+
+# Prints what a person can still do by hand after a step was skipped or failed.
+function Write-NextSteps([string]$Root, [bool]$NeedToolchain) {
+    $cli = Join-Path $Root 'current\bin\clorraine.exe'
+    Write-Line 'Next steps:'
+    if ($NeedToolchain) {
+        Write-Line '  rerun this installer with -Toolchain <rc24 root> (or -InstallToolchain), or run:'
+        Write-Line "  $cli setup --toolchain <rc24 root>"
+    }
+    Write-Line "  $cli run $(Join-Path $Root 'examples\hello.clo')"
+    Write-Line "  $cli run -p hosted-amiga --release --emulator --fs-uae <fs-uae.exe> --kickstart <ks31-a1200.rom> $(Join-Path $Root 'examples\hello-amiga.clo')"
+}
+
+# --- rc24 toolchain ----------------------------------------------------------
+
+$script:Rc24Url = 'https://github.com/AmigaPorts/m68k-amigaos-gcc/releases/download/v16.2-rc24/m68k-amigaos-gcc-16.2-rc24-x86_64-w64-mingw32ucrt-setup.exe'
+$script:Rc24Bytes = 48065003
+$script:Rc24Sha256 = '9dd6973539bb2d514fc1b1e6c0a107cac6f30a9c4076cf4014cbe13013c95512'
+$script:Rc24Version = '16.2-rc24'
+
+# The registry key the upstream setup writes (one per machine, any version).
+$script:Rc24UninstallKey = 'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{8D184346-D038-45E9-98A1-43BFC542BE34}_is1'
+
+# The per-machine folder the elevated step installs into.
+function Get-Rc24AdminRoot {
+    $programs = if ($env:ProgramFiles) { $env:ProgramFiles } else { 'C:\Program Files' }
+    return Join-Path $programs 'Clorraine'
+}
+
+# The installed amiga-gcc registration (DisplayVersion, InstallLocation), or
+# $null when none is registered. Read from the 64-bit registry view, where
+# the upstream setup registers.
+function Get-Rc24Registration {
+    $base = [Microsoft.Win32.RegistryKey]::OpenBaseKey('LocalMachine', 'Registry64')
+    try {
+        $key = $base.OpenSubKey($script:Rc24UninstallKey)
+        if ($null -eq $key) { return $null }
+        try {
+            return [pscustomobject]@{
+                DisplayVersion = [string]$key.GetValue('DisplayVersion')
+                InstallLocation = [string]$key.GetValue('InstallLocation')
+            }
+        } finally { $key.Dispose() }
+    } finally { $base.Dispose() }
+}
+
+# The elevated half of the rc24 install. It runs as an administrator, so it
+# trusts nothing the standard user could have changed: it copies the setup
+# into a new staging folder inside the administrator-only AdminRoot, checks
+# the copy's size and SHA-256 there, and only then runs it silently, logging
+# into the same folder. The log is kept as AdminRoot\rc24-setup.log and the
+# staging folder is removed. Returns the setup's exit code, 3 when the copy
+# does not match, and 4 when a staging folder cannot be made. This function
+# is self-contained: Invoke-ElevatedSetup sends its text to the elevated
+# PowerShell.
+function Invoke-ElevatedStaging([string]$AdminRoot, [string]$Source, [string]$Target, [long]$Bytes, [string]$Sha256) {
+    $ErrorActionPreference = 'Stop'
+    New-Item -ItemType Directory -Force -Path $AdminRoot | Out-Null
+    $staging = Join-Path $AdminRoot ('.staging-' + [guid]::NewGuid().ToString('N').Substring(0, 12))
+    if (Test-Path -LiteralPath $staging) { return 4 }
+    New-Item -ItemType Directory -Path $staging | Out-Null
+    try {
+        $setup = Join-Path $staging 'setup.exe'
+        Copy-Item -LiteralPath $Source -Destination $setup
+        $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $setup).Hash.ToLowerInvariant()
+        if ((Get-Item -LiteralPath $setup).Length -ne $Bytes -or $hash -ne $Sha256.ToLowerInvariant()) { return 3 }
+        $log = Join-Path $staging 'setup.log'
+        $arguments = '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /NOCLOSEAPPLICATIONS /SP- /DIR="' + $Target + '" /LOG="' + $log + '"'
+        $process = Start-Process -FilePath $setup -ArgumentList $arguments -Wait -PassThru
+        if (Test-Path -LiteralPath $log) { Copy-Item -LiteralPath $log -Destination (Join-Path $AdminRoot 'rc24-setup.log') -Force }
+        return $process.ExitCode
+    } finally {
+        [IO.Directory]::Delete($staging, $true)
+    }
+}
+
+# Runs Invoke-ElevatedStaging in an elevated PowerShell behind one UAC prompt
+# and returns its exit code. Only the function's own text and the four values
+# cross the boundary. A declined prompt throws the Win32 error 1223.
+function Invoke-ElevatedSetup([string]$Source, [string]$Target, [long]$Bytes, [string]$Sha256) {
+    $quote = { param($text) "'" + $text.Replace("'", "''") + "'" }
+    $text = 'function Invoke-ElevatedStaging {' + ${function:Invoke-ElevatedStaging}.ToString() + "}`n" +
+        'exit (Invoke-ElevatedStaging -AdminRoot ' + (& $quote (Get-Rc24AdminRoot)) + ' -Source ' + (& $quote $Source) +
+        ' -Target ' + (& $quote $Target) + " -Bytes $Bytes -Sha256 " + (& $quote $Sha256) + ')'
+    $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($text))
+    $powershell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+    $process = Start-Process -FilePath $powershell -Verb RunAs -Wait -PassThru `
+        -ArgumentList "-NoProfile -ExecutionPolicy Bypass -EncodedCommand $encoded"
+    return $process.ExitCode
+}
+
+# True when an error (or one it wraps) is a declined UAC prompt.
+function Test-DeclinedElevation($ErrorRecord) {
+    $exception = $ErrorRecord.Exception
+    while ($null -ne $exception) {
+        if ($exception -is [System.ComponentModel.Win32Exception] -and $exception.NativeErrorCode -eq 1223) { return $true }
+        $exception = $exception.InnerException
+    }
+    return $false
+}
+
+# Downloads, verifies, and installs the pinned rc24 behind one UAC prompt.
+# Returns the toolchain root.
+function Install-Rc24([string]$Root) {
+    $work = New-PrivateTemp 'rc24'
+    try {
+        $setup = Join-Path $work 'amiga-gcc-16.2-rc24-setup.exe'
+        Write-Line '  Downloading the rc24 toolchain setup from AmigaPorts (48 MB)...'
+        Invoke-Download $script:Rc24Url $setup $script:Rc24Bytes $script:Rc24Sha256 1200
+        $target = Join-Path (Get-Rc24AdminRoot) 'amiga-gcc-16.2-rc24'
+        Write-Line '  Windows asks for administrator approval to install it for all users.'
+        try {
+            $code = Invoke-ElevatedSetup $setup $target $script:Rc24Bytes $script:Rc24Sha256
+        } catch {
+            if (Test-DeclinedElevation $_) {
+                Write-Warn 'the administrator approval was declined; the CLI stays installed'
+                Write-NextSteps $Root $true
+                Stop-Install 1 'the rc24 toolchain was not installed'
+            }
+            throw
+        }
+        if ($code -ne 0) {
+            Write-Warn "the rc24 setup failed (exit $code); see $(Join-Path (Get-Rc24AdminRoot) 'rc24-setup.log')"
+            Write-NextSteps $Root $true
+            Stop-Install 1 'the rc24 toolchain was not installed'
+        }
+        Write-Ok "installed rc24 in $target"
+        return $target
+    } finally {
+        Remove-TreeSafe $work
+    }
+}
+
+# Picks the toolchain root: -Toolchain, an existing rc24 registration, or a
+# new install with consent. Returns $null when the step is skipped.
+function Select-Toolchain([string]$Root, [hashtable]$Options, [bool]$Interactive) {
+    if ($Options['Toolchain']) { return $Options['Toolchain'] }
+    $registration = Get-Rc24Registration
+    if ($null -ne $registration -and $registration.DisplayVersion -eq $script:Rc24Version -and $registration.InstallLocation) {
+        $existing = $registration.InstallLocation.TrimEnd('\')
+        Write-Ok "using the installed rc24 toolchain in $existing"
+        return $existing
+    }
+    if ($null -ne $registration) {
+        $other = Get-SafeText $registration.DisplayVersion
+        $replace = [bool]$Options['ReplaceToolchain']
+        if (-not $replace -and $Interactive) {
+            $replace = Read-YesNo "  amiga-gcc $other is installed; replace it with $script:Rc24Version? [y/N] " $false
+        } elseif (-not $replace) {
+            Stop-Install 1 "amiga-gcc $other is installed, but Clorraine needs $script:Rc24Version; rerun with -ReplaceToolchain to replace it, or pass -Toolchain <rc24 root>"
+        }
+        if (-not $replace) {
+            Write-Warn "kept amiga-gcc $other; the toolchain is not configured"
+            Write-NextSteps $Root $true
+            return $null
+        }
+        return Install-Rc24 $Root
+    }
+    $install = [bool]$Options['InstallToolchain']
+    if (-not $install -and $Interactive) {
+        $install = Read-YesNo "  Install the rc24 toolchain from AmigaPorts (48 MB, one UAC prompt)? [Y/n] " $true
+    }
+    if (-not $install) {
+        Write-Line '  no toolchain selected; rerun with -InstallToolchain, or with -Toolchain <rc24 root> for an existing one'
+        return $null
+    }
+    return Install-Rc24 $Root
+}
+
+# --- FS-UAE and the Kickstart ROM ---------------------------------------------
+
+$script:FsUaeUrl = 'https://github.com/FrodeSolheim/fs-uae/releases/download/v3.2.35/FS-UAE_3.2.35_Windows_x86-64.zip'
+$script:FsUaeBytes = 49123213
+$script:FsUaeSha256 = 'b402e2802d518a085c878be96c5c0a656fa3dec57dcf0019d226f3285069063e'
+
+# The executable inside an FS-UAE Windows folder.
+$script:FsUaeExe = 'FS-UAE\Windows\x86-64\fs-uae.exe'
+
+# One value remembered in the CLI config (`key=value` lines), or ''.
+function Get-ConfigValue([string]$Key) {
+    $config = Join-Path $env:APPDATA 'clorraine\config'
+    if (-not (Test-Path -LiteralPath $config -PathType Leaf)) { return '' }
+    foreach ($line in Get-Content -LiteralPath $config) {
+        if ($line.StartsWith("$Key=")) { return $line.Substring($Key.Length + 1) }
+    }
+    return ''
+}
+
+# Finds FS-UAE: -FsUae, CLORRAINE_FS_UAE, the CLI config, fs-uae.exe on PATH,
+# the copy this installer downloaded, then Program Files. Returns the path or
+# $null; a named path that does not exist is reported and not replaced.
+function Find-FsUae([string]$Explicit, [string]$Root) {
+    foreach ($named in $Explicit, $env:CLORRAINE_FS_UAE) {
+        if (-not $named) { continue }
+        if (Test-Path -LiteralPath $named -PathType Leaf) { return $named }
+        Write-Warn "FS-UAE is not a file: $(Get-SafeText $named)"
+        return $null
+    }
+    $remembered = Get-ConfigValue 'fs-uae'
+    if ($remembered -and (Test-Path -LiteralPath $remembered -PathType Leaf)) { return $remembered }
+    foreach ($dir in ($env:PATH -split ';')) {
+        if (-not $dir -or -not (Test-DrivePath $dir)) { continue }
+        $candidate = Join-Path $dir 'fs-uae.exe'
+        if (Test-Path -LiteralPath $candidate -PathType Leaf) { return $candidate }
+    }
+    $downloaded = Join-Path $Root ('fs-uae\3.2.35\' + $script:FsUaeExe)
+    if (Test-Path -LiteralPath $downloaded -PathType Leaf) { return $downloaded }
+    if ($env:ProgramFiles) {
+        $programs = Join-Path $env:ProgramFiles $script:FsUaeExe
+        if (Test-Path -LiteralPath $programs -PathType Leaf) { return $programs }
+    }
+    return $null
+}
+
+# Finds a Kickstart 3.1 A1200 ROM: -Kickstart, CLORRAINE_KICKSTART, the CLI
+# config, then the usual folders, by the usual names first and then by name
+# pattern. A found ROM must have the size of a 512 KB image; a named one is
+# left to `clorraine setup` to validate. Returns the path or $null.
+function Find-Kickstart([string]$Explicit) {
+    foreach ($named in $Explicit, $env:CLORRAINE_KICKSTART, (Get-ConfigValue 'kickstart')) {
+        if ($named) { return $named }
+    }
+    $folders = @(
+        (Join-Path $env:USERPROFILE 'amiga\roms'),
+        (Join-Path $env:USERPROFILE 'Documents\FS-UAE\Kickstarts'),
+        (Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'FS-UAE\Kickstarts')
+    )
+    if ($env:PUBLIC) { $folders += Join-Path $env:PUBLIC 'Documents\Amiga Files\Shared\rom' }
+    $sizes = 524288, 524299
+    foreach ($folder in $folders) {
+        if (-not (Test-Path -LiteralPath $folder -PathType Container)) { continue }
+        foreach ($name in 'amiga-os-310-a1200.rom', 'kick31a1200.rom', 'kick31.rom') {
+            $file = Get-Item -LiteralPath (Join-Path $folder $name) -ErrorAction SilentlyContinue
+            if ($null -ne $file -and -not $file.PSIsContainer -and $sizes -contains $file.Length) { return $file.FullName }
+        }
+    }
+    foreach ($folder in $folders) {
+        if (-not (Test-Path -LiteralPath $folder -PathType Container)) { continue }
+        foreach ($pattern in '*a1200*.rom', 'kick31*.rom') {
+            foreach ($file in @(Get-ChildItem -LiteralPath $folder -Filter $pattern -File -ErrorAction SilentlyContinue)) {
+                if ($sizes -contains $file.Length) { return $file.FullName }
+            }
+        }
+    }
+    return $null
+}
+
+# Downloads the pinned FS-UAE 3.2.35 zip, checks its entries, and unpacks it
+# into Root\fs-uae\3.2.35. Returns the executable path.
+function Install-FsUae([string]$Root) {
+    $work = New-PrivateTemp 'fs-uae'
+    $parent = Join-Path $Root 'fs-uae'
+    $target = Join-Path $parent '3.2.35'
+    $staging = Join-Path $parent ('.tmp-' + [guid]::NewGuid().ToString('N').Substring(0, 12))
+    try {
+        $zipPath = Join-Path $work 'FS-UAE_3.2.35_Windows_x86-64.zip'
+        Write-Line '  Downloading FS-UAE 3.2.35 (49 MB)...'
+        Invoke-Download $script:FsUaeUrl $zipPath $script:FsUaeBytes $script:FsUaeSha256 600
+        Add-Type -AssemblyName System.IO.Compression.FileSystem
+        $zip = [IO.Compression.ZipFile]::OpenRead($zipPath)
+        try {
+            foreach ($entry in $zip.Entries) {
+                $name = $entry.FullName.Replace('\', '/')
+                $parts = $name.Split('/')
+                $type = ($entry.ExternalAttributes -shr 16) -band 0xF000
+                if ($name.StartsWith('/') -or $name.Contains(':') -or ($parts -contains '..') -or
+                    ($type -ne 0 -and $type -ne 0x8000 -and $type -ne 0x4000)) {
+                    Stop-Install 1 ('the FS-UAE archive contains an unsafe entry: ' + (Get-SafeText $entry.FullName))
+                }
+            }
+        } finally { $zip.Dispose() }
+        New-Item -ItemType Directory -Force -Path $parent | Out-Null
+        if (Test-Path -LiteralPath $target) { Remove-TreeSafe $target }
+        New-Item -ItemType Directory -Path $staging | Out-Null
+        $tar = Join-Path $env:SystemRoot 'System32\tar.exe'
+        $result = Invoke-Native $tar @('-x', '-f', $zipPath, '-C', $staging)
+        if ($result.Code -ne 0) { Stop-Install 1 ('cannot extract FS-UAE: ' + (Get-SafeText $result.Err).Trim()) }
+        [IO.Directory]::Move($staging, $target)
+        $exe = Join-Path $target $script:FsUaeExe
+        if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { Stop-Install 1 "the FS-UAE archive has no $script:FsUaeExe" }
+        Write-Ok "installed FS-UAE 3.2.35 in $target"
+        return $exe
+    } finally {
+        if (Test-Path -LiteralPath $staging) { Remove-TreeSafe $staging }
+        Remove-TreeSafe $work
+    }
+}
+
+# Picks FS-UAE and a ROM for the Amiga hello. Returns both (either may be
+# $null when that part is skipped).
+function Select-Emulator([string]$Root, [hashtable]$Options, [bool]$Interactive) {
+    $selection = [pscustomobject]@{ FsUae = $null; Kickstart = $null }
+    if ($Options['NoEmulator']) { return $selection }
+    $fsuae = Find-FsUae ([string]$Options['FsUae']) $Root
+    if (-not $fsuae -and -not $Options['FsUae'] -and -not $env:CLORRAINE_FS_UAE) {
+        $install = [bool]$Options['InstallFsUae']
+        if (-not $install -and $Interactive) {
+            $install = Read-YesNo '  FS-UAE was not found. Download FS-UAE 3.2.35 (49 MB)? [Y/n] ' $true
+        }
+        if ($install) {
+            $fsuae = Install-FsUae $Root
+        } else {
+            Write-Warn 'FS-UAE was not found; the Amiga run is skipped (rerun with -InstallFsUae, or pass -FsUae)'
+            return $selection
+        }
+    }
+    if (-not $fsuae) { return $selection }
+    $selection.FsUae = $fsuae
+    Write-Ok "FS-UAE: $fsuae"
+    $rom = Find-Kickstart ([string]$Options['Kickstart'])
+    if ($Interactive) {
+        if ($rom) {
+            [Console]::Out.Write("  Kickstart 3.1 A1200 ROM [$rom] (Enter to use, - to skip): ")
+            $answer = [Console]::In.ReadLine()
+            if ($answer -eq '-') { $rom = $null } elseif ($answer) { $rom = $answer }
+        } else {
+            [Console]::Out.Write('  Kickstart 3.1 A1200 ROM path (leave empty to skip the Amiga run): ')
+            $rom = [Console]::In.ReadLine()
+        }
+    }
+    if (-not $rom) {
+        Write-Warn 'no Kickstart ROM selected; the Amiga run is skipped'
+        return $selection
+    }
+    $selection.Kickstart = [IO.Path]::GetFullPath($rom)
+    return $selection
+}
+
+# Runs `clorraine setup` with the toolchain and any selected emulator paths.
+# A rejected emulator path is reported and setup runs again without it, so the
+# toolchain is still configured. Returns the selection actually remembered.
+function Set-Toolchain([string]$Toolchain, $Emulator) {
+    $arguments = @('setup', '--toolchain', $Toolchain)
+    if ($Emulator.FsUae) { $arguments += '--fs-uae', $Emulator.FsUae }
+    if ($Emulator.Kickstart) { $arguments += '--kickstart', $Emulator.Kickstart }
+    $result = Invoke-Clorraine $arguments
+    if ($result.Code -ne 0 -and ($Emulator.FsUae -or $Emulator.Kickstart) -and
+        $result.Err -match 'clorraine: --(fs-uae|kickstart):') {
+        Write-Warn ('the emulator paths were not accepted: ' + (Get-SafeText $result.Err).Trim())
+        $Emulator = [pscustomobject]@{ FsUae = $null; Kickstart = $null }
+        $result = Invoke-Clorraine @('setup', '--toolchain', $Toolchain)
+    }
+    if ($result.Code -ne 0) {
+        Write-Warn ('clorraine setup failed: ' + (Get-SafeText $result.Err).Trim())
+        return $null
+    }
+    foreach ($line in ((Get-SafeText $result.Out) -split "`r?`n")) { if ($line) { Write-Ok $line } }
+    return $Emulator
+}
+
+# --- Hellos --------------------------------------------------------------------
+
+# The host C compiler the driver would use: CLORRAINE_CC, else gcc, cc, then
+# clang on PATH. Kind is gcc, clang, or none; Clang is recognized by its
+# --version text.
+function Find-HostCompiler {
+    $path = $null
+    if ($env:CLORRAINE_CC) {
+        $command = Get-Command -Name $env:CLORRAINE_CC -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($null -ne $command) { $path = $command.Source }
+    } else {
+        foreach ($name in 'gcc', 'cc', 'clang') {
+            $command = Get-Command -Name $name -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($null -ne $command) { $path = $command.Source; break }
+        }
+    }
+    if (-not $path) { return [pscustomobject]@{ Kind = 'none'; Path = $null } }
+    $version = Invoke-Native $path @('--version')
+    $kind = if (($version.Out + $version.Err) -match 'clang') { 'clang' } else { 'gcc' }
+    return [pscustomobject]@{ Kind = $kind; Path = $path }
+}
+
+# Runs one hello in a private working folder; True for the exact hello line.
+function Invoke-Hello([string[]]$Arguments) {
+    $work = New-PrivateTemp 'hello'
+    try {
+        $result = Invoke-Clorraine $Arguments $work
+        $line = (Get-SafeText $result.Out).Trim()
+        Write-Line ('    ' + $script:Style.Bold + $line + $script:Style.Reset)
+        if ($result.Code -ne 0 -and $result.Err) { Write-Line ('    ' + (Get-SafeText $result.Err).Trim()) }
+        return ($result.Code -eq 0 -and $line -eq 'Hello, Amiga, from Clorraine!')
+    } finally {
+        Remove-TreeSafe $work
+    }
+}
+
+# Runs the PC hello when a GCC-compatible compiler is present, then the Amiga
+# hello in FS-UAE when an emulator and a ROM were selected. Returns the two
+# outcomes (passed, failed, or skipped).
+function Invoke-Hellos($Examples, $Emulator, [bool]$Interactive) {
+    $state = [pscustomobject]@{ Host = 'skipped'; Guest = 'skipped' }
+    if ($Interactive -and -not (Read-YesNo '  Run the hello program now? [Y/n] ' $true)) { return $state }
+    $compiler = Find-HostCompiler
+    switch ($compiler.Kind) {
+        'none' { Write-Warn 'no C compiler found; the PC hello is skipped (install GCC (for example w64devkit or MSYS2 UCRT64) or set CLORRAINE_CC)' }
+        'clang' { Write-Warn 'Clang found; the PC hello needs GCC (w64devkit or MSYS2), or set CLORRAINE_CC' }
+        default {
+            if (Invoke-Hello @('run', $Examples.Hello)) {
+                $state.Host = 'passed'
+                Write-Ok 'the compiler, the toolchain, and your C compiler work'
+            } else {
+                $state.Host = 'failed'
+                Write-Warn 'the PC hello did not print the expected line'
+            }
+        }
+    }
+    if ($Emulator.FsUae -and $Emulator.Kickstart) {
+        if ($Interactive -and -not (Read-YesNo '  Now watch it on an Amiga 1200 in FS-UAE? [Y/n] ' $true)) { return $state }
+        Write-Line '  Booting an Amiga 1200 in FS-UAE. The intro ends by itself, or click in its window.'
+        $guest = @('run', '-p', 'hosted-amiga', '--release', '--emulator', '--fs-uae', $Emulator.FsUae,
+            '--kickstart', $Emulator.Kickstart, $Examples.Guest)
+        if (Invoke-Hello $guest) {
+            $state.Guest = 'passed'
+            Write-Ok 'your Amiga said hello'
+        } else {
+            $state.Guest = 'failed'
+            Write-Warn 'the Amiga run did not complete'
+        }
+    }
+    return $state
+}
+
+# --- VS Code and the starter ----------------------------------------------------
+
+# A working VS Code-family launcher (code.cmd, codium.cmd, code-insiders.cmd
+# on PATH or in the default per-user install), or $null.
+function Find-VSCode {
+    foreach ($name in 'code.cmd', 'codium.cmd', 'code-insiders.cmd') {
+        $command = Get-Command -Name $name -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($null -ne $command) { return $command.Source }
+    }
+    $default = Join-Path $env:LOCALAPPDATA 'Programs\Microsoft VS Code\bin\code.cmd'
+    if (Test-Path -LiteralPath $default -PathType Leaf) { return $default }
+    return $null
+}
+
+# Installs the pinned extension when VS Code is present and the person agrees
+# (or passed -VSCode). Returns installed, already-installed, available,
+# skipped, unavailable, or failed.
+function Install-VSCodeExtension([hashtable]$Options, [bool]$Interactive) {
+    if ($Options['NoVSCode']) { return 'skipped' }
+    $editor = Find-VSCode
+    if (-not $editor) {
+        if ($Options['VSCode']) { Write-Warn "VS Code was not found; install it, then run: code --install-extension $script:VsixName" }
+        return 'unavailable'
+    }
+    $listed = Invoke-Native $editor @('--list-extensions')
+    if (@($listed.Out -split "`r?`n" | Where-Object { $_.Trim() -ieq 'openlorraine.clorraine' }).Count -gt 0) {
+        Write-Ok 'the Clorraine extension is already installed in VS Code'
+        return 'already-installed'
+    }
+    if (-not $Options['VSCode']) {
+        if (-not $Interactive) {
+            Write-Line '  VS Code detected; rerun with -VSCode to install the extension'
+            return 'available'
+        }
+        if (-not (Read-YesNo '  Install the Clorraine extension in VS Code? [Y/n] ' $true)) { return 'skipped' }
+    }
+    if ($script:VsixBytes -notmatch '^[0-9]+$' -or $script:VsixSha256 -notmatch '^[0-9a-fA-F]{64}$') {
+        Write-Warn 'the VS Code extension is not pinned in this installer; install it from the release'
+        return 'failed'
+    }
+    $work = New-PrivateTemp 'vsix'
+    try {
+        $vsix = Join-Path $work $script:VsixName
+        try {
+            Invoke-Download $script:VsixUrl $vsix ([long]$script:VsixBytes) $script:VsixSha256 120
+        } catch {
+            Write-Warn ('could not download the VS Code extension: ' + (Get-SafeText $_.Exception.Message))
+            return 'failed'
+        }
+        $result = Invoke-Native $editor @('--install-extension', $vsix)
+        if ($result.Code -eq 0) {
+            Write-Ok 'installed the Clorraine extension in VS Code'
+            return 'installed'
+        }
+        Write-Warn "could not install the VS Code extension; run: code --install-extension $script:VsixName"
+        return 'failed'
+    } finally {
+        Remove-TreeSafe $work
+    }
+}
+
+# The default starter folder: .\amiga-starter, or the first free
+# amiga-starter-N.
+function Get-DefaultStarter {
+    $base = Join-Path (Get-Location).ProviderPath 'amiga-starter'
+    $candidate = $base
+    $n = 2
+    while ((Test-Path -LiteralPath $candidate) -and @(Get-ChildItem -LiteralPath $candidate -Force).Count -gt 0) {
+        $candidate = "$base-$n"
+        $n++
+    }
+    return $candidate
+}
+
+# Offers a starter project and opens it in VS Code. Returns its folder or $null.
+function New-Starter([hashtable]$Options, [bool]$Interactive) {
+    $dir = [string]$Options['Starter']
+    if (-not $dir) {
+        if ($Options['NoStarter'] -or -not $Interactive) { return $null }
+        $dir = Get-DefaultStarter
+        if (-not (Read-YesNo "  Create a starter Amiga project in ${dir}? [Y/n] " $true)) { return $null }
+    }
+    $result = Invoke-Clorraine @('new', $dir)
+    if ($result.Code -ne 0) {
+        Write-Warn ("could not create the starter project in ${dir}: " + (Get-SafeText $result.Err).Trim())
+        return $null
+    }
+    Write-Ok "created $dir with main.clo and a VS Code setup"
+    if ($Interactive -and -not $Options['NoVSCode']) {
+        $editor = Find-VSCode
+        if ($editor -and (Read-YesNo '  Open it in VS Code now? [Y/n] ' $true)) {
+            Start-Process -FilePath $editor -ArgumentList @((ConvertTo-NativeArgument $dir), (ConvertTo-NativeArgument (Join-Path $dir 'main.clo'))) -WindowStyle Hidden | Out-Null
+            Write-Ok "opening VS Code: press $($script:Style.Play) Run in FS-UAE in the editor title bar"
+        }
+    }
+    return $dir
+}
+
+# --- Summary -------------------------------------------------------------------
+
+# Prints what was set up and the next commands.
+function Write-Summary($Summary) {
+    $cli = 'clorraine'
+    Write-Line ''
+    Write-Line ($script:Style.Green + $script:Style.Bold + $script:Style.Check + ' First run complete.' + $script:Style.Reset)
+    Write-Line ''
+    Write-Line "  CLI        $(Join-Path $Summary.Root 'current\bin\clorraine.exe')"
+    Write-Line ('  Toolchain  ' + $(if ($Summary.Toolchain) { $Summary.Toolchain } else { 'not configured' }))
+    Write-Line ('  Emulator   ' + $(if ($Summary.Kickstart) { "FS-UAE with $($Summary.Kickstart)" } else { 'not set up' }))
+    $hello = switch ("$($Summary.Host)/$($Summary.Guest)") {
+        'passed/passed' { 'ran on this PC and on the Amiga' }
+        'passed/failed' { 'ran on this PC; the Amiga run failed' }
+        'skipped/passed' { 'ran on the Amiga' }
+        default { if ($Summary.Host -eq 'passed') { 'ran on this PC' } elseif ($Summary.Host -eq 'failed') { 'failed' } else { 'not run' } }
+    }
+    Write-Line "  Hello      $hello"
+    $editor = switch ($Summary.VSCode) {
+        'installed' { 'extension installed' }
+        'already-installed' { 'extension already installed' }
+        'failed' { 'extension not installed' }
+        'available' { 'detected; rerun with -VSCode' }
+        'skipped' { 'skipped' }
+        default { 'not found' }
+    }
+    Write-Line "  VS Code    $editor"
+    Write-Line "  Examples   $(Join-Path $Summary.Root 'examples')"
+    if ($Summary.Starter) { Write-Line "  Project    $($Summary.Starter)" }
+    Write-Line ''
+    Write-Line ($script:Style.Bold + 'What next' + $script:Style.Reset)
+    Write-Line '  Open a new terminal so the PATH change applies, and restart VS Code.'
+    if ($Summary.Starter) {
+        Write-Line "  cd `"$($Summary.Starter)`""
+        Write-Line '  code .                      (open main.clo, change MESSAGE, press Run in FS-UAE)'
+        Write-Line "  $cli run -p hosted-amiga --emulator main.clo"
+    } elseif ($Summary.Toolchain) {
+        Write-Line "  $cli new my-game            (a starter Amiga project with VS Code tasks)"
+    } else {
+        Write-Line "  $cli setup --toolchain <rc24 root>"
+    }
+    if ($Summary.Toolchain) {
+        $guest = Join-Path $Summary.Root 'examples\hello-amiga.clo'
+        if ($Summary.Kickstart) {
+            Write-Line "  $cli run -p hosted-amiga --release --emulator `"$guest`""
+        } else {
+            Write-Line "  $cli run -p hosted-amiga --release --emulator --kickstart <ks31-a1200.rom> `"$guest`""
+        }
+    }
+    Write-Line ''
+    Write-Line ($script:Style.Dim + '  Docs and examples: https://github.com/OpenLorraine/clorraine' + $script:Style.Reset)
+}
+
 # --- Command line ------------------------------------------------------------
 
 # Rejects option combinations that cannot mean one thing.
@@ -939,6 +1523,7 @@ function Invoke-Main([hashtable]$Options) {
     }
 
     $root = Resolve-Prefix $(if (& $opt 'Prefix') { & $opt 'Prefix' } else { Get-DefaultPrefix })
+    $script:InstallRoot = $root
     $mutex = Lock-Installer
     try {
         Repair-Switch $root
@@ -971,6 +1556,39 @@ function Invoke-Main([hashtable]$Options) {
         Update-UserPath $root ([bool](& $opt 'ModifyPath')) $interactive
         $examples = Install-Examples $root
         Write-Ok "examples in $($examples.Folder)"
+        $summary = [pscustomobject]@{
+            Root = $root; Toolchain = $null; Kickstart = $null
+            Host = 'skipped'; Guest = 'skipped'; VSCode = 'unavailable'; Starter = $null
+        }
+        if (-not (& $opt 'NoToolchain')) {
+            if ($interactive) { Write-Step 2 'Amiga toolchain' }
+            $toolchain = Select-Toolchain $root $Options $interactive
+            if ($toolchain) {
+                if ($interactive) { Write-Step 3 'Amiga emulator' }
+                $emulator = Select-Emulator $root $Options $interactive
+                $remembered = Set-Toolchain $toolchain $emulator
+                if ($null -eq $remembered) {
+                    Write-NextSteps $root $true
+                    Stop-Install 1 'the toolchain could not be configured'
+                }
+                $summary.Toolchain = $toolchain
+                $summary.Kickstart = $remembered.Kickstart
+                if (-not (& $opt 'NoHello')) {
+                    if ($interactive) { Write-Step 4 'Say hello' }
+                    $state = Invoke-Hellos $examples $remembered $interactive
+                    $summary.Host = $state.Host
+                    $summary.Guest = $state.Guest
+                    if ($state.Host -eq 'failed') {
+                        Write-NextSteps $root $false
+                        Stop-Install 1 'the PC hello failed'
+                    }
+                }
+            }
+        }
+        if ($interactive) { Write-Step 5 'Your first Amiga project' }
+        $summary.VSCode = Install-VSCodeExtension $Options $interactive
+        if ($summary.Toolchain -or (& $opt 'Starter')) { $summary.Starter = New-Starter $Options $interactive }
+        Write-Summary $summary
     } finally {
         $mutex.ReleaseMutex()
         $mutex.Dispose()
