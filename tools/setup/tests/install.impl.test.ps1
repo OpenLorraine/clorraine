@@ -377,6 +377,96 @@ Test-Case 'should restore the previous current link when the switch fails' {
     Assert-That ($left.Count -eq 0) ('left behind: ' + (($left | ForEach-Object { $_.Name }) -join ', '))
 }
 
+# --- Toolchain and emulator ----------------------------------------------------
+
+Test-Case 'should send the staging function and the four values through the encoded elevated command' {
+    $dir = New-Dir "elevate-o'brien"
+    $setup = Join-Path $dir 'fake-setup.exe'
+    $record = Join-Path $dir 'args.txt'
+    Add-Type -OutputType ConsoleApplication -OutputAssembly $setup -TypeDefinition (@'
+public static class FakeSetupImpl {
+    public static int Main(string[] args) {
+        System.IO.File.WriteAllText(@"RECORD", System.Environment.CommandLine);
+        return 7;
+    }
+}
+'@).Replace('RECORD', $record.Replace('"', '""'))
+    $savedPrograms = $env:ProgramFiles
+    $env:ProgramFiles = Join-Path $dir 'Programs'
+    try {
+        $target = Join-Path $env:ProgramFiles "Clorraine\amiga gcc's"
+        $text = Get-ElevatedCommand $setup $target (Get-Item $setup).Length (Get-Sha256 $setup)
+    } finally { $env:ProgramFiles = $savedPrograms }
+    $errors = $null
+    [void][System.Management.Automation.Language.Parser]::ParseInput($text, [ref]$null, [ref]$errors)
+    Assert-That ($errors.Count -eq 0) "the elevated command does not parse: $($errors | Select-Object -First 1)"
+    $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($text))
+    $powershell = Join-Path $PSHOME 'powershell.exe'
+    $run = Invoke-Native $powershell @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', $encoded)
+    Assert-That ($run.Code -eq 7) "the setup's exit code did not come back: $($run.Code) $($run.Err)"
+    $commandLine = [IO.File]::ReadAllText($record)
+    Assert-That ($commandLine.Contains('/DIR="' + $target + '"')) "target lost its quoting: $commandLine"
+    Assert-That (Test-Path -LiteralPath (Join-Path $dir 'Programs\Clorraine')) 'the admin root was not used'
+    Assert-That (@(Get-ChildItem -LiteralPath (Join-Path $dir 'Programs\Clorraine') -Force -Filter '.staging-*').Count -eq 0) 'staging left behind'
+}
+
+Test-Case 'should read the amiga-gcc registration and report none when it is absent' {
+    $saved = $script:Rc24RegistryHive, $script:Rc24UninstallKey
+    $script:Rc24RegistryHive = 'CurrentUser'
+    $script:Rc24UninstallKey = "$ScratchKey\Uninstall\{8D184346-D038-45E9-98A1-43BFC542BE34}_is1"
+    try {
+        Assert-That ($null -eq (Get-Rc24Registration)) 'found a registration in an empty key'
+        $key = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey($script:Rc24UninstallKey)
+        $key.SetValue('DisplayVersion', '16.2-rc24')
+        $key.SetValue('InstallLocation', 'C:\Tools\rc24\')
+        $key.Dispose()
+        $found = Get-Rc24Registration
+        Assert-That ($found.DisplayVersion -eq '16.2-rc24') "version: $($found.DisplayVersion)"
+        Assert-That ($found.InstallLocation -eq 'C:\Tools\rc24\') "location: $($found.InstallLocation)"
+        $chosen = Select-Toolchain 'C:\unused' @{} $false
+        Assert-That ($chosen -eq 'C:\Tools\rc24') "the trailing backslash was kept: $chosen"
+    } finally {
+        $script:Rc24RegistryHive, $script:Rc24UninstallKey = $saved
+    }
+}
+
+Test-Case 'should prefer a usual ROM name in any folder to a name pattern and skip wrong sizes' {
+    $saved = $env:USERPROFILE, $env:PUBLIC, $env:CLORRAINE_KICKSTART, $env:APPDATA
+    $fake = New-Dir 'rom-home'
+    $env:USERPROFILE = $fake
+    $env:PUBLIC = Join-Path $fake 'public'
+    $env:CLORRAINE_KICKSTART = $null
+    $env:APPDATA = New-Dir 'rom-appdata'
+    try {
+        $roms = New-Dir 'rom-home\amiga\roms'
+        $kickstarts = New-Dir 'rom-home\Documents\FS-UAE\Kickstarts'
+        [IO.File]::WriteAllBytes((Join-Path $roms 'my-A1200-dump.rom'), (New-Object byte[] 524288))
+        [IO.File]::WriteAllBytes((Join-Path $roms 'kick31-trimmed.rom'), (New-Object byte[] 1000))
+        $exact = Join-Path $kickstarts 'kick31.rom'
+        [IO.File]::WriteAllBytes($exact, (New-Object byte[] 524288))
+        Assert-That (Test-SamePath (Find-Kickstart '') $exact) "chose $(Find-Kickstart '')"
+        Remove-Item -LiteralPath $exact
+        Assert-That (Test-SamePath (Find-Kickstart '') (Join-Path $roms 'my-A1200-dump.rom')) "pattern: $(Find-Kickstart '')"
+        New-Item -ItemType Directory -Force -Path (Join-Path $env:APPDATA 'clorraine') | Out-Null
+        Set-Content -LiteralPath (Join-Path $env:APPDATA 'clorraine\config') -Value 'kickstart=C:\remembered.rom'
+        Assert-That ((Find-Kickstart '') -eq 'C:\remembered.rom') 'the remembered ROM was not preferred'
+        Assert-That ((Find-Kickstart 'C:\flag.rom') -eq 'C:\flag.rom') 'the flag was not preferred'
+    } finally {
+        $env:USERPROFILE, $env:PUBLIC, $env:CLORRAINE_KICKSTART, $env:APPDATA = $saved
+    }
+}
+
+Test-Case 'should refuse an FS-UAE archive with an unsafe entry before unpacking it' {
+    $root = New-Dir 'fsuae-bad'
+    $zip = New-Zip (Join-Path $root 'bad.zip') @('FS-UAE/Windows/x86-64/fs-uae.exe', '../evil.txt')
+    function Invoke-Download([string]$Url, [string]$Destination, [long]$Bytes, [string]$Sha256, [int]$MaxSeconds) {
+        Copy-Item -LiteralPath $zip -Destination $Destination
+    }
+    Assert-That ((Get-StopCode { Install-FsUae $root }) -eq 1) 'accepted an unsafe FS-UAE archive'
+    Assert-That (-not (Test-Path (Join-Path $root 'fs-uae\3.2.35'))) 'unpacked anyway'
+    Assert-That (-not (Test-Path (Join-Path (Split-Path -Parent $root) 'evil.txt'))) 'wrote outside the prefix'
+}
+
 # --- Summary -----------------------------------------------------------------
 
 [Microsoft.Win32.Registry]::CurrentUser.DeleteSubKeyTree('Software\ClorraineInstallImpl', $false)

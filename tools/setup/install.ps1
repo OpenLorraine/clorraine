@@ -870,8 +870,10 @@ $script:Rc24Bytes = 48065003
 $script:Rc24Sha256 = '9dd6973539bb2d514fc1b1e6c0a107cac6f30a9c4076cf4014cbe13013c95512'
 $script:Rc24Version = '16.2-rc24'
 
-# The registry key the upstream setup writes (one per machine, any version).
+# The registry key the upstream setup writes (one per machine, any version),
+# and the hive it is in; tests point both at a scratch key.
 $script:Rc24UninstallKey = 'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{8D184346-D038-45E9-98A1-43BFC542BE34}_is1'
+$script:Rc24RegistryHive = 'LocalMachine'
 
 # The per-machine folder the elevated step installs into.
 function Get-Rc24AdminRoot {
@@ -883,7 +885,7 @@ function Get-Rc24AdminRoot {
 # $null when none is registered. Read from the 64-bit registry view, where
 # the upstream setup registers.
 function Get-Rc24Registration {
-    $base = [Microsoft.Win32.RegistryKey]::OpenBaseKey('LocalMachine', 'Registry64')
+    $base = [Microsoft.Win32.RegistryKey]::OpenBaseKey($script:Rc24RegistryHive, 'Registry64')
     try {
         $key = $base.OpenSubKey($script:Rc24UninstallKey)
         if ($null -eq $key) { return $null }
@@ -926,14 +928,20 @@ function Invoke-ElevatedStaging([string]$AdminRoot, [string]$Source, [string]$Ta
     }
 }
 
+# The PowerShell text the elevated process runs: the staging function and one
+# call with the four values as single-quoted literals.
+function Get-ElevatedCommand([string]$Source, [string]$Target, [long]$Bytes, [string]$Sha256) {
+    $quote = { param($text) "'" + $text.Replace("'", "''") + "'" }
+    return 'function Invoke-ElevatedStaging {' + ${function:Invoke-ElevatedStaging}.ToString() + "}`n" +
+        'exit (Invoke-ElevatedStaging -AdminRoot ' + (& $quote (Get-Rc24AdminRoot)) + ' -Source ' + (& $quote $Source) +
+        ' -Target ' + (& $quote $Target) + " -Bytes $Bytes -Sha256 " + (& $quote $Sha256) + ')'
+}
+
 # Runs Invoke-ElevatedStaging in an elevated PowerShell behind one UAC prompt
 # and returns its exit code. Only the function's own text and the four values
 # cross the boundary. A declined prompt throws the Win32 error 1223.
 function Invoke-ElevatedSetup([string]$Source, [string]$Target, [long]$Bytes, [string]$Sha256) {
-    $quote = { param($text) "'" + $text.Replace("'", "''") + "'" }
-    $text = 'function Invoke-ElevatedStaging {' + ${function:Invoke-ElevatedStaging}.ToString() + "}`n" +
-        'exit (Invoke-ElevatedStaging -AdminRoot ' + (& $quote (Get-Rc24AdminRoot)) + ' -Source ' + (& $quote $Source) +
-        ' -Target ' + (& $quote $Target) + " -Bytes $Bytes -Sha256 " + (& $quote $Sha256) + ')'
+    $text = Get-ElevatedCommand $Source $Target $Bytes $Sha256
     $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($text))
     $powershell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
     $process = Start-Process -FilePath $powershell -Verb RunAs -Wait -PassThru `

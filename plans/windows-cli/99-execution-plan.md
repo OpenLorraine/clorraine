@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-26 21:51
-> **Progress**: 47/75 tasks (63%)
+> **Last Updated**: 2026-11-26 21:54
+> **Progress**: 48/75 tasks (64%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -240,7 +240,7 @@ on Linux in this worktree; Windows runs go through the remote helper (AR-5, AR-2
 
 ### Step 6.3: Implementation tests and hardening
 
-- [ ] 6.3.1 Write impl tests (encoded elevated command, registry parsing, ROM globbing) — `tools/setup/tests/install.impl.test.ps1`
+- [x] 6.3.1 Write impl tests (encoded elevated command, registry parsing, ROM globbing) — `tools/setup/tests/install.impl.test.ps1` ✅ (completed: 2026-11-26 21:54) — impl 24/24; also the FS-UAE archive check
 - [ ] 6.3.2 Phase gate — `make check IMAGE=clorraine-sdk:windows-cli`; both PowerShell suites on Windows
 
 **Deliverables**:
