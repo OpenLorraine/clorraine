@@ -32,3 +32,8 @@
 | SA-004 | 5 | MINOR | tools/setup/install.ps1 | fixed |
 | SA-005 | 5 | MINOR | tools/setup/install.ps1 | fixed |
 | SA-006 | 5 | MINOR | tools/setup/install.ps1 | fixed |
+| RV-006 | 5 | MAJOR | tools/setup/install.ps1 | fixed |
+| SA-007 | 5 | MAJOR | tools/setup/install.ps1 | fixed |
+| SA-008 | 5 | MINOR | tools/setup/install.ps1 | fixed |
+| SA-009 | 5 | MINOR | tools/setup/install.ps1 | accepted |
+| SA-010 | 5 | MINOR | tools/setup/tests/install.impl.test.ps1 | fixed |

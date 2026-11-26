@@ -163,7 +163,7 @@ Test-Case 'should report an unknown option as a usage error' {
     Assert-That ((Invoke-Installer -Unistall 6>$null 2>$null) -eq 2) 'Invoke-Installer accepted -Unistall'
     $powershell = Join-Path $PSHOME 'powershell.exe'
     $child = Invoke-Native $powershell @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command',
-        "`$env:CLORRAINE_INSTALL_LIB = `$null; & '$Template' -NoToolchian; exit `$LASTEXITCODE")
+        "`$env:CLORRAINE_INSTALL_LIB = `$null; & '$Template' -Prefix '$SuiteRoot\unknown-prefix' -NoToolchian; exit `$LASTEXITCODE")
     Assert-That ($child.Code -eq 2) "the script exited $($child.Code): $($child.Err)"
     Assert-That ($child.Err -match "unknown option '-NoToolchian'") $child.Err
 }
@@ -213,6 +213,19 @@ Test-Case 'should purge only what the installer created and keep the user files 
     Assert-That (-not (Test-Path (Join-Path $examples 'hello.clo'))) 'hello.clo remains'
     Assert-That (Test-Path (Join-Path $examples 'keep.txt')) 'a user file in examples was removed'
     Assert-That (Test-Path (Join-Path $userFsUae '3.2.35\fs-uae.exe')) 'purge followed the fs-uae junction'
+}
+
+Test-Case 'should refuse and keep a current item that is not a Clorraine link' {
+    $root = New-Dir 'foreign-current'
+    $foreign = Join-Path $root 'current'
+    Set-Content -LiteralPath $foreign 'the user file'
+    $zip = New-Zip (Join-Path $root 'c.zip') (Get-ValidNames)
+    function Test-ExtractedVersion([string]$Tree) { }
+    $code = Get-StopCode { Install-Archive $root $zip }
+    Assert-That ($code -eq 1) "exit code $code"
+    Assert-That ((Get-Content -LiteralPath $foreign) -eq 'the user file') 'the user file named current was removed'
+    $left = @(Get-ChildItem -LiteralPath (Join-Path $root 'versions') -Force)
+    Assert-That ($left.Count -eq 0) ('left behind: ' + (($left | ForEach-Object { $_.Name }) -join ', '))
 }
 
 # --- Checksums and quoting ---------------------------------------------------
