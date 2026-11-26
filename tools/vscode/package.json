@@ -49,13 +49,13 @@
           "type": "string",
           "default": "",
           "scope": "machine",
-          "description": "Language server executable. Empty searches CLORRAINE_LSP, ~/.local/bin, trusted development builds, and PATH."
+          "description": "Language server executable (clorraine-lsp, or clorraine-lsp.exe on Windows). Empty searches CLORRAINE_LSP, the installed CLI (~/.local/bin on Linux, %LOCALAPPDATA%\\Programs\\Clorraine\\current\\bin on Windows), trusted development builds, and PATH."
         },
         "clorraine.driver.path": {
           "type": "string",
           "default": "",
           "scope": "machine",
-          "description": "Clorraine driver executable. Empty searches ~/.local/bin, trusted development builds, and PATH."
+          "description": "Clorraine driver executable (clorraine, or clorraine.exe on Windows). Empty searches the installed CLI (~/.local/bin on Linux, %LOCALAPPDATA%\\Programs\\Clorraine\\current\\bin on Windows), trusted development builds, and PATH."
         },
         "clorraine.toolchain.path": {
           "type": "string",
@@ -67,7 +67,7 @@
           "type": "string",
           "default": "",
           "scope": "machine",
-          "description": "Native Linux FS-UAE executable used by Run in FS-UAE."
+          "description": "FS-UAE executable (fs-uae, or fs-uae.exe on Windows) used by Run in FS-UAE."
         },
         "clorraine.kickstart.path": {
           "type": "string",

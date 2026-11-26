@@ -110,8 +110,11 @@ fn file_path(params: &Json, key: &str) -> Result<PathBuf, String> {
 }
 
 /// Avoid lossy path spellings that could name different files in a CLI argument.
+///
+/// The reply uses the host's one path spelling, so on Windows the editor gets
+/// `C:\…` rather than the verbatim `\\?\C:\…` that resolving produced.
 fn path_text(path: &Path) -> Result<String, String> {
-    path.to_str().map(str::to_owned)
+    path.to_str().map(uri::normalize)
         .ok_or_else(|| "Saved source paths must be valid UTF-8; rename the file and retry.".into())
 }
 

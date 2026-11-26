@@ -9,6 +9,7 @@ import * as vscode from "vscode";
 
 import type { LspClient } from "./client";
 import { machinePath, resolveTool } from "./discovery";
+import { comparablePath, samePath } from "./paths";
 
 /** The initialized server state needed by an action, never a second client. */
 export interface SelectionSession {
@@ -67,7 +68,7 @@ function selectedFiles(value: unknown, root: string, entry: string): string[] {
   const canonicalRoot = fs.realpathSync(root);
   for (const item of value.files) {
     if (typeof item !== "string" || !path.isAbsolute(item) ||
-        fs.realpathSync(item) !== item || !fs.statSync(item).isFile()) {
+        !samePath(fs.realpathSync(item), item) || !fs.statSync(item).isFile()) {
       throw new Error("Invalid saved source path; save the sources and retry selection.");
     }
     const relative = path.relative(canonicalRoot, item);
@@ -76,7 +77,10 @@ function selectedFiles(value: unknown, root: string, entry: string): string[] {
     }
     files.push(item);
   }
-  if (files[0] !== fs.realpathSync(entry) || new Set(files).size !== files.length) {
+  // Windows names one file in several case and separator spellings, so the
+  // entry and duplicate checks compare paths under the host's path rules.
+  if (!samePath(files[0], fs.realpathSync(entry)) ||
+      new Set(files.map((item) => comparablePath(item))).size !== files.length) {
     throw new Error("Invalid entry or duplicate source selection; update the language server and retry.");
   }
   const tail = files.slice(1);
@@ -100,7 +104,7 @@ function unchanged(document: vscode.TextDocument, version: number): void {
 
 /** Check only selected dirty overlays; never save dependencies or unrelated documents. */
 function requireSavedDependencies(files: readonly string[]): void {
-  const selected = new Set(files);
+  const selected = new Set(files.map((item) => comparablePath(item)));
   for (const document of vscode.workspace.textDocuments) {
     if (!document.isDirty || document.uri.scheme !== "file") {
       continue;
@@ -111,7 +115,7 @@ function requireSavedDependencies(files: readonly string[]): void {
     } catch {
       // An unrelated missing file must not prevent a saved program from running.
     }
-    if (selected.has(canonical)) {
+    if (selected.has(comparablePath(canonical))) {
       throw new Error(`Save selected source ${document.uri.fsPath}, then retry.`);
     }
   }
