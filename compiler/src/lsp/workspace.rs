@@ -89,11 +89,12 @@ pub struct IndexEntry {
 }
 
 impl IndexEntry {
-    /// The logical key used by the analysis source map.
+    /// The logical key used by the analysis source map, in the host's one
+    /// path spelling (see [`uri::normalize`]).
     pub fn key(&self) -> String {
         self.path
             .as_ref()
-            .map(|path| path.display().to_string())
+            .map(|path| uri::normalize(&path.display().to_string()))
             .unwrap_or_else(|| self.uri.clone())
     }
 }
@@ -269,7 +270,7 @@ impl ModuleIndex {
 
     /// Builds one entry for a path.
     fn entry_for_path(&self, path: &Path) -> IndexEntry {
-        let key = path.display().to_string();
+        let key = uri::normalize(&path.display().to_string());
         let text = std::fs::read_to_string(path).unwrap_or_default();
         Self::parse_entry(&key, Some(path.to_path_buf()), &text)
     }

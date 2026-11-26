@@ -1,13 +1,15 @@
 /**
- * User-owned tool discovery for the Linux extension host. Workspace settings
- * never select executables, and development builds are considered only after
- * trust has been granted.
+ * User-owned tool discovery for the Linux and Windows extension hosts.
+ * Workspace settings never select executables, and development builds are
+ * considered only after trust has been granted.
  */
 import * as fs from "node:fs";
 import { homedir } from "node:os";
 import * as path from "node:path";
 
 import * as vscode from "vscode";
+
+import { executableName, installedToolPath } from "./paths";
 
 /**
  * Machine-only path settings; language/workspace overrides are deliberately
@@ -69,7 +71,7 @@ function onPath(name: string): string | undefined {
 /** Validate an explicit choice without falling back to a different installation. */
 function explicit(value: string, setting: string): string {
   const candidate = path.isAbsolute(value) ? value :
-    path.basename(value) === value ? onPath(value) : undefined;
+    path.basename(value) === value ? onPath(executableName(value)) : undefined;
   if (!candidate || !executable(candidate)) {
     throw new Error(`Invalid ${setting}: ${value}. Set ${setting} to a valid executable in User Settings.`);
   }
@@ -94,7 +96,7 @@ export function resolveTool(name: "clorraine" | "clorraine-lsp"): string {
   if (name === "clorraine-lsp" && process.env.CLORRAINE_LSP) {
     return explicit(process.env.CLORRAINE_LSP, "CLORRAINE_LSP");
   }
-  const installed = path.join(homedir(), ".local", "bin", name);
+  const installed = installedToolPath(name, process.platform, process.env, homedir());
   if (executable(installed)) {
     return installed;
   }
@@ -103,13 +105,13 @@ export function resolveTool(name: "clorraine" | "clorraine-lsp"): string {
       continue;
     }
     for (const mode of ["debug", "release"]) {
-      const candidate = path.join(folder.uri.fsPath, "target", mode, name);
+      const candidate = path.join(folder.uri.fsPath, "target", mode, executableName(name));
       if (executable(candidate)) {
         return candidate;
       }
     }
   }
-  const found = onPath(name);
+  const found = onPath(executableName(name));
   if (found) {
     return found;
   }

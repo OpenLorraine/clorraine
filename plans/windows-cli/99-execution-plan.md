@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-26 20:53
-> **Progress**: 26/75 tasks (35%)
+> **Last Updated**: 2026-11-26 20:57
+> **Progress**: 29/75 tasks (39%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -168,9 +168,9 @@ on Linux in this worktree; Windows runs go through the remote helper (AR-5, AR-2
 
 ### Step 4.2: Implementation
 
-- [ ] 4.2.1 Add `parse_for`, `from_path_for`, `normalize_for` and route every key and `sourceFiles` result through them — `compiler/src/lsp/uri.rs`, `lsp/workspace.rs`, `lsp/source_files.rs`
-- [ ] 4.2.2 Add `samePath` and `installedToolPath`, use them in actions and discovery, update setting descriptions — `tools/vscode/src/actions.ts`, `discovery.ts`, `package.json`
-- [ ] 4.2.3 Run both suites — ST-31 – ST-37 pass (green); existing LSP and extension suites unchanged
+- [x] 4.2.1 Add `parse_for`, `from_path_for`, `normalize_for` and route every key and `sourceFiles` result through them — `compiler/src/lsp/uri.rs`, `lsp/workspace.rs`, `lsp/source_files.rs` ✅ (completed: 2026-11-26 20:57)
+- [x] 4.2.2 Add `samePath` and `installedToolPath`, use them in actions and discovery, update setting descriptions — `tools/vscode/src/actions.ts`, `discovery.ts`, `package.json` ✅ (completed: 2026-11-26 20:57)
+- [x] 4.2.3 Run both suites — ST-31 – ST-37 pass (green); existing LSP and extension suites unchanged ✅ (completed: 2026-11-26 20:57) — Rust spec 30/30, lsp 32, editor suites unchanged; extension 178 pass, 1 pre-existing skip; helpers live in vscode-free `src/paths.ts` so plain Node can load them
 
 ### Step 4.3: Implementation tests and hardening
 

@@ -7,6 +7,8 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::clorraine::platform::{self, HostOs};
+
 /// A document address.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum DocumentUri {
@@ -23,7 +25,7 @@ impl DocumentUri {
     /// URI so its diagnostics can be routed back to the editor.
     pub fn key(&self) -> String {
         match self {
-            DocumentUri::File(path) => path.display().to_string(),
+            DocumentUri::File(path) => normalize(&path.display().to_string()),
             DocumentUri::Untitled(uri) => uri.clone(),
         }
     }
@@ -47,6 +49,31 @@ impl DocumentUri {
 
 /// Parses a `file:` or `untitled:` URI.
 pub fn parse(uri: &str) -> Result<DocumentUri, String> {
+    parse_for(HostOs::current(), uri)
+}
+
+/// Parses a `file:` or `untitled:` URI under the given host family's rules.
+///
+/// On Windows a file URI names a drive path: `file:///c%3A/a/b.clo` and
+/// `file:///C:/a/b.clo` both become `C:\a\b.clo`, with an uppercase drive and
+/// backslashes, the one spelling every key and reply uses. A URI with a host
+/// (a network share) is refused there, apart from `localhost`.
+///
+/// # Errors
+///
+/// A message for an unsupported scheme, a remote host, a malformed escape, or
+/// (on Windows) a path without a drive.
+///
+/// ```
+/// use clc::clorraine::platform::HostOs;
+/// use clc::lsp::uri::{parse_for, DocumentUri};
+/// let uri = parse_for(HostOs::Windows, "file:///c%3A/x.clo").unwrap();
+/// assert_eq!(uri, DocumentUri::File(r"C:\x.clo".into()));
+/// ```
+pub fn parse_for(os: HostOs, uri: &str) -> Result<DocumentUri, String> {
+    if os == HostOs::Windows {
+        return parse_windows(uri);
+    }
     if uri.starts_with("untitled:") {
         return Ok(DocumentUri::Untitled(uri.to_owned()));
     }
@@ -69,10 +96,64 @@ pub fn parse(uri: &str) -> Result<DocumentUri, String> {
     Ok(DocumentUri::File(PathBuf::from(decoded)))
 }
 
+/// Parses a URI with the Windows rules of [`parse_for`].
+fn parse_windows(uri: &str) -> Result<DocumentUri, String> {
+    if uri.starts_with("untitled:") {
+        return Ok(DocumentUri::Untitled(uri.to_owned()));
+    }
+    let Some(rest) = uri.strip_prefix("file://") else {
+        return Err(format!("unsupported document URI scheme: {uri}"));
+    };
+    let path_part = if let Some(path) = rest.strip_prefix('/') {
+        path
+    } else if let Some(path) = rest.strip_prefix("localhost/") {
+        path
+    } else {
+        return Err(format!("network-share paths are not supported: {uri}"));
+    };
+    let decoded = percent_decode(path_part)?;
+    let bytes = decoded.as_bytes();
+    if bytes.len() < 2 || !bytes[0].is_ascii_alphabetic() || bytes[1] != b':' {
+        return Err(format!("file URI has no drive letter: {uri}"));
+    }
+    Ok(DocumentUri::File(PathBuf::from(normalize_for(HostOs::Windows, &decoded.replace('/', "\\")))))
+}
+
 /// Renders an absolute path as a `file:` URI.
 pub fn from_path(path: &Path) -> String {
-    let text = path.display().to_string();
+    from_path_for(HostOs::current(), &path.display().to_string())
+}
+
+/// Renders an absolute path as a `file:` URI under the given host family's
+/// rules.
+///
+/// Unix paths percent-encode every byte except the unreserved characters and
+/// `/`. A Windows drive path takes the shape VS Code itself sends:
+/// `C:\a b\x.clo` becomes `file:///c%3A/a%20b/x.clo`, with a lowercase drive,
+/// an encoded colon, and forward slashes.
+///
+/// ```
+/// use clc::clorraine::platform::HostOs;
+/// use clc::lsp::uri::from_path_for;
+/// assert_eq!(from_path_for(HostOs::Windows, r"C:\a b\x.clo"), "file:///c%3A/a%20b/x.clo");
+/// ```
+pub fn from_path_for(os: HostOs, path: &str) -> String {
     let mut encoded = String::from("file://");
+    let text = match os {
+        HostOs::Unix => path.to_owned(),
+        HostOs::Windows => {
+            let normal = normalize_for(os, path).replace('\\', "/");
+            let bytes = normal.as_bytes();
+            if bytes.len() >= 2 && bytes[1] == b':' {
+                encoded.push('/');
+                encoded.push(char::from(bytes[0].to_ascii_lowercase()));
+                encoded.push_str("%3A");
+                normal[2..].to_owned()
+            } else {
+                normal
+            }
+        }
+    };
     for byte in text.bytes() {
         if is_unreserved(byte) || byte == b'/' {
             encoded.push(byte as char);
@@ -81,6 +162,38 @@ pub fn from_path(path: &Path) -> String {
         }
     }
     encoded
+}
+
+/// The one spelling of a path that every document key, index key, and
+/// source-selection reply uses on this host.
+pub fn normalize(path: &str) -> String {
+    normalize_for(HostOs::current(), path)
+}
+
+/// [`normalize`] under the given host family's rules.
+///
+/// Windows drops the verbatim `\\?\` prefix that resolving a path adds and
+/// uppercases the drive letter, so the editor's `c:\…` and the server's
+/// `\\?\C:\…` name the same key. Unix paths are unchanged.
+///
+/// ```
+/// use clc::clorraine::platform::HostOs;
+/// use clc::lsp::uri::normalize_for;
+/// assert_eq!(normalize_for(HostOs::Windows, r"\\?\c:\x.clo"), r"C:\x.clo");
+/// ```
+pub fn normalize_for(os: HostOs, path: &str) -> String {
+    if os == HostOs::Unix {
+        return path.to_owned();
+    }
+    let shown = platform::display_path(os, path);
+    let bytes = shown.as_bytes();
+    if bytes.len() >= 2 && bytes[0].is_ascii_lowercase() && bytes[1] == b':' {
+        let mut upper = String::with_capacity(shown.len());
+        upper.push(char::from(bytes[0].to_ascii_uppercase()));
+        upper.push_str(&shown[1..]);
+        return upper;
+    }
+    shown
 }
 
 /// True for the URI unreserved characters.
