@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-26 21:12
-> **Progress**: 33/75 tasks (44%)
+> **Last Updated**: 2026-11-26 21:22
+> **Progress**: 38/75 tasks (51%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -199,11 +199,11 @@ on Linux in this worktree; Windows runs go through the remote helper (AR-5, AR-2
 
 ### Step 5.2: Implementation
 
-- [ ] 5.2.1 Write the template: parameters, conflicts, host check, style, lock, repair — `tools/setup/install.ps1`
-- [ ] 5.2.2 Add download/verify, zip validation, extraction, version check, the junction switch, and rollback — `tools/setup/install.ps1`
-- [ ] 5.2.3 Add the registry PATH edit and its removal — `tools/setup/install.ps1`
-- [ ] 5.2.4 Add uninstall and purge with the reparse-safe walker and the in-use check — `tools/setup/install.ps1`
-- [ ] 5.2.5 Run on the Windows host — ST-39 – ST-49, ST-59 – ST-63 pass (green)
+- [x] 5.2.1 Write the template: parameters, conflicts, host check, style, lock, repair — `tools/setup/install.ps1` ✅ (completed: 2026-11-26 21:22)
+- [x] 5.2.2 Add download/verify, zip validation, extraction, version check, the junction switch, and rollback — `tools/setup/install.ps1` ✅ (completed: 2026-11-26 21:22)
+- [x] 5.2.3 Add the registry PATH edit and its removal — `tools/setup/install.ps1` ✅ (completed: 2026-11-26 21:22)
+- [x] 5.2.4 Add uninstall and purge with the reparse-safe walker and the in-use check — `tools/setup/install.ps1` ✅ (completed: 2026-11-26 21:22)
+- [x] 5.2.5 Run on the Windows host — ST-39 – ST-49, ST-59 – ST-63 pass (green) ✅ (completed: 2026-11-26 21:22) — 19/19 on Windows 11; three harness defects fixed on the way (array-literal precedence in the runner, two strict-mode failure messages); red re-run with the fixed harness against the placeholder: 18 of 19 fail
 
 ### Step 5.3: Implementation tests and hardening
 
