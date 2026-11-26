@@ -3,8 +3,9 @@
 # A500 shipped release line, against the 512 KB machine.
 # Usage (SDK container, repo root): 730-footprint.sh <clc> <out-dir> [--seeded]
 # Programs: the 31 hosted-amiga-13 cells the Phase 0 emission accepted
-# (findings/WS0-emission-record.tsv). --seeded adds a program with a 600 KB module
-# zero-filled table (.bss), which must be reported over budget.
+# (findings/WS0-emission-record.tsv). --seeded builds a C program with a 600 KB static
+# array, which must be reported over budget (a Clorraine module-level fill of that size
+# does not build in time, see probe 740).
 set -uo pipefail
 clc=$1; out=$2; seeded=${3:-}
 rec=plans/independent-assessment/findings/WS0-emission-record.tsv
@@ -12,8 +13,12 @@ flags=(-std=c99 -mcrt=nix13 -m68000 -fwrapv -O2 -ffunction-sections -fdata-secti
 mkdir -p "$out"
 progs=$(awk -F'\t' 'NR>1 && $2=="hosted-amiga-13" && $3=="yes" {print $1}' "$rec")
 if [ "$seeded" = --seeded ]; then
-    printf 'module Probe.Main;\n\nlet big: u8[614400] = [; 0];\n\nfunc main(): i32 {\n    return i32(big[7]);\n}\n' > "$out/seeded.clo"
-    progs="$out/seeded.clo"
+    printf 'static unsigned char big[614400];\nint main(void) { return big[7]; }\n' > "$out/seeded.c"
+    m68k-amigaos-gcc "${flags[@]}" -o "$out/seeded" "$out/seeded.c" -lamiga -lm
+    read -r t d b _ < <(m68k-amigaos-size "$out/seeded" | tail -1)
+    tot=$((t + d + b))
+    [ "$tot" -gt 524288 ] && echo "OVER seeded.c: $tot bytes exceeds 512 KB"
+    exit 0
 fi
 printf "%-48s %8s %8s %8s %8s %6s\n" program text data bss total pct512
 over=0

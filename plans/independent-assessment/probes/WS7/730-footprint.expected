@@ -6,8 +6,8 @@
 # finding candidate only when it leaves too little for the program's own runtime
 # allocations (judged per program in the analysis, citing its allocation sizes).
 # Expected: every program builds; none exceeds 512 KB (OVER).
-# Detector: --seeded (a 600 KB zero-filled table) must be reported OVER. A first seeded
-# run with a non-zero fill timed out in the C compiler (see probe 740).
+# Detector: --seeded (a C program with a 600 KB static array) must be reported OVER.
+# Clorraine module-level fills of that size do not build in time (probe 740).
 expect: script
 --- output
 footprint: 0 report(s)
