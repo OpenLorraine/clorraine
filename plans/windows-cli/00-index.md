@@ -65,6 +65,7 @@ non-gating remote helper).
 | 03-04 | [Installer](03-04-installer.md) | `install.ps1` |
 | 03-05 | [Packaging, Acceptance, Docs](03-05-packaging-acceptance-docs.md) | Five-asset candidate, Windows evidence, helper, docs |
 | 07 | [Testing Strategy](07-testing-strategy.md) | ST-1 – ST-74 |
+| 08 | [Merge Notes](08-merge-notes.md) | Merge, release, and follow-up drafts |
 | 99 | [Execution Plan](99-execution-plan.md) | 9 phases, 75 tasks |
 
 ## Quick Reference
