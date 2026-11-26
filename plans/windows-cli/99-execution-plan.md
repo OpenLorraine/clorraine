@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-26 18:45
-> **Progress**: 0/75 tasks (0%)
+> **Last Updated**: 2026-11-26 19:41
+> **Progress**: 2/75 tasks (3%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -60,7 +60,7 @@ on Linux in this worktree; Windows runs go through the remote helper (AR-5, AR-2
 
 ## Phase 1: Windows build image, check step, remote helper
 
-> **Phase baseline tree**: _(recorded by exec-plan)_
+> **Phase baseline tree**: a1b1d06e02cf5fcb960d1b816a5aaf1aea5ef8cf
 > **Reasoning**: medium — small infrastructure change approved in AR-20/AR-21; no product behavior
 
 ### Step 1.1: Image, check step, helper
@@ -68,10 +68,10 @@ on Linux in this worktree; Windows runs go through the remote helper (AR-5, AR-2
 **Reference**: 03-01 §Image, §make check · 03-05 §Remote helper · AR-20, AR-21, AR-37
 **Objective**: A pinned image that cross-builds Windows, a gate that compiles it, and a way to run commands on the Windows host.
 
-- [ ] 1.1.1 Append the MinGW-w64 and `x86_64-pc-windows-gnu` layer — `docker/Dockerfile`
-- [ ] 1.1.2 Build `clorraine-sdk:windows-cli` and confirm ST-1 — `make -C docker image IMAGE=clorraine-sdk:windows-cli`
-- [ ] 1.1.3 Add `cargo check --workspace --target x86_64-pc-windows-gnu` to the check gate (ST-2) — `Makefile`
-- [ ] 1.1.4 Add the non-gating remote helper and desktop-session runner — `tools/setup/windows-remote.sh`, `tools/setup/windows-desktop-run.ps1`
+- [x] 1.1.1 Append the MinGW-w64 and `x86_64-pc-windows-gnu` layer — `docker/Dockerfile` ✅ (completed: 2026-11-26 19:41)
+- [x] 1.1.2 Build `clorraine-sdk:windows-cli` and confirm ST-1 — `make -C docker image IMAGE=clorraine-sdk:windows-cli` ✅ (completed: 2026-11-26 19:41) — built by layering the committed lines on `clorraine-sdk:dev` (AR-54; the from-source build fails upstream)
+- [~] 1.1.3 Add `cargo check --workspace --target x86_64-pc-windows-gnu` to the check gate (ST-2) — `Makefile` ⏳ (implemented: 2026-11-26 19:41)
+- [~] 1.1.4 Add the non-gating remote helper and desktop-session runner — `tools/setup/windows-remote.sh`, `tools/setup/windows-desktop-run.ps1` ⏳ (implemented: 2026-11-26 19:41)
 - [ ] 1.1.5 Confirm the helper: `push` a scratch folder and `run winbox -- ver` print the expected output
 - [ ] 1.1.6 Phase gate — `make check IMAGE=clorraine-sdk:windows-cli`
 

@@ -155,4 +155,16 @@ RUN chmod +x /usr/local/bin/clorraine-smoke
 
 WORKDIR /work
 USER dev
+
+# Windows cross-build: MinGW-w64 and the Rust GNU target, so the release
+# binaries for Windows come from this same pinned image. Kept last so the
+# layers above stay cached.
+USER root
+RUN apt-get update \
+ && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+      gcc-mingw-w64-x86-64 \
+ && rm -rf /var/lib/apt/lists/*
+USER dev
+RUN rustup target add x86_64-pc-windows-gnu
+
 CMD ["/bin/bash"]
