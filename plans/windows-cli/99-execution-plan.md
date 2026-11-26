@@ -2,7 +2,7 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-26 23:10
+> **Last Updated**: 2026-11-27 00:05
 > **Progress**: 49/75 tasks (65%)
 > **CodeOps Artifact Schema**: 1
 
@@ -323,7 +323,7 @@ on Linux in this worktree; Windows runs go through the remote helper (AR-5, AR-2
 - [ ] 9.1.4 With the user signed in as `Clorraine Test` and approving UAC: run `acceptance.ps1`; collect the record
 - [ ] 9.1.5 The user confirms the UAC prompt and a Build/Run in FS-UAE from VS Code (ST-38); record both in the evidence — the editor check uses an entry with at least one imported dependency, a dirty dependency that is refused before the build, and one diagnostic shown in the editor (Phase 4 review)
 - [ ] 9.1.6 Validate the record — `make acceptance-check EVIDENCE=… CANDIDATE=…` (ST-73)
-- [ ] 9.1.7 Final Linux gate — `make verify`
+- [x] 9.1.7 Final Linux gate — `make verify` ✅ (2026-11-27 00:05; `verify: all legs passed`, exit 0, with the FS-UAE captures on a private Xvfb display; on the Wayland desktop `sdk-a500-sprites` misplaces the Amiga pointer by a few lines (429 px), identical inputs to main — the sprite-demo binary is byte-identical base vs head)
 
 ### Step 9.2: Cleanup and merge readiness
 
