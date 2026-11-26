@@ -1,0 +1,9 @@
+# WS7-06 hotspot attribution (no pass/fail). Source: 03-03 WS7-06 (hotspots attributed by
+# scaling exponent and code reading, confidence probable; host perf only if it runs —
+# it does not here, so gdb stack sampling stands in). Inputs: the 710 ownership-4000
+# and generic-4000 programs. Expected: a ranked list of the compiler functions on the
+# sampled stacks; the hottest frames name the pass whose cost grows with the function
+# or instance count.
+expect: script
+--- output
+<count> <function> (ranked)
