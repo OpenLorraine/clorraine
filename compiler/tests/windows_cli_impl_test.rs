@@ -315,3 +315,60 @@ fn should_make_a_relative_launcher_path_absolute_without_resolving_it() {
     let windows = launcher_for(HostOs::Windows, OsStr::new(r"bin\clorraine.exe"), OsStr::new(""));
     assert!(windows.ends_with(r"bin\clorraine.exe") && windows.len() > r"bin\clorraine.exe".len());
 }
+
+// --- Language server paths -------------------------------------------------
+
+use clc::lsp::uri::{from_path_for, normalize_for, parse_for, DocumentUri};
+
+/// The Windows file path a URI parses to, or the parse error.
+fn windows_parse(uri: &str) -> Result<String, String> {
+    match parse_for(HostOs::Windows, uri)? {
+        DocumentUri::File(path) => Ok(path.to_string_lossy().into_owned()),
+        DocumentUri::Untitled(other) => Err(format!("untitled: {other}")),
+    }
+}
+
+#[test]
+fn should_accept_localhost_and_lowercase_drives_in_windows_uris() {
+    assert_eq!(windows_parse("file://localhost/d:/src/a.clo"), Ok(r"D:\src\a.clo".to_owned()));
+    assert_eq!(windows_parse("file:///z%3a/x.clo"), Ok(r"Z:\x.clo".to_owned()));
+}
+
+#[test]
+fn should_reject_a_windows_uri_without_a_drive_or_with_a_bad_escape() {
+    assert!(windows_parse("file:///home/u/x.clo").unwrap_err().contains("no drive letter"));
+    assert!(windows_parse("file:///c%3/x.clo").is_err());
+    assert!(windows_parse("https://example.com/x.clo").is_err());
+}
+
+#[test]
+fn should_keep_untitled_buffers_opaque_on_windows() {
+    assert_eq!(
+        parse_for(HostOs::Windows, "untitled:Untitled-1"),
+        Ok(DocumentUri::Untitled("untitled:Untitled-1".to_owned()))
+    );
+}
+
+#[test]
+fn should_round_trip_a_windows_path_with_spaces_and_unicode() {
+    let path = "C:\\Users\\a b\\caf\u{e9}\\x.clo";
+    let uri = from_path_for(HostOs::Windows, path);
+    assert!(uri.starts_with("file:///c%3A/Users/a%20b/caf%C3%A9/"), "{uri}");
+    assert_eq!(windows_parse(&uri), Ok(path.to_owned()));
+}
+
+#[test]
+fn should_format_a_verbatim_or_lowercase_windows_path_like_the_editor() {
+    assert_eq!(from_path_for(HostOs::Windows, r"\\?\c:\x.clo"), "file:///c%3A/x.clo");
+    assert_eq!(normalize_for(HostOs::Windows, r"d:\x"), r"D:\x");
+    assert_eq!(normalize_for(HostOs::Windows, r"\\?\UNC\srv\s\x"), r"\\srv\s\x");
+}
+
+#[test]
+fn should_keep_unix_uri_formatting_unchanged() {
+    assert_eq!(from_path_for(HostOs::Unix, "/tmp/a b/x.clo"), "file:///tmp/a%20b/x.clo");
+    assert_eq!(
+        parse_for(HostOs::Unix, "file:///tmp/a%20b/x.clo"),
+        Ok(DocumentUri::File("/tmp/a b/x.clo".into()))
+    );
+}
