@@ -1,0 +1,4 @@
+# Expected output of ref/strings.c
+# Source: benchmarks/strings/expected-output.txt at the baseline (a benchmark golden, 03-01 §Expectation sources),
+# compared after tools/perf/bench.py normalize_output on host and on the A500 and A1200 shipped lenses (ST-13).
+strings: 0x3F9A6
