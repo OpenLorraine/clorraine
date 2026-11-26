@@ -1,6 +1,6 @@
 ## Ambiguity Register: Windows CLI and installer
 
-> **Status**: ✅ GATE PASSED — all 53 items resolved
+> **Status**: ✅ GATE PASSED — all 53 items resolved; AR-54 added and resolved during execution
 > **Last Updated**: 2026-11-26 18:30
 > **Evidence**: `spikes/08-windows-cli/README.md`
 
@@ -59,6 +59,7 @@
 | 51 | Behavioral | install.ps1's PC hello when the only host compiler is Clang | Skip with a GCC note / run with `--release` | User accepted recommendation: skip with `Clang found; the PC hello needs GCC (w64devkit or MSYS2), or set CLORRAINE_CC`; the step counts as skipped, not failed | ✅ Resolved |
 | 52 | Behavioral | `-Purge` and the FS-UAE copy install.ps1 downloaded into the Clorraine folder | Purge removes our own copy / never remove | User accepted recommendation: purge removes only the FS-UAE that install.ps1 downloaded into `…\Clorraine\fs-uae\3.2.35`; any other FS-UAE and rc24 are never removed (refines AR-17) | ✅ Resolved |
 | 53 | Naming & terminology | Flag for replacing another amiga-gcc registration (AR-11) | `-ReplaceToolchain` / interactive only | User accepted recommendation: `-ReplaceToolchain`; interactive runs ask (default No) | ✅ Resolved |
+| 54 | Technical (runtime) | The full image build cannot run: the toolchain stage clones vbcc's `master` branch, which upstream no longer has, and the build cache that AR-20 assumed is gone | Layer the committed Windows lines on the existing `clorraine-sdk:dev` / fix the toolchain stage now / add a Makefile target for the layered build | Layer the committed lines on `clorraine-sdk:dev` (see AR-54 resolution) | ✅ Resolved |
 
 ## Coverage Map
 
@@ -146,3 +147,31 @@ on 2026-11-26.
 
 **AR-51 – AR-53:** surfaced while writing the installer specification; the user accepted each
 recommendation on 2026-11-26.
+
+**AR-54 (runtime, auto-design):**
+
+```text
+Authority: AI — delegated by --auto-design
+Eligibility: implementation mechanism (how the branch image is produced); stays inside AR-20's
+  approved change and changes no product behaviour, scope, or the committed Dockerfile content
+Objective: a `clorraine-sdk:windows-cli` image whose content is the committed docker/Dockerfile
+Decision: build the branch image as `FROM clorraine-sdk:dev` plus the committed Windows lines,
+  taken verbatim from docker/Dockerfile; the committed Dockerfile keeps the appended layer
+Evidence: `make -C docker image` fails at the toolchain stage ("Remote branch master not found",
+  vbcc clone, amiga-gcc Makefile:1315) on main as well; docker/Dockerfile, versions.env and
+  smoke-test.sh are unchanged since 2026-09-14 and clorraine-sdk:dev was built from them on
+  2026-10-08, so the layered image equals the full build of the committed file
+Rejected alternatives: fixing the toolchain stage now (outside this plan, changes the shared
+  toolchain build and every Amiga gate's compiler); a new Makefile target for the layered build
+  (new machinery for a temporary upstream breakage)
+Strongest counterargument: the branch image is not proven buildable from scratch; a later
+  from-source rebuild could differ (it already could, since rustup and amitools are unpinned)
+Confidence: High — would change if docker/Dockerfile's earlier layers change on main before merge
+Hardening: no challenger; low-impact, reversible local build with no committed machinery
+Policy version: 1
+Root invocation ID: exec-windows-cli-20261126-1938
+Reopen triggers: the toolchain stage builds again; main changes the Dockerfile before merge
+```
+
+The post-merge rebuild of `clorraine-sdk:dev` (AR-37) uses the same layering until the upstream
+vbcc breakage is fixed; the merge notes and a follow-up issue draft record it.
