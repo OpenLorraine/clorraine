@@ -50,3 +50,9 @@
 | SA-003 | 6 | MAJOR | tools/setup/install.ps1 | fixed |
 | SA-004 | 6 | MINOR | tools/setup/install.ps1 | fixed |
 | SA-005 | 6 | MINOR | tools/setup/install.ps1 | fixed |
+| SA-006 | 6 | MINOR | tools/setup/install.ps1 | fixed (AR-61) |
+| SA-007 | 6 | MINOR | tools/setup/tests | fixed |
+| SA-008 | 6 | MINOR | tools/setup/install.ps1 | fixed |
+| RV-101 | 6 | MINOR | tools/setup/install.ps1 | fixed |
+| RV-102 | 6 | MINOR | tools/setup/install.ps1 | fixed |
+| RV-103 | 6 | MINOR | plans/windows-cli/03-04-installer.md | fixed |

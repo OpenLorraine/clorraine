@@ -101,9 +101,12 @@ Interactive mode is on when stdin and stdout are not redirected
 ### Elevated rc24 step (AR-34)
 
 - Download into the private temp folder and verify there (early failure only).
-- Start `powershell.exe -NoProfile -ExecutionPolicy Bypass -EncodedCommand <script>` with
-  `-Verb RunAs -Wait -PassThru`. The script text is a constant in `install.ps1`; the only data
-  passed are the source path, the target folder, and the pinned bytes and SHA-256.
+- Start `<System32>\WindowsPowerShell\v1.0\powershell.exe -NoProfile -ExecutionPolicy Bypass
+  -EncodedCommand <script>` through `Process.Start` with `Verb = runas`, then wait and read the
+  exit code. The script text is the staging function from `install.ps1`; the only data passed
+  are the source path and the pinned bytes and SHA-256.
+- An existing admin folder must be a real folder owned by Administrators, SYSTEM, or
+  TrustedInstaller, with no write-type right for any other account; otherwise 103 (AR-61).
 - The elevated script creates `C:\Program Files\Clorraine` if missing, creates a new
   `.staging-<random>` folder there (failing if it exists), copies the setup in, verifies size and
   SHA-256 there, runs it with `/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /NOCLOSEAPPLICATIONS /SP-
