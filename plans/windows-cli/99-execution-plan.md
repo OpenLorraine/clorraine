@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-26 20:06
-> **Progress**: 13/75 tasks (17%)
+> **Last Updated**: 2026-11-26 20:25
+> **Progress**: 15/75 tasks (20%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -119,15 +119,15 @@ on Linux in this worktree; Windows runs go through the remote helper (AR-5, AR-2
 
 ## Phase 3: Driver on Windows
 
-> **Phase baseline tree**: _(recorded by exec-plan)_
+> **Phase baseline tree**: 037cf1ba62795d8fa4922d20021e28b43221a601
 > **Reasoning**: high — many call sites; Linux behavior must not change except `CLORRAINE_CC`
 
 ### Step 3.1: Specification tests
 
 **Reference**: 03-02 · ST-9 – ST-26 · AR-10, AR-14, AR-29, AR-32, AR-38, AR-43, AR-45
 
-- [ ] 3.1.1 [spec-author] Write ST-9 – ST-26 — `compiler/tests/windows_cli_spec_test.rs`
-- [ ] 3.1.2 Run the suite and confirm ST-9 – ST-26 fail (red)
+- [x] 3.1.1 [spec-author] Write ST-9 – ST-26 — `compiler/tests/windows_cli_spec_test.rs` ✅ (completed: 2026-11-26 20:25)
+- [x] 3.1.2 Run the suite and confirm ST-9 – ST-26 fail (red) ✅ (completed: 2026-11-26 20:25) — the platform module and the four re-exports do not resolve; ST-17 (override ignored) and ST-18 (exit 0, not 1) fail at run time
 
 ### Step 3.2: Implementation
 
