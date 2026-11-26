@@ -538,6 +538,31 @@ fn should_select_the_exe_compiler_in_a_toolchain_root_on_windows() {
     assert!(error.message.contains("has no bin/m68k-amigaos-gcc.exe"), "{}", error.message);
 }
 
+/// The rc24 compiler cannot run from a folder whose path contains a space on
+/// Windows: its own library path is split at the space. Setup refuses such a
+/// root with that reason; the same root is still accepted on Linux.
+#[test]
+fn should_refuse_a_toolchain_root_with_a_space_on_windows_only() {
+    use clc::clorraine::{validate_for, Validation};
+    let scratch = ScratchDir::new("validate-space");
+    let root = scratch.path().join("amiga gcc");
+    executable_file(&root.join("bin").join("m68k-amigaos-gcc.exe"));
+    executable_file(&root.join("bin").join("m68k-amigaos-gcc"));
+    std::fs::create_dir_all(root.join("m68k-amigaos").join("libnix")).expect("libnix");
+    std::fs::create_dir_all(root.join("m68k-amigaos").join("ndk-include")).expect("ndk-include");
+    let error = validate_for(HostOs::Windows, &root, Validation::Selection)
+        .err()
+        .expect("a Windows root with a space is rejected");
+    assert_eq!(error.code, 2, "{}", error.message);
+    assert!(
+        error.message.contains("contains a space"),
+        "the reason names the space: {}",
+        error.message
+    );
+    validate_for(HostOs::Unix, &root, Validation::Selection)
+        .unwrap_or_else(|error| panic!("Linux keeps accepting the root: {}", error.message));
+}
+
 #[test]
 fn should_quote_words_for_the_host_shell() {
     assert_eq!(shell_word(HostOs::Windows, "my app"), "\"my app\"");

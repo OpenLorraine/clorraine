@@ -885,11 +885,12 @@ $script:Rc24Version = '16.2-rc24'
 $script:Rc24UninstallKey = 'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{8D184346-D038-45E9-98A1-43BFC542BE34}_is1'
 $script:Rc24RegistryHive = 'LocalMachine'
 
-# The per-machine folder the elevated step installs into. Program Files comes
-# from the system's known-folder setting, never from the ProgramFiles
-# environment variable, which the standard user controls.
+# The per-machine folder the elevated step installs into: Clorraine under
+# ProgramData, from the system's known-folder setting, never from an
+# environment variable the standard user controls. Not Program Files: the rc24
+# compiler splits its own library path at a space, so its folder must have none.
 function Get-Rc24AdminRoot {
-    return Join-Path ([Environment]::GetFolderPath('ProgramFiles')) 'Clorraine'
+    return Join-Path ([Environment]::GetFolderPath('CommonApplicationData')) 'Clorraine'
 }
 
 # The installed amiga-gcc registration (DisplayVersion, InstallLocation), or
@@ -918,9 +919,12 @@ $script:ElevatedError = 104
 
 # The elevated half of the rc24 install. It runs as an administrator, so it
 # trusts nothing the standard user could have changed. Without -AdminRoot it
-# works out Program Files\Clorraine itself from the system's known-folder
+# works out ProgramData\Clorraine itself from the system's known-folder
 # setting, refuses that folder when it is a link or owned by anyone but
-# Administrators, SYSTEM, or TrustedInstaller, and creates a new staging
+# Administrators, SYSTEM, or TrustedInstaller, creates it when missing with an
+# access list of its own (ProgramData lets every user add folders, so nothing
+# is inherited: Administrators and SYSTEM change it, Users only read and run
+# the toolchain), and creates a new staging
 # folder there that only Administrators and SYSTEM can open. It copies the
 # setup in, checks the copy's size and SHA-256, and only then runs it silently,
 # logging into the staging folder. The log is kept as rc24-setup.log next to
@@ -943,7 +947,7 @@ function Invoke-ElevatedStaging([string]$Source, [long]$Bytes, [string]$Sha256, 
     if ($AdminRoot) {
         if ($null -eq $TrustedSid) { $TrustedSid = @([Security.Principal.WindowsIdentity]::GetCurrent().User.Value) }
     } else {
-        $AdminRoot = Join-Path ([Environment]::GetFolderPath('ProgramFiles')) 'Clorraine'
+        $AdminRoot = Join-Path ([Environment]::GetFolderPath('CommonApplicationData')) 'Clorraine'
         $TrustedSid = @()
     }
     $trusted += $TrustedSid
@@ -966,7 +970,16 @@ function Invoke-ElevatedStaging([string]$Source, [long]$Bytes, [string]$Sha256, 
                 if ($mayChange -notcontains $rule.IdentityReference.Value) { return 103 }
             }
         } else {
-            New-Item -ItemType Directory -Path $AdminRoot | Out-Null
+            $rootSecurity = New-Object System.Security.AccessControl.DirectorySecurity
+            $rootSecurity.SetAccessRuleProtection($true, $false)
+            $inherit = [System.Security.AccessControl.InheritanceFlags]'ContainerInherit, ObjectInherit'
+            foreach ($sid in @('S-1-5-32-544', 'S-1-5-18') + $TrustedSid) {
+                $principal = New-Object System.Security.Principal.SecurityIdentifier $sid
+                $rootSecurity.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule($principal, 'FullControl', $inherit, 'None', 'Allow')))
+            }
+            $users = New-Object System.Security.Principal.SecurityIdentifier 'S-1-5-32-545'
+            $rootSecurity.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule($users, 'ReadAndExecute', $inherit, 'None', 'Allow')))
+            [void][IO.Directory]::CreateDirectory($AdminRoot, $rootSecurity)
         }
         $staging = Join-Path $AdminRoot ('.staging-' + [guid]::NewGuid().ToString('N').Substring(0, 12))
         if (Test-Path -LiteralPath $staging) { return 102 }
@@ -1052,6 +1065,11 @@ function Test-DeclinedElevation($ErrorRecord) {
 # Downloads, verifies, and installs the pinned rc24 behind one UAC prompt.
 # Returns the toolchain root.
 function Install-Rc24([string]$Root) {
+    $adminRoot = Get-Rc24AdminRoot
+    if ($adminRoot.Contains(' ')) {
+        Write-NextSteps $Root $true
+        Stop-Install 1 "the rc24 compiler cannot run from a folder whose path contains a space ($adminRoot); pass -Toolchain with an rc24 root without spaces"
+    }
     $work = New-PrivateTemp 'rc24'
     try {
         $setup = Join-Path $work 'amiga-gcc-16.2-rc24-setup.exe'

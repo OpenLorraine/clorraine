@@ -158,6 +158,17 @@ pub fn validate_for(os: HostOs, selected: &Path, mode: Validation) -> Result<Too
     if !root.is_dir() {
         return Err(error(2, format!("--toolchain: '{}' is not a directory", shown_root.display())));
     }
+    // The Windows rc24 compiler splits its own library path at a space, so a
+    // root such as one under Program Files fails on every Amiga build.
+    if matches!(os, HostOs::Windows) && shown_root.to_string_lossy().contains(' ') {
+        return Err(error(
+            2,
+            format!(
+                "--toolchain: '{}' contains a space, and the rc24 compiler cannot run from such a folder on Windows; install it in a folder without spaces",
+                display::sanitize(&shown_root.display().to_string())
+            ),
+        ));
+    }
     let root_text = root
         .to_str()
         .ok_or_else(|| error(2, "--toolchain: canonical path must be UTF-8"))?;

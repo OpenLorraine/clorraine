@@ -23,7 +23,7 @@ non-interactive rules as Linux.
 | `<Prefix>\fs-uae\3.2.35\` | the FS-UAE zip, when the installer downloaded it (AR-13, AR-28) |
 | user PATH entry | `<Prefix>\current\bin` (no shims) |
 | `%APPDATA%\clorraine\config` | written by `clorraine setup` (AR-43) |
-| `C:\Program Files\Clorraine\amiga-gcc-16.2-rc24` | rc24, per-machine (AR-10) |
+| `C:\ProgramData\Clorraine\amiga-gcc-16.2-rc24` | rc24, per-machine (AR-10) |
 
 ### Parameters (AR-24)
 
@@ -107,14 +107,17 @@ Interactive mode is on when stdin and stdout are not redirected
   are the source path and the pinned bytes and SHA-256.
 - An existing admin folder must be a real folder owned by Administrators, SYSTEM, or
   TrustedInstaller, with no write-type right for any other account; otherwise 103 (AR-61).
-- The elevated script creates `C:\Program Files\Clorraine` if missing, creates a new
+- The elevated script creates `C:\ProgramData\Clorraine` if missing, creates a new
   `.staging-<random>` folder there (failing if it exists), copies the setup in, verifies size and
   SHA-256 there, runs it with `/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /NOCLOSEAPPLICATIONS /SP-
   /DIR="<target>" /LOG="<staging>\setup.log"`, copies the log to
-  `C:\Program Files\Clorraine\rc24-setup.log`, deletes the staging folder, and exits with the
+  `C:\ProgramData\Clorraine\rc24-setup.log`, deletes the staging folder, and exits with the
   setup's exit code (a mismatch exits 101 without running; 102 staging name taken, 103 untrusted
   admin folder, 104 other error; AR-60). The admin folder and the target come from the system's
-  Program Files known folder inside the elevated step, never from the environment.
+  ProgramData known folder inside the elevated step, never from the environment (AR-64: the
+  rc24 compiler cannot run from a path with a space). A missing `Clorraine` folder is created
+  with a protected access list: Administrators and SYSTEM full control, Users read and
+  execute. The installer stops before downloading when that path contains a space.
 - A cancelled UAC prompt (Win32 error 1223) or a nonzero exit keeps the installed CLI, prints the
   `-Toolchain` next step, and exits 1 (AR-40).
 

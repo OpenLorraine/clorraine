@@ -323,10 +323,13 @@ toolchain, FS-UAE, the VS Code extension, and a starter project; see
   browser-downloaded script needs `Unblock-File` only when it is run without
   the bypass. Clorraine never changes the policy permanently.
 - **Administrator step.** Installing rc24 runs its setup elevated once, into
-  `C:\Program Files\Clorraine`; declining the UAC prompt keeps the CLI.
+  `C:\ProgramData\Clorraine`; declining the UAC prompt keeps the CLI.
 - **Host compiler.** PC builds need GCC (w64devkit or MSYS2 UCRT64) or
   `CLORRAINE_CC`. Clang cannot build debug programs: the emitted C is not yet
   warning-free under Clang's `-Werror`.
+- **Toolchain folder.** The rc24 compiler splits its own library path at a
+  space, so its root must not contain one; `clorraine setup` refuses such a
+  root, and the installer uses `C:\ProgramData\Clorraine`.
 - **SSH logons.** The rc24 compiler does not start from an SSH logon; run the
   CLI in the signed-in desktop session.
 - **Interrupted emulator runs.** Ctrl+C during `run --emulator` leaves the

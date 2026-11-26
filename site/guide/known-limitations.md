@@ -24,6 +24,7 @@ edge cases and their workarounds, is
 | Windows: host floor | Windows 11 x64; Windows 10 and PowerShell 7 are untested; ARM64 is refused | Use Windows 11 x64 with Windows PowerShell 5.1 |
 | Windows: execution policy | Scripts do not run by default; Group Policy takes precedence over the bypass | Run the installer with the one-time `-ExecutionPolicy Bypass` |
 | Windows: administrator step | Installing rc24 asks for UAC approval once | Approve it, or pass `-Toolchain` with an existing rc24 |
+| Windows: toolchain folder | The rc24 compiler cannot run from a path with a space, such as `C:\Program Files` | The installer uses `C:\ProgramData\Clorraine`; pass `-Toolchain` only with a root without spaces |
 | Windows: Clang debug builds | Clang rejects the emitted C under `-Werror` | Use GCC (w64devkit or MSYS2 UCRT64) or set `CLORRAINE_CC` |
 | Windows: SSH logons | The rc24 compiler does not start from an SSH logon | Run the CLI in the signed-in desktop session |
 | Windows: interrupted emulator runs | Ctrl+C leaves the FS-UAE window and `%TMP%\clorraine-emulator-*` | Close the window and delete the folder |

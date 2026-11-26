@@ -638,7 +638,7 @@ function New-Candidate([string]$CaseRoot, [string]$Version = '9.1.0') {
 
 $Rc24Url = 'https://github.com/AmigaPorts/m68k-amigaos-gcc/releases/download/v16.2-rc24/m68k-amigaos-gcc-16.2-rc24-x86_64-w64-mingw32ucrt-setup.exe'
 $Rc24Sha = '9dd6973539bb2d514fc1b1e6c0a107cac6f30a9c4076cf4014cbe13013c95512'
-$Rc24Target = 'C:\Program Files\Clorraine\amiga-gcc-16.2-rc24'
+$Rc24Target = 'C:\ProgramData\Clorraine\amiga-gcc-16.2-rc24'
 $FsUaeUrl = 'https://github.com/FrodeSolheim/fs-uae/releases/download/v3.2.35/FS-UAE_3.2.35_Windows_x86-64.zip'
 $FsUaeSha = 'b402e2802d518a085c878be96c5c0a656fa3dec57dcf0019d226f3285069063e'
 

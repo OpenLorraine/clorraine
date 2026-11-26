@@ -82,3 +82,4 @@
 | DR-812 | 8 | MINOR | docs, site, tools/setup/install.ps1 | fixed |
 | DR-813 | 8 | MINOR | docs, site, tools/setup/install.ps1 | fixed |
 | DR-814 | 8 | MINOR | docs, site, tools/setup/install.ps1 | fixed |
+| AC-901 | 9 | MAJOR | tools/setup/install.ps1, compiler/src/clorraine/setup.rs | fixed (user ruling, AR-64) |
