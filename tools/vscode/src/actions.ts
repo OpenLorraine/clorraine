@@ -9,7 +9,7 @@ import * as vscode from "vscode";
 
 import type { LspClient } from "./client";
 import { machinePath, resolveTool } from "./discovery";
-import { comparablePath, samePath } from "./paths";
+import { comparablePath, realPath, samePath } from "./paths";
 
 /** The initialized server state needed by an action, never a second client. */
 export interface SelectionSession {
@@ -65,10 +65,10 @@ function selectedFiles(value: unknown, root: string, entry: string): string[] {
     throw new Error("Invalid source selection; update the language server and retry.");
   }
   const files: string[] = [];
-  const canonicalRoot = fs.realpathSync(root);
+  const canonicalRoot = realPath(root);
   for (const item of value.files) {
     if (typeof item !== "string" || !path.isAbsolute(item) ||
-        !samePath(fs.realpathSync(item), item) || !fs.statSync(item).isFile()) {
+        !samePath(realPath(item), item) || !fs.statSync(item).isFile()) {
       throw new Error("Invalid saved source path; save the sources and retry selection.");
     }
     const relative = path.relative(canonicalRoot, item);
@@ -79,7 +79,7 @@ function selectedFiles(value: unknown, root: string, entry: string): string[] {
   }
   // Windows names one file in several case and separator spellings, so the
   // entry and duplicate checks compare paths under the host's path rules.
-  if (!samePath(files[0], fs.realpathSync(entry)) ||
+  if (!samePath(files[0], realPath(entry)) ||
       new Set(files.map((item) => comparablePath(item))).size !== files.length) {
     throw new Error("Invalid entry or duplicate source selection; update the language server and retry.");
   }
@@ -111,7 +111,7 @@ function requireSavedDependencies(files: readonly string[]): void {
     }
     let canonical = document.uri.fsPath;
     try {
-      canonical = fs.realpathSync(canonical);
+      canonical = realPath(canonical);
     } catch {
       // An unrelated missing file must not prevent a saved program from running.
     }
@@ -132,10 +132,10 @@ function sourceUnderRoot(document: vscode.TextDocument, canonicalRoot: string): 
   }
   let canonical = path.resolve(document.uri.fsPath);
   try {
-    canonical = fs.realpathSync(canonical);
+    canonical = realPath(canonical);
   } catch {
     try {
-      canonical = path.join(fs.realpathSync(path.dirname(canonical)), path.basename(canonical));
+      canonical = path.join(realPath(path.dirname(canonical)), path.basename(canonical));
     } catch {
       // Missing parent directories cannot be indexed yet; retain the absolute
       // spelling so a new file under the ordinary source root still invalidates.
@@ -220,7 +220,7 @@ export function registerActions(
         }
         const folder = vscode.workspace.getWorkspaceFolder(document.uri);
         const root = folder?.uri.fsPath ?? path.dirname(document.uri.fsPath);
-        const canonicalRoot = fs.realpathSync(root);
+        const canonicalRoot = realPath(root);
         let sourcesChanged = false;
         const changed = (source: vscode.TextDocument) => {
           if (sourceUnderRoot(source, canonicalRoot)) {

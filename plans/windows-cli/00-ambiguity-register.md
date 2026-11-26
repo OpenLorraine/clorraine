@@ -1,6 +1,6 @@
 ## Ambiguity Register: Windows CLI and installer
 
-> **Status**: ✅ GATE PASSED — all 53 items resolved; AR-54 – AR-58 added and resolved during execution
+> **Status**: ✅ GATE PASSED — all 53 items resolved; AR-54 – AR-59 added and resolved during execution
 > **Last Updated**: 2026-11-26 18:30
 > **Evidence**: `spikes/08-windows-cli/README.md`
 
@@ -64,6 +64,7 @@
 | 56 | Technical (runtime) | The freestanding shim's `offsetof` casts a pointer to `unsigned long`, which MinGW rejects under `-Werror` on Win64 (32-bit `long`), so freestanding programs using `offsetof` cannot build on Windows (W13) | Cast through the shim's `uintptr_t` / a second `_WIN64` branch for the macro / leave it as a limitation | Cast through `uintptr_t` (see AR-56 resolution) | ✅ Resolved |
 | 57 | Technical (runtime) | A `#line` path containing `??` forms a C trigraph under `-std=c99` and fails the strict build (pre-existing; found by the Phase 2 review), which W12's "valid C string literal" excludes | Escape every `?` that follows a `?` as `\?` / leave it (Windows forbids `?` in file names) | Escape every `?` that follows a `?` (see AR-57 resolution) | ✅ Resolved |
 | 58 | Technical (runtime) | The 64 MiB read limit for the FS-UAE executable (03-02, ST-23) rejects the pinned FS-UAE 3.2.35 `fs-uae.exe`, which is 69,273,425 bytes, so W11's PE version read fails on the real host | Raise the limit to 256 MiB / stream-scan the file with no full read / read only the resource section | Raise the limit to 256 MiB (see AR-58 resolution); 03-02 and ST-23 updated | ✅ Resolved |
+| 59 | Technical (runtime) | 03-04 names four test seams (`Invoke-Download`, `Invoke-ElevatedSetup`, `Get-Rc24Registration`, the PATH key), but ST-40, ST-46, ST-47, ST-58, ST-61, and ST-63 also stub the host architecture, OS build, interactivity, console capability, the extracted version check, and the compiler probe, and every case needs a callable entry point | Name the extra seams and an `Invoke-Installer` entry point that returns the exit code / run every case as a separate script with environment overrides | Named seams and `Invoke-Installer` (see AR-59 resolution) | ✅ Resolved |
 
 ## Coverage Map
 
@@ -269,4 +270,33 @@ Hardening: no challenger; measured on the real file
 Policy version: 1
 Root invocation ID: exec-windows-cli-20261126-1938
 Reopen triggers: a pinned FS-UAE executable over 256 MiB; a run-time cost users notice
+```
+
+**AR-59 (runtime, auto-design):**
+
+```text
+Authority: AI — delegated by --auto-design
+Eligibility: test seam and internal interface naming inside AR-48's dot-source design
+Objective: every PowerShell spec case drives the real installer code with only the host facts it
+  names replaced
+Decision: install.ps1 defines `Invoke-Installer` (same parameters as the script; returns the exit
+  code; the script body is `exit (Invoke-Installer @PSBoundParameters)` unless
+  CLORRAINE_INSTALL_LIB=1). Replaceable functions: Get-HostArchitecture (`X64`/`Arm64`/...),
+  Get-OsBuild (int), Test-Interactive (bool), Get-ConsoleCapability (VirtualTerminal, CodePage),
+  Test-ExtractedVersion (throws on mismatch), Find-HostCompiler (Kind gcc|clang|none, Path),
+  Invoke-Download, Invoke-ElevatedSetup, Get-Rc24Registration, Invoke-Clorraine; the PATH key is
+  `$script:PathRegistryKey` (default `HKCU:\Environment`). `New-OutputStyle -VirtualTerminal
+  -CodePage -NoColor` returns the style table ST-63 checks. Tests run each case in a child
+  `powershell -NoProfile` that dot-sources the assembled copy, defines stubs, and calls
+  Invoke-Installer.
+Evidence: 03-04 §Template and test seam; ST-40/46/47/58/61/63 stub facts outside the four named
+  seams; AR-48 requires no Pester
+Rejected alternatives: environment-variable overrides for each fact (spreads test hooks through
+  the product code); running the shipped script file per case (cannot stub functions)
+Strongest counterargument: the installer carries ten small seam functions
+Confidence: High
+Hardening: no challenger; internal, reversible
+Policy version: 1
+Root invocation ID: exec-windows-cli-20261126-1938
+Reopen triggers: a seam needed by Phase 6 cases is missing
 ```
