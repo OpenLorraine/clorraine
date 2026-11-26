@@ -185,6 +185,10 @@ if ($first.Code -ne 0) { Stop-Acceptance 1 "the first install exited $($first.Co
 if (-not $first.Out.Contains('installed rc24 in')) {
     Stop-Acceptance 2 'rc24 was already registered, so this run did not install it; uninstall amiga-gcc under Settings > Apps for the clean-install acceptance'
 }
+# The elevated step made the machine-wide folder; only administrators may own it.
+$adminRoot = Join-Path ([Environment]::GetFolderPath('CommonApplicationData')) 'Clorraine'
+$adminOwner = (Get-Acl -LiteralPath $adminRoot).GetOwner([Security.Principal.SecurityIdentifier]).Value
+if ($adminOwner -ne 'S-1-5-32-544') { Stop-Acceptance 1 "$adminRoot is owned by $adminOwner, not Administrators" }
 $cli = Join-Path $prefix 'current\bin\clorraine.exe'
 $reported = (Invoke-Child $cli @('--version') $work).Out.Trim()
 if ($reported -ne "clorraine $version") { Stop-Acceptance 1 "installed version '$reported' is not clorraine $version" }
