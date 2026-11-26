@@ -2,7 +2,7 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-26 22:24
+> **Last Updated**: 2026-11-26 22:32
 > **Progress**: 49/75 tasks (65%)
 > **CodeOps Artifact Schema**: 1
 
@@ -265,11 +265,11 @@ on Linux in this worktree; Windows runs go through the remote helper (AR-5, AR-2
 
 ### Step 7.2: Implementation
 
-- [ ] 7.2.1 Add the Windows stage check, the zip builder, and the five-line `SHA256SUMS` with `--verify` — `tools/setup/package.sh`
-- [ ] 7.2.2 Assemble `install.ps1` in `package.sh` and wire the Windows build into `make dist` and `dist-check` — `tools/setup/package.sh`, `Makefile`
-- [ ] 7.2.3 Make `acceptance.py` platform-keyed — `tools/setup/acceptance.py`
-- [ ] 7.2.4 Write the Windows evidence producer — `tools/setup/acceptance.ps1`
-- [ ] 7.2.5 Run them — ST-64 – ST-72 pass (green); existing dist and acceptance suites pass
+- [x] 7.2.1 Add the Windows stage check, the zip builder, and the five-line `SHA256SUMS` with `--verify` — `tools/setup/package.sh` ✅ (2026-11-26 22:32; five-line `SHA256SUMS`; `--verify` names the failing file)
+- [x] 7.2.2 Assemble `install.ps1` in `package.sh` and wire the Windows build into `make dist` and `dist-check` — `tools/setup/package.sh`, `Makefile` ✅ (2026-11-26 22:32; `--hello-amiga` replaces the embedded hello; `make dist` cross-builds in the image; `dist-check` runs both new spec suites)
+- [x] 7.2.3 Make `acceptance.py` platform-keyed — `tools/setup/acceptance.py` ✅ (2026-11-26 22:32; AR-62)
+- [x] 7.2.4 Write the Windows evidence producer — `tools/setup/acceptance.ps1` ✅ (2026-11-26 22:32; parses under PowerShell 5.1 on the host; input checks exercised there; the full run is Phase 9)
+- [x] 7.2.5 Run them — ST-64 – ST-72 pass (green); existing dist and acceptance suites pass ✅ (2026-11-26 22:32; `make dist-check` exit 0: 181 + 28 + 48 + 35 checks, 45 Python tests)
 
 ### Step 7.3: Implementation tests and hardening
 

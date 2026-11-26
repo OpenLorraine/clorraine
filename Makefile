@@ -93,7 +93,17 @@ dist:
 	cp LICENSE LICENSE-EXCEPTION.md NOTICE THIRD_PARTY_NOTICES.md \
 		"build/dist/stage/clorraine-$(VERSION)-x86_64-linux/"
 	printf '# Clorraine %s\n' "$(VERSION)" >"build/dist/stage/clorraine-$(VERSION)-x86_64-linux/README.md"
+	$(DOCKER_MAKE) exec CMD="cargo build --release --workspace --target x86_64-pc-windows-gnu"
+	rm -rf build/dist/wstage
+	mkdir -p "build/dist/wstage/clorraine-$(VERSION)-x86_64-windows/bin"
+	cp target/x86_64-pc-windows-gnu/release/clc.exe target/x86_64-pc-windows-gnu/release/clorraine.exe \
+		target/x86_64-pc-windows-gnu/release/clorraine-lsp.exe \
+		"build/dist/wstage/clorraine-$(VERSION)-x86_64-windows/bin/"
+	cp LICENSE LICENSE-EXCEPTION.md NOTICE THIRD_PARTY_NOTICES.md \
+		"build/dist/wstage/clorraine-$(VERSION)-x86_64-windows/"
+	printf '# Clorraine %s\n' "$(VERSION)" >"build/dist/wstage/clorraine-$(VERSION)-x86_64-windows/README.md"
 	bash tools/setup/package.sh --stage "build/dist/stage/clorraine-$(VERSION)-x86_64-linux" \
+		--windows-stage "build/dist/wstage/clorraine-$(VERSION)-x86_64-windows" \
 		--output build/dist --version "$(VERSION)" --vsix "build/vscode/clorraine-$(VERSION).vsix"
 
 # Check the pins, versions, layout, and checksums of an existing candidate.
@@ -105,7 +115,8 @@ dist-check:
 	bash tools/setup/tests/install.spec.test.sh
 	bash tools/setup/tests/install.impl.test.sh
 	bash tools/setup/tests/dist.spec.test.sh
-	cd tools/setup && PYTHONPATH=tests python3 -m unittest acceptance_spec test_retained_inputs -v
+	bash tools/setup/tests/windows-dist.spec.test.sh
+	cd tools/setup && PYTHONPATH=tests python3 -m unittest acceptance_spec acceptance_windows_spec test_retained_inputs -v
 
 # Run the full local acceptance from an exact candidate and pinned inputs.
 acceptance:
