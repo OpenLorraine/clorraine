@@ -1,0 +1,12 @@
+module Probe.Main;
+
+import { println } from std.io;
+import { Screen, openScreen, showAlert } from std.amiga.intuition;
+
+func main(): i32 {
+    let s: Screen? = openScreen(320, 200, 2, "verifier");
+    println("calling");
+    showAlert("verifier alert");
+    println("back");
+    return 0;
+}

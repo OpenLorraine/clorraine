@@ -1,0 +1,10 @@
+module Probe.Main;
+
+import { println } from std.io;
+import { setCurrentDir } from std.amiga.dos;
+
+func main(): i32 {
+    let moved: bool = setCurrentDir("CNEXT:sub");
+    println($"moved {moved}");
+    return 0;
+}

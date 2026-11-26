@@ -1,0 +1,32 @@
+module Probe.Main;
+
+import { println } from std.io;
+import { HandlerToken, addHandler, removeHandler } from std.amiga.interrupt;
+import { MsgPort, createPublicPort, deleteMsgPort } from std.amiga.exec;
+
+volatile let ticks: u32 = 0;
+
+func onTick(): void {
+    ticks = ticks + 1;
+}
+
+func pick(n: usize): usize {
+    return n;
+}
+
+func main(): i32 {
+    let token: HandlerToken = addHandler(onTick);
+    let port_opt: MsgPort? = createPublicPort("ClProbe541");
+    if (port_opt == null) {
+        println("no port");
+        removeHandler(token);
+        return 1;
+    }
+    let port: MsgPort = port_opt;
+    let xs: u8[2] = [1, 2];
+    println("armed");
+    println($"{xs[pick(5)]}");
+    removeHandler(token);
+    deleteMsgPort(port);
+    return 0;
+}

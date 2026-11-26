@@ -1,0 +1,24 @@
+module Probe.Main;
+
+import { println } from std.io;
+import { slice } from std.mem;
+import { Clipboard, openClipboard, clipboardWrite, clipboardRead } from std.amiga.clipboard;
+
+func main(): i32 {
+    let opened: Clipboard? = openClipboard(0);
+    if (opened == null) {
+        println("open failed");
+        return 1;
+    }
+    let c: Clipboard = opened;
+    let a: u8[4] = [97, 98, 99, 100];
+    let b: u8[4] = [101, 102, 103, 104];
+    let buf: u8[16] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    let w1: bool = clipboardWrite(c, slice(a, 0, 4));
+    println($"w1 {w1}");
+    let w2: bool = clipboardWrite(c, slice(b, 0, 4));
+    println($"w2 {w2}");
+    let m: i32 = clipboardRead(c, slice(buf, 0, 16));
+    println($"r2 {m} {buf[0]}");
+    return 0;
+}

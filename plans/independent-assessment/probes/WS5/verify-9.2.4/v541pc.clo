@@ -1,0 +1,22 @@
+module Probe.Main;
+
+import { println } from std.io;
+import { MsgPort, createPublicPort, deleteMsgPort } from std.amiga.exec;
+
+func pick(n: usize): usize {
+    return n;
+}
+
+func main(): i32 {
+    let port_opt: MsgPort? = createPublicPort("ClProbe541");
+    if (port_opt == null) {
+        println("no port");
+        return 1;
+    }
+    let port: MsgPort = port_opt;
+    let xs: u8[2] = [1, 2];
+    println("armed");
+    println($"{xs[pick(1)]}");
+    deleteMsgPort(port);
+    return 0;
+}

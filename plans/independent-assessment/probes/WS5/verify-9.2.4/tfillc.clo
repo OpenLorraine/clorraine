@@ -1,0 +1,18 @@
+module Probe.Main;
+
+import { println } from std.io;
+import { Screen, openScreen } from std.amiga.intuition;
+import { fill } from std.amiga.graphics;
+
+func main(): i32 {
+    let opened: Screen? = openScreen(320, 200, 2, "verifier fill");
+    if (opened == null) {
+        println("no screen");
+        return 1;
+    }
+    let s: Screen = opened;
+    println("before fill");
+    fill(s, 0, 0, 319, 199, 1);
+    println("after fill");
+    return 0;
+}

@@ -1,0 +1,30 @@
+module Probe.Main;
+
+import { println } from std.io;
+import { slice } from std.mem;
+import { Screen, openScreen } from std.amiga.intuition;
+import { Font, defaultFont, drawText } from std.amiga.text;
+
+func main(): i32 {
+    let opened: Screen? = openScreen(320, 200, 2, "verifier text");
+    if (opened == null) {
+        println("no screen");
+        return 1;
+    }
+    let s: Screen = opened;
+    let f0: Font? = defaultFont();
+    if (f0 == null) {
+        println("no font");
+        return 1;
+    }
+    let f: Font = f0;
+    let t: u8[8] = [87, 87, 87, 87, 87, 87, 87, 87];
+    println("before text");
+    let i: i32 = 0;
+    while (i < 200) {
+        drawText(s, f, 0, -4000 + i * 40, 1, slice(t, 0, 8));
+        i = i + 1;
+    }
+    println("after text");
+    return 0;
+}

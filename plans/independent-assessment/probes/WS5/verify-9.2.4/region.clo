@@ -1,0 +1,49 @@
+module Probe.Main;
+
+import { println } from std.io;
+import { Bitmap, newBitmap, bitmapClear } from std.amiga.video;
+import { Layer, newLayer, layerMove, layerFill, freeLayer } from std.amiga.layers;
+import { Region, newRegion, regionOrRect, freeRegion, layerSetClipRegion } from std.amiga.regions;
+
+func main(): i32 {
+    let b0: Bitmap? = newBitmap(320, 200, 2);
+    if (b0 == null) {
+        println("no bitmap");
+        return 1;
+    }
+    let bm: Bitmap = b0;
+    let l0: Layer? = newLayer(bm, 0, 0, 159, 99);
+    if (l0 == null) {
+        println("no layer");
+        return 1;
+    }
+    let l: Layer = l0;
+    let r0: Region? = newRegion();
+    if (r0 == null) {
+        println("no region");
+        return 1;
+    }
+    let r: Region = r0;
+    let i: i32 = 0;
+    while (i < 40) {
+        regionOrRect(r, i * 3, i * 2, i * 3 + 1, i * 2 + 1);
+        i = i + 1;
+    }
+    layerSetClipRegion(l, r);
+    freeRegion(r);
+    let j: i32 = 0;
+    while (j < 8) {
+        let s0: Bitmap? = newBitmap(64, 16, 1);
+        if (s0 != null) {
+            let s: Bitmap = s0;
+            bitmapClear(s, 1);
+            layerMove(l, 1, 1);
+            layerFill(l, 0, 0, 100, 60, 1);
+            layerMove(l, -1, -1);
+        }
+        j = j + 1;
+    }
+    freeLayer(l);
+    println("region survived");
+    return 0;
+}

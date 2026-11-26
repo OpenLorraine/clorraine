@@ -1,0 +1,11 @@
+module Probe.Main;
+
+import { println } from std.io;
+import { showAlert } from std.amiga.intuition;
+
+func main(): i32 {
+    println("calling");
+    showAlert("verifier alert");
+    println("back");
+    return 0;
+}

@@ -175,6 +175,28 @@ Write `build/tmp/assessment/verify/9.2.5.md` and return its content: one row per
 - **Effort**: M
 - **Related**: ASM-WS5-001, ASM-WS5-013
 
+## Added finding to verify (raised by the 9.2.4 verifier)
+
+Verify it like the others; it needs FS-UAE on A1200/KS3.1 with the licensed Workbench 3.1
+clipboard.device staged (see `probes/WS5/verify-9.2.4/stage-wb.sh` and `run-a1200.sh`;
+write only under `build/tmp/assessment/verify/`, private Xvfb display, remove every
+container you start).
+
+### ASM-WS5-023 — `clipboardWrite` reports success for raw data that the 3.1 clipboard device discards, so `clipboardRead` never sees it
+
+- **Severity**: Major
+- **Confidence**: verified
+- **Lens**: A1200 shipped (`hosted-amiga`, `std.amiga.clipboard`); other 2.0+ versions not tested
+- **Location**: `compiler/runtime/shim_hosted_amiga_optional_services.c:658-685` (`cl_clipboard_write`: raw `CMD_WRITE` of the caller's bytes, then `CMD_UPDATE`, returns TRUE), `stdlib/std.amiga.clipboard.clo:34-40` ("Writes the whole clip and marks it current; true on success"), at e24a8752
+- **Checklist item**: WS5-06 (also WS5-04)
+- **Author session**: ses_dea9a6107ffefWXd6gFWNJQszZ (raised by the 9.2.4 verifier; recorded by the executing session)
+- **Evidence**: Reproduction on A1200/KS3.1 with the licensed Workbench 3.1 `Devs/clipboard.device` and `Assign CLIPS: RAM:` (runner `probes/WS5/verify-9.2.4/run-a1200.sh`, sources `clipiff.c`, `clipdump.c`, `clipw.clo`, `clipr.clo`, `clipc.clo` in the same folder). A C control writing with the shim's exact sequence (`io_ClipID = 0`, `CMD_WRITE`, `CMD_UPDATE`): raw 4 bytes → `write 0 update 0 id 2`, then an autodoc-conformant dump reads `actual 0 id -1`; the same bytes wrapped as `FORM…FTXT CHRS` → the dump reads 24 bytes and the shim's `clipboardRead` returns 16. With the shim, `clipw.clo` prints `second program write true`, yet the following dump reads 0 bytes; `clipc.clo` (write, write, read) reads `r2 0`.
+- **Impact**: a program that copies text or bytes with `clipboardWrite` gets `true`, but nothing reaches the clipboard, and `clipboardRead` of raw data always returns 0. The `sdk-a600-addons` gate asserts only the write's return value (`clip: ok n 4`).
+- **Root cause**: the wrapper treats the clipboard as a raw byte store; the device keeps only IFF clips, and its success codes do not report a discarded clip.
+- **Recommendation**: wrap text in an IFF `FTXT`/`CHRS` clip on write and unwrap on read (or expose an IFF-level API); make the gate read the clip back from a second program; or document that raw clips are unsupported and return false.
+- **Effort**: S
+- **Related**: ASM-WS5-016; ASM-WS8-002
+
 ## Clean outcomes to sample
 
 From `findings/WS7-performance.md` §Checklist outcomes:

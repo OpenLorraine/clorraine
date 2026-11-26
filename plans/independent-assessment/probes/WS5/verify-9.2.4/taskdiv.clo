@@ -1,0 +1,23 @@
+module Probe.Main;
+
+import { println } from std.io;
+import { Task, createTask, joinTask, reportTaskResult } from std.amiga.exec;
+
+volatile let divisor: i32 = 0;
+
+func work(): void {
+    let d: i32 = divisor;
+    reportTaskResult(100 / d);
+}
+
+func main(): i32 {
+    let t0: Task? = createTask(work, 8192);
+    if (t0 == null) {
+        println("no task");
+        return 1;
+    }
+    let t: Task = t0;
+    let r: i32 = joinTask(t);
+    println($"joined {r}");
+    return 0;
+}
