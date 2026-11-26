@@ -127,7 +127,7 @@ function Initialize-Style {
 function Get-SafeText([string]$Text, [switch]$SingleLine) {
     if ($null -eq $Text) { return '' }
     $clean = $Text -replace '[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]', ''
-    if ($SingleLine) { $clean = $clean -replace '[\t\r\n]', ' ' }
+    if ($SingleLine) { $clean = $clean -replace '[\t\r\n]', ' ' } else { $clean = $clean -replace '\r(?!\n)', '' }
     return $clean
 }
 
@@ -925,42 +925,58 @@ $script:ElevatedError = 104
 # logging into the staging folder. The log is kept as rc24-setup.log next to
 # the toolchain and the staging folder is removed. Returns the setup's exit
 # code, or 101 (the copy does not match), 102 (the staging name is taken), 103
-# (untrusted folder), or 104 (any other error). -AdminRoot and -Target exist
-# for tests that run without elevation. This function is self-contained:
+# (untrusted folder), or 104 (any other error). An existing admin folder must
+# be a real folder owned by Administrators, SYSTEM, or TrustedInstaller, and
+# no other account may hold a right to change it. The owner rule does not
+# trust the elevated user's own account: under UAC its unelevated twin could
+# rewrite the access list of a folder that account owns.
+#
+# Tests run without elevation: -AdminRoot and -Target move the folders, and
+# the trusted accounts then also include the current user unless -TrustedSid
+# names them. The checks run either way. This function is self-contained:
 # Invoke-ElevatedSetup sends its text to the elevated PowerShell.
-function Invoke-ElevatedStaging([string]$Source, [long]$Bytes, [string]$Sha256, [string]$AdminRoot = '', [string]$Target = '') {
+function Invoke-ElevatedStaging([string]$Source, [long]$Bytes, [string]$Sha256, [string]$AdminRoot = '',
+        [string]$Target = '', [string[]]$TrustedSid = $null) {
     $ErrorActionPreference = 'Stop'
-    $harden = -not $AdminRoot
-    if ($harden) { $AdminRoot = Join-Path ([Environment]::GetFolderPath('ProgramFiles')) 'Clorraine' }
+    $trusted = @('S-1-5-32-544', 'S-1-5-18', 'S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464')
+    if ($AdminRoot) {
+        if ($null -eq $TrustedSid) { $TrustedSid = @([Security.Principal.WindowsIdentity]::GetCurrent().User.Value) }
+    } else {
+        $AdminRoot = Join-Path ([Environment]::GetFolderPath('ProgramFiles')) 'Clorraine'
+        $TrustedSid = @()
+    }
+    $trusted += $TrustedSid
     if (-not $Target) { $Target = Join-Path $AdminRoot 'amiga-gcc-16.2-rc24' }
     try {
-        if ($harden) {
-            $trusted = 'S-1-5-32-544', 'S-1-5-18', 'S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464'
-            $existing = Get-Item -LiteralPath $AdminRoot -Force -ErrorAction SilentlyContinue
-            if ($null -ne $existing) {
-                if (($existing.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or -not $existing.PSIsContainer) { return 103 }
-                $owner = (Get-Acl -LiteralPath $AdminRoot).GetOwner([System.Security.Principal.SecurityIdentifier]).Value
-                if ($trusted -notcontains $owner) { return 103 }
-            } else {
-                New-Item -ItemType Directory -Path $AdminRoot | Out-Null
+        $existing = Get-Item -LiteralPath $AdminRoot -Force -ErrorAction SilentlyContinue
+        if ($null -ne $existing) {
+            if (($existing.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or -not $existing.PSIsContainer) { return 103 }
+            $sidType = [System.Security.Principal.SecurityIdentifier]
+            $acl = Get-Acl -LiteralPath $AdminRoot
+            if ($trusted -notcontains $acl.GetOwner($sidType).Value) { return 103 }
+            # Write data, append, write attributes and extended attributes,
+            # delete children, delete, change the access list or the owner,
+            # and the generic write and all rights.
+            $change = 0x2 -bor 0x4 -bor 0x10 -bor 0x40 -bor 0x100 -bor 0x10000 -bor 0x40000 -bor 0x80000 -bor 0x10000000 -bor 0x40000000
+            $mayChange = $trusted + @('S-1-3-0')
+            foreach ($rule in $acl.GetAccessRules($true, $true, $sidType)) {
+                if ($rule.AccessControlType -ne 'Allow') { continue }
+                if (([int64]$rule.FileSystemRights -band $change) -eq 0) { continue }
+                if ($mayChange -notcontains $rule.IdentityReference.Value) { return 103 }
             }
         } else {
-            New-Item -ItemType Directory -Force -Path $AdminRoot | Out-Null
+            New-Item -ItemType Directory -Path $AdminRoot | Out-Null
         }
         $staging = Join-Path $AdminRoot ('.staging-' + [guid]::NewGuid().ToString('N').Substring(0, 12))
         if (Test-Path -LiteralPath $staging) { return 102 }
-        if ($harden) {
-            $security = New-Object System.Security.AccessControl.DirectorySecurity
-            $security.SetAccessRuleProtection($true, $false)
-            $inherit = [System.Security.AccessControl.InheritanceFlags]'ContainerInherit, ObjectInherit'
-            foreach ($sid in 'S-1-5-32-544', 'S-1-5-18') {
-                $principal = New-Object System.Security.Principal.SecurityIdentifier $sid
-                $security.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule($principal, 'FullControl', $inherit, 'None', 'Allow')))
-            }
-            [void][IO.Directory]::CreateDirectory($staging, $security)
-        } else {
-            New-Item -ItemType Directory -Path $staging | Out-Null
+        $security = New-Object System.Security.AccessControl.DirectorySecurity
+        $security.SetAccessRuleProtection($true, $false)
+        $inherit = [System.Security.AccessControl.InheritanceFlags]'ContainerInherit, ObjectInherit'
+        foreach ($sid in @('S-1-5-32-544', 'S-1-5-18') + $TrustedSid) {
+            $principal = New-Object System.Security.Principal.SecurityIdentifier $sid
+            $security.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule($principal, 'FullControl', $inherit, 'None', 'Allow')))
         }
+        [void][IO.Directory]::CreateDirectory($staging, $security)
     } catch {
         return 104
     }
@@ -972,7 +988,11 @@ function Invoke-ElevatedStaging([string]$Source, [long]$Bytes, [string]$Sha256, 
         $log = Join-Path $staging 'setup.log'
         $arguments = '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /NOCLOSEAPPLICATIONS /SP- /DIR="' + $Target + '" /LOG="' + $log + '"'
         $process = Start-Process -FilePath $setup -ArgumentList $arguments -Wait -PassThru
-        if (Test-Path -LiteralPath $log) { Copy-Item -LiteralPath $log -Destination (Join-Path $AdminRoot 'rc24-setup.log') -Force }
+        # Once the setup has run, its own exit code is the answer; a log that
+        # cannot be kept does not turn it into a failure before the run.
+        try {
+            if (Test-Path -LiteralPath $log) { Copy-Item -LiteralPath $log -Destination (Join-Path $AdminRoot 'rc24-setup.log') -Force }
+        } catch { }
         return $process.ExitCode
     } catch {
         return 104
@@ -991,10 +1011,12 @@ function ConvertTo-SingleQuoted([string]$Text) {
 # call with the source path, size, and SHA-256 as literals. The target folder
 # is not passed: the elevated side works it out. -AdminRoot is for tests that
 # run the text without elevation.
-function Get-ElevatedCommand([string]$Source, [long]$Bytes, [string]$Sha256, [string]$AdminRoot = '') {
+function Get-ElevatedCommand([string]$Source, [long]$Bytes, [string]$Sha256, [string]$AdminRoot = '',
+        [string[]]$TrustedSid = $null) {
     $call = 'exit (Invoke-ElevatedStaging -Source ' + (ConvertTo-SingleQuoted $Source) + " -Bytes $Bytes -Sha256 " +
         (ConvertTo-SingleQuoted $Sha256)
     if ($AdminRoot) { $call += ' -AdminRoot ' + (ConvertTo-SingleQuoted $AdminRoot) }
+    if ($null -ne $TrustedSid) { $call += ' -TrustedSid @(' + (($TrustedSid | ForEach-Object { ConvertTo-SingleQuoted $_ }) -join ', ') + ')' }
     return 'function Invoke-ElevatedStaging {' + ${function:Invoke-ElevatedStaging}.ToString() + "}`n" + $call + ')'
 }
 
@@ -1052,7 +1074,11 @@ function Install-Rc24([string]$Root) {
             $reason = switch ($code) {
                 $script:ElevatedMismatch { 'the verified setup changed before it could run; nothing was installed' }
                 $script:ElevatedStagingTaken { 'the staging folder name was already taken; nothing was installed' }
-                $script:ElevatedUntrustedRoot { "$(Get-Rc24AdminRoot) is a link or not owned by Administrators; nothing was installed" }
+                $script:ElevatedUntrustedRoot {
+                    $admin = Get-Rc24AdminRoot
+                    "$admin is a link, is not owned by Administrators, or lets other accounts change it; nothing was installed. " +
+                        "If an administrator created it, run in an elevated prompt: icacls `"$admin`" /setowner *S-1-5-32-544"
+                }
                 $script:ElevatedError { 'the elevated step failed before the setup could run' }
                 default {
                     $fresh = (Test-Path -LiteralPath $log) -and ($null -eq $logBefore -or (Get-Item -LiteralPath $log).LastWriteTimeUtc -ne $logBefore)
@@ -1269,7 +1295,11 @@ function Select-Emulator([string]$Root, [hashtable]$Options, [bool]$Interactive)
         $namedFsUae = $Options['FsUae'] -or $env:CLORRAINE_FS_UAE -or $Options['InstallFsUae']
         $namedRom = $Options['Kickstart'] -or $env:CLORRAINE_KICKSTART
         if (-not ($namedFsUae -and $namedRom)) {
-            Write-Line '  pass -FsUae and -Kickstart (or set CLORRAINE_FS_UAE and CLORRAINE_KICKSTART) to run the Amiga hello'
+            if ($namedFsUae) {
+                Write-Line '  pass -Kickstart (or set CLORRAINE_KICKSTART) to run the Amiga hello'
+            } else {
+                Write-Line '  pass -FsUae and -Kickstart (or set CLORRAINE_FS_UAE and CLORRAINE_KICKSTART) to run the Amiga hello'
+            }
             return [pscustomobject]@{ FsUae = $null; Kickstart = $null }
         }
     }
@@ -1516,13 +1546,14 @@ function New-Starter([hashtable]$Options, [bool]$Interactive) {
 # Prints what was set up and the next commands.
 function Write-Summary($Summary) {
     # The bare name works only in terminals that see the user PATH entry.
-    $cli = if ($Summary.OnPath) { 'clorraine' } else { '"' + (Join-Path $Summary.Root 'current\bin\clorraine.exe') + '"' }
+    # PowerShell runs a quoted path only through the call operator.
+    $cli = if ($Summary.OnPath) { 'clorraine' } else { '& "' + (Join-Path $Summary.Root 'current\bin\clorraine.exe') + '"' }
     Write-Line ''
     Write-Line ($script:Style.Green + $script:Style.Bold + $script:Style.Check + ' First run complete.' + $script:Style.Reset)
     Write-Line ''
     Write-Line "  CLI        $(Join-Path $Summary.Root 'current\bin\clorraine.exe')"
-    Write-Line ('  Toolchain  ' + $(if ($Summary.Toolchain) { $Summary.Toolchain } else { 'not configured' }))
-    Write-Line ('  Emulator   ' + $(if ($Summary.Kickstart) { "FS-UAE with $($Summary.Kickstart)" } else { 'not set up' }))
+    Write-Line ('  Toolchain  ' + $(if ($Summary.Toolchain) { Get-SafeText $Summary.Toolchain -SingleLine } else { 'not configured' }))
+    Write-Line ('  Emulator   ' + $(if ($Summary.Kickstart) { 'FS-UAE with ' + (Get-SafeText $Summary.Kickstart -SingleLine) } else { 'not set up' }))
     $hello = switch ("$($Summary.Host)/$($Summary.Guest)") {
         'passed/passed' { 'ran on this PC and on the Amiga' }
         'passed/failed' { 'ran on this PC; the Amiga run failed' }
@@ -1540,12 +1571,12 @@ function Write-Summary($Summary) {
     }
     Write-Line "  VS Code    $editor"
     Write-Line "  Examples   $(Join-Path $Summary.Root 'examples')"
-    if ($Summary.Starter) { Write-Line "  Project    $($Summary.Starter)" }
+    if ($Summary.Starter) { Write-Line ('  Project    ' + (Get-SafeText $Summary.Starter -SingleLine)) }
     Write-Line ''
     Write-Line ($script:Style.Bold + 'What next' + $script:Style.Reset)
     if ($Summary.OnPath) { Write-Line '  Open a new terminal so the PATH change applies, and restart VS Code.' }
     if ($Summary.Starter) {
-        Write-Line "  cd `"$($Summary.Starter)`""
+        Write-Line ("  cd `"" + (Get-SafeText $Summary.Starter -SingleLine) + "`"")
         Write-Line '  code .                      (open main.clo, change MESSAGE, press Run in FS-UAE)'
         Write-Line "  $cli run -p hosted-amiga --emulator main.clo"
     } elseif ($Summary.Toolchain) {

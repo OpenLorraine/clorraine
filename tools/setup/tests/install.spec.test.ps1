@@ -22,6 +22,16 @@ $Template = Join-Path (Split-Path -Parent $Here) 'install.ps1'
 $SuiteRoot = Join-Path ([IO.Path]::GetTempPath()) ('clorraine-install-spec-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
 $ScratchKeyBase = 'Software\ClorraineInstallSpec'
 New-Item -ItemType Directory -Path $SuiteRoot | Out-Null
+
+# The suite works in a folder only this user, SYSTEM, and Administrators can
+# open, as the installer keeps its own folders, whatever %TEMP% grants others.
+$suiteAcl = New-Object System.Security.AccessControl.DirectorySecurity
+$suiteAcl.SetAccessRuleProtection($true, $false)
+foreach ($sid in [Security.Principal.WindowsIdentity]::GetCurrent().User.Value, 'S-1-5-18', 'S-1-5-32-544') {
+    $principal = New-Object System.Security.Principal.SecurityIdentifier $sid
+    $suiteAcl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule($principal, 'FullControl', 'ContainerInherit, ObjectInherit', 'None', 'Allow')))
+}
+[IO.Directory]::SetAccessControl($SuiteRoot, $suiteAcl)
 $script:Passed = 0
 $script:Failed = 0
 $script:CaseNumber = 0

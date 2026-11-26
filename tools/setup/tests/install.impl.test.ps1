@@ -20,6 +20,16 @@ $SuiteRoot = Join-Path ([IO.Path]::GetTempPath()) ('clorraine-install-impl-' + [
 $ScratchKey = 'Software\ClorraineInstallImpl\' + [guid]::NewGuid().ToString('N').Substring(0, 8)
 New-Item -ItemType Directory -Path $SuiteRoot | Out-Null
 
+# The suite works in a folder only this user, SYSTEM, and Administrators can
+# open, as the installer keeps its own folders, whatever %TEMP% grants others.
+$suiteAcl = New-Object System.Security.AccessControl.DirectorySecurity
+$suiteAcl.SetAccessRuleProtection($true, $false)
+foreach ($sid in [Security.Principal.WindowsIdentity]::GetCurrent().User.Value, 'S-1-5-18', 'S-1-5-32-544') {
+    $principal = New-Object System.Security.Principal.SecurityIdentifier $sid
+    $suiteAcl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule($principal, 'FullControl', 'ContainerInherit, ObjectInherit', 'None', 'Allow')))
+}
+[IO.Directory]::SetAccessControl($SuiteRoot, $suiteAcl)
+
 $env:CLORRAINE_INSTALL_LIB = '1'
 . $Template
 $script:Version = '9.1.0'
@@ -406,6 +416,75 @@ public static class FakeSetupImpl {
     $target = Join-Path $admin 'amiga-gcc-16.2-rc24'
     Assert-That ($commandLine.Contains('/DIR="' + $target + '"')) "the target changed on the way: $commandLine"
     Assert-That (@(Get-ChildItem -LiteralPath $admin -Force -Filter '.staging-*').Count -eq 0) 'staging left behind'
+}
+
+Test-Case 'should run the setup from a protected staging folder only the trusted accounts can open' {
+    $dir = New-Dir 'elevate-acl'
+    $setup = Join-Path $dir 'acl-setup.exe'
+    $record = Join-Path $dir 'acl.txt'
+    # The stub records the access list of the folder it runs from.
+    Add-Type -OutputType ConsoleApplication -OutputAssembly $setup -TypeDefinition (@'
+using System.Security.AccessControl;
+using System.Security.Principal;
+public static class AclSetupImpl {
+    public static int Main(string[] args) {
+        string here = System.IO.Path.GetDirectoryName(System.Reflection.Assembly.GetEntryAssembly().Location);
+        DirectorySecurity security = System.IO.Directory.GetAccessControl(here);
+        System.Text.StringBuilder text = new System.Text.StringBuilder(security.AreAccessRulesProtected.ToString());
+        foreach (FileSystemAccessRule rule in security.GetAccessRules(true, true, typeof(SecurityIdentifier))) {
+            text.Append("|" + rule.IdentityReference.Value + "=" + rule.AccessControlType);
+        }
+        System.IO.File.WriteAllText(@"RECORD", text.ToString());
+        return 0;
+    }
+}
+'@).Replace('RECORD', $record.Replace('"', '""'))
+    $admin = Join-Path $dir 'Programs\Clorraine'
+    $code = Invoke-ElevatedStaging -Source $setup -Bytes (Get-Item $setup).Length -Sha256 (Get-Sha256 $setup) -AdminRoot $admin
+    Assert-That ($code -eq 0) "staging exit $code"
+    $me = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+    $parts = [IO.File]::ReadAllText($record).Split('|')
+    Assert-That ($parts[0] -eq 'True') 'the staging folder inherits its parent access list'
+    $expected = @('S-1-5-18=Allow', 'S-1-5-32-544=Allow', "$me=Allow") | Sort-Object
+    $actual = @($parts | Select-Object -Skip 1) | Sort-Object
+    Assert-That (($actual -join ',') -ceq ($expected -join ',')) "staging access list: $($actual -join ', ')"
+}
+
+Test-Case 'should refuse an admin folder that is a link, a file, foreign-owned, or changeable by others' {
+    $dir = New-Dir 'elevate-untrusted'
+    $setup = Join-Path $dir 'never.exe'
+    [IO.File]::WriteAllText($setup, 'not run')
+    $bytes = (Get-Item $setup).Length
+    $sha = Get-Sha256 $setup
+    $real = New-Dir 'elevate-untrusted-target'
+    $link = Join-Path $dir 'link-root'
+    New-Item -ItemType Junction -Path $link -Target $real | Out-Null
+    Assert-That ((Invoke-ElevatedStaging -Source $setup -Bytes $bytes -Sha256 $sha -AdminRoot $link) -eq 103) 'a junction root was used'
+    $file = Join-Path $dir 'file-root'
+    [IO.File]::WriteAllText($file, 'x')
+    Assert-That ((Invoke-ElevatedStaging -Source $setup -Bytes $bytes -Sha256 $sha -AdminRoot $file) -eq 103) 'a file root was used'
+    # The folder is owned by the current user, who is not trusted here.
+    $owned = New-Dir 'elevate-untrusted-owned'
+    Assert-That ((Invoke-ElevatedStaging -Source $setup -Bytes $bytes -Sha256 $sha -AdminRoot $owned -TrustedSid @()) -eq 103) 'a foreign-owned root was used'
+    $open = New-Dir 'elevate-untrusted-open'
+    $acl = Get-Acl -LiteralPath $open
+    $everyone = New-Object System.Security.Principal.SecurityIdentifier 'S-1-1-0'
+    $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule($everyone, 'Modify', 'ContainerInherit, ObjectInherit', 'None', 'Allow')))
+    Set-Acl -LiteralPath $open -AclObject $acl
+    Assert-That ((Invoke-ElevatedStaging -Source $setup -Bytes $bytes -Sha256 $sha -AdminRoot $open) -eq 103) 'a root anyone may change was used'
+    # Control: the same kind of folder without the extra rule passes the checks
+    # and reaches the copy, which the wrong digest then refuses.
+    $private = New-Dir 'elevate-untrusted-control'
+    Assert-That ((Invoke-ElevatedStaging -Source $setup -Bytes $bytes -Sha256 ('0' * 64) -AdminRoot $private) -eq 101) 'a private root was refused'
+    foreach ($root in $real, $owned, $open) {
+        Assert-That (@(Get-ChildItem -LiteralPath $root -Force).Count -eq 0) "a refused root was written: $root"
+    }
+}
+
+Test-Case 'should drop a lone carriage return but keep line breaks in multi-line text' {
+    $text = "abc`rxyz`r`nnext"
+    Assert-That ((Get-SafeText $text) -ceq "abcxyz`r`nnext") "multi-line: $(Get-SafeText $text)"
+    Assert-That ((Get-SafeText $text -SingleLine) -ceq 'abc xyz  next') "single line: $(Get-SafeText $text -SingleLine)"
 }
 
 Test-Case 'should take Program Files from the system and not from the environment' {
