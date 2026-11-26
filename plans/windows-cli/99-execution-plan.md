@@ -2,7 +2,7 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-26 23:04
+> **Last Updated**: 2026-11-26 23:10
 > **Progress**: 49/75 tasks (65%)
 > **CodeOps Artifact Schema**: 1
 
@@ -310,16 +310,16 @@ on Linux in this worktree; Windows runs go through the remote helper (AR-5, AR-2
 
 ## Phase 9: Windows acceptance and merge readiness
 
-> **Phase baseline tree**: _(recorded by exec-plan)_
+> **Phase baseline tree**: f2f5fb64ab0cf23333a0a5e4359f7c101bf535ff
 > **Reasoning**: high — real-host acceptance with a person approving UAC
 
 ### Step 9.1: Acceptance
 
 **Reference**: 03-05 §Acceptance evidence · ST-38, ST-73 · AR-46, AR-49, AR-50
 
-- [ ] 9.1.1 Push the Phase 7 candidate to the Windows host with the helper
-- [ ] 9.1.2 Run the installer with the spike's rc24 registration present and confirm it is reused (AR-50)
-- [ ] 9.1.3 Uninstall the spike rc24 with its own uninstaller; create the standard user `Clorraine Test` and hand the user its password (AR-49)
+- [x] 9.1.1 Push the Phase 7 candidate to the Windows host with the helper ✅ (2026-11-26 23:10; rebuilt candidate after the Phase 7/8 fixes; zip hash e99666a0… unchanged (reproducible), install.ps1 c1e727e6…; hashes match on the host)
+- [x] 9.1.2 Run the installer with the spike's rc24 registration present and confirm it is reused (AR-50) ✅ (2026-11-26 23:10; isolated prefix/APPDATA: `using the installed rc24 toolchain in C:\Users\gbaba\clorraine-spike\rc24`, no elevation, config names it, `clorraine 1.2.0`)
+- [x] 9.1.3 Uninstall the spike rc24 with its own uninstaller; create the standard user `Clorraine Test` and hand the user its password (AR-49) ✅ (2026-11-26 23:10; spike rc24 uninstaller exit 0, registration and compiler gone; `Clorraine Test` created (Users, not Administrators); `C:\ClorraineAcceptance` staged for it with w64devkit, the ROM, launchers, and a two-file editor-check project)
 - [ ] 9.1.4 With the user signed in as `Clorraine Test` and approving UAC: run `acceptance.ps1`; collect the record
 - [ ] 9.1.5 The user confirms the UAC prompt and a Build/Run in FS-UAE from VS Code (ST-38); record both in the evidence — the editor check uses an entry with at least one imported dependency, a dirty dependency that is refused before the build, and one diagnostic shown in the editor (Phase 4 review)
 - [ ] 9.1.6 Validate the record — `make acceptance-check EVIDENCE=… CANDIDATE=…` (ST-73)
