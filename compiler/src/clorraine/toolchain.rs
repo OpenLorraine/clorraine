@@ -135,7 +135,7 @@ const FREESTANDING_BUILD_BASE: &[&str] = &[
 /// The freestanding host-run flags: the same no-libc stance on the host.
 const FREESTANDING_HOST_BASE: &[&str] = &["-std=c99", "-ffreestanding", "-fno-builtin", "-nostdlib"];
 
-/// The fallback host-run flags for a CPU with no shim syscall layer: the host
+/// The fallback host-run flags for a host with no shim syscall layer: the host
 /// C runtime supplies the console write and exit, so `-nostdlib` is dropped.
 const FREESTANDING_HOST_FALLBACK_BASE: &[&str] =
     &["-std=c99", "-ffreestanding", "-fno-builtin"];

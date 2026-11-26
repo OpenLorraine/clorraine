@@ -6,9 +6,9 @@
  *
  *   1. A portable runtime: the byte helpers GCC injects, the console and trap
  *      helpers `std.io` binds, and a file-I/O stub that traps.
- *   2. A platform layer, chosen at compile time: real raw syscalls on x86_64
- *      and aarch64, documented no-op stubs on m68k until LorraineOS exists, and
- *      the host C runtime elsewhere.
+ *   2. A platform layer, chosen at compile time: real raw syscalls on Linux
+ *      x86_64 and aarch64, documented no-op stubs on m68k until LorraineOS
+ *      exists, and the host C runtime elsewhere.
  *   3. The entry point.
  *
  * The shim includes no header, so it uses only C built-in types. It is pushed

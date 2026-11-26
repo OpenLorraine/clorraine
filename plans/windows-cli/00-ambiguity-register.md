@@ -1,6 +1,6 @@
 ## Ambiguity Register: Windows CLI and installer
 
-> **Status**: ✅ GATE PASSED — all 53 items resolved; AR-54 – AR-56 added and resolved during execution
+> **Status**: ✅ GATE PASSED — all 53 items resolved; AR-54 – AR-57 added and resolved during execution
 > **Last Updated**: 2026-11-26 18:30
 > **Evidence**: `spikes/08-windows-cli/README.md`
 
@@ -62,6 +62,7 @@
 | 54 | Technical (runtime) | The full image build cannot run: the toolchain stage clones vbcc's `master` branch, which upstream no longer has, and the build cache that AR-20 assumed is gone | Layer the committed Windows lines on the existing `clorraine-sdk:dev` / fix the toolchain stage now / add a Makefile target for the layered build | Layer the committed lines on `clorraine-sdk:dev` (see AR-54 resolution) | ✅ Resolved |
 | 55 | Technical (runtime) | The driver modules are private, so the integration spec suites cannot call `native_syscalls_for`, `validate_for`, `fs_uae_version_for`, or `launcher_for` as 03-01/03-02 name them | Re-export exactly those items from `clc::clorraine` and make `platform` public / make the whole modules public / move the spec cases into unit tests | Re-export the named items from `clc::clorraine`; `pub mod platform` (see AR-55 resolution) | ✅ Resolved |
 | 56 | Technical (runtime) | The freestanding shim's `offsetof` casts a pointer to `unsigned long`, which MinGW rejects under `-Werror` on Win64 (32-bit `long`), so freestanding programs using `offsetof` cannot build on Windows (W13) | Cast through the shim's `uintptr_t` / a second `_WIN64` branch for the macro / leave it as a limitation | Cast through `uintptr_t` (see AR-56 resolution) | ✅ Resolved |
+| 57 | Technical (runtime) | A `#line` path containing `??` forms a C trigraph under `-std=c99` and fails the strict build (pre-existing; found by the Phase 2 review), which W12's "valid C string literal" excludes | Escape every `?` that follows a `?` as `\?` / leave it (Windows forbids `?` in file names) | Escape every `?` that follows a `?` (see AR-57 resolution) | ✅ Resolved |
 
 ## Coverage Map
 
@@ -223,4 +224,24 @@ Hardening: no challenger; covered by the emission-integrity review of this phase
 Policy version: 1
 Root invocation ID: exec-windows-cli-20261126-1938
 Reopen triggers: a target where `uintptr_t` is not `unsigned long` outside _WIN64
+```
+
+**AR-57 (runtime, auto-design):**
+
+```text
+Authority: AI — delegated by --auto-design
+Eligibility: correctness mechanism inside W12/AR-16 (the #line path is a valid C string literal on
+  every host); emission detail only
+Objective: no source path can change meaning or break the -Werror build through a trigraph
+Decision: c_string_body writes every `?` whose previous input character is `?` as `\?`
+Evidence: memory-safety W2-M1, correctness PE-1, emission-integrity EI-P01: `tri??=x.clo` and a
+  `dq??` directory fail `-Werror=trigraphs` on host cc and m68k GCC, base and head alike
+Rejected alternatives: escaping only the second `?` of each pair (a `???=` run still leaves
+  `??=`); leaving it (Linux paths may contain `?`, and W12 covers every host)
+Strongest counterargument: a pre-existing Linux-only edge case widens this change slightly
+Confidence: High — paths without `??` stay byte-identical
+Hardening: no challenger; three independent reviewers reproduced the defect
+Policy version: 1
+Root invocation ID: exec-windows-cli-20261126-1938
+Reopen triggers: a toolchain leg that does not accept `\?` in a #line string
 ```
