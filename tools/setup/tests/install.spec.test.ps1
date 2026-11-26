@@ -574,6 +574,261 @@ exit 0
     Assert-That ($result.Code -eq 0) $result.All
 }
 
+# --- Toolchain, emulator, hellos ---------------------------------------------
+
+# Stubs that record what the installer asked for, one line per call, in
+# $Log: downloads, elevation, and every command run through the installed CLI.
+function Get-RecordingPrelude([string]$Log, [string]$Extra = '') {
+    $quoted = $Log.Replace("'", "''")
+    return @"
+function Invoke-Download([string]`$Url, [string]`$Destination, [long]`$Bytes, [string]`$Sha256, [int]`$MaxSeconds = 600) {
+    Add-Content -LiteralPath '$quoted' -Value ("download|" + `$Url + "|" + `$Bytes + "|" + `$Sha256)
+    if (`$env:CLORRAINE_TEST_DOWNLOAD_FROM) { Copy-Item -LiteralPath `$env:CLORRAINE_TEST_DOWNLOAD_FROM -Destination `$Destination }
+    else { Set-Content -LiteralPath `$Destination -Value 'fixture' }
+}
+function Invoke-ElevatedSetup([string]`$Source, [string]`$Target, [long]`$Bytes, [string]`$Sha256) {
+    Add-Content -LiteralPath '$quoted' -Value ("elevate|" + `$Target + "|" + `$Bytes + "|" + `$Sha256)
+    return 0
+}
+function Invoke-Clorraine([string[]]`$Arguments, [string]`$WorkingDirectory = '') {
+    Add-Content -LiteralPath '$quoted' -Value ("clorraine|" + (`$Arguments -join '|'))
+    return [pscustomobject]@{ Code = 0; Out = 'Hello, Amiga, from Clorraine!'; Err = '' }
+}
+function Find-HostCompiler { [pscustomobject]@{ Kind = 'none'; Path = `$null } }
+$Extra
+"@
+}
+
+# The recorded calls of one kind.
+function Get-Recorded([string]$Log, [string]$Kind) {
+    if (-not (Test-Path -LiteralPath $Log)) { return @() }
+    return @(Get-Content -LiteralPath $Log | Where-Object { $_.StartsWith("$Kind|") })
+}
+
+# A registration stub for one amiga-gcc version.
+function Get-RegistrationStub([string]$Version, [string]$Root) {
+    return "function Get-Rc24Registration { [pscustomobject]@{ DisplayVersion = '$Version'; InstallLocation = '$($Root.Replace("'", "''"))\' } }"
+}
+
+# The arguments of a toolchain-step run: install the CLI from the fixture,
+# skip the emulator, hellos, editor, and starter unless a case adds them.
+function Get-FirstRunArguments($Fixture, [string[]]$More = @()) {
+    return @('-Archive', $Fixture.Zip, '-Checksums', $Fixture.Sums, '-Prefix', $Fixture.Prefix,
+        '-NoEmulator', '-NoHello', '-NoVSCode', '-NoStarter') + $More
+}
+
+# A fixture candidate ready to install, without installing it.
+function New-Candidate([string]$CaseRoot, [string]$Version = '9.1.0') {
+    $zip = New-FixtureZip $CaseRoot $Version
+    return [pscustomobject]@{
+        Zip = $zip; Sums = (New-Checksums $zip); Installer = (New-AssembledInstaller $CaseRoot $Version)
+        Prefix = (Join-Path $CaseRoot 'prefix')
+    }
+}
+
+$Rc24Url = 'https://github.com/AmigaPorts/m68k-amigaos-gcc/releases/download/v16.2-rc24/m68k-amigaos-gcc-16.2-rc24-x86_64-w64-mingw32ucrt-setup.exe'
+$Rc24Sha = '9dd6973539bb2d514fc1b1e6c0a107cac6f30a9c4076cf4014cbe13013c95512'
+$Rc24Target = 'C:\Program Files\Clorraine\amiga-gcc-16.2-rc24'
+$FsUaeUrl = 'https://github.com/FrodeSolheim/fs-uae/releases/download/v3.2.35/FS-UAE_3.2.35_Windows_x86-64.zip'
+$FsUaeSha = 'b402e2802d518a085c878be96c5c0a656fa3dec57dcf0019d226f3285069063e'
+
+Test-Case 'should reuse an existing rc24 registration without downloading or elevating' {
+    $root = New-CaseRoot
+    $fixture = New-Candidate $root
+    $log = Join-Path $root 'calls.log'
+    $rc24 = Join-Path $root 'rc24'
+    New-Item -ItemType Directory -Force -Path $rc24 | Out-Null
+    $prelude = (Get-RecordingPrelude $log) + "`n" + (Get-RegistrationStub '16.2-rc24' $rc24)
+    $result = Invoke-Case -Installer $fixture.Installer -CaseRoot $root -Prelude $prelude -Arguments (Get-FirstRunArguments $fixture)
+    Assert-That ($result.Code -eq 0) "exit $($result.Code): $($result.All)"
+    Assert-That (@(Get-Recorded $log 'download').Count -eq 0) 'downloaded although rc24 is registered'
+    Assert-That (@(Get-Recorded $log 'elevate').Count -eq 0) 'asked for elevation although rc24 is registered'
+    $setup = @(Get-Recorded $log 'clorraine' | Where-Object { $_ -like 'clorraine|setup|--toolchain|*' })
+    Assert-That ($setup.Count -ge 1) 'clorraine setup was not run'
+    Assert-That ($setup[0].Split('|')[3] -eq $rc24) "setup used $($setup[0])"
+}
+
+Test-Case 'should stop for another amiga-gcc version unless -ReplaceToolchain is given' {
+    $root = New-CaseRoot
+    $fixture = New-Candidate $root
+    $log = Join-Path $root 'calls.log'
+    $prelude = (Get-RecordingPrelude $log) + "`n" + (Get-RegistrationStub '16.2-rc23' (Join-Path $root 'old'))
+    $result = Invoke-Case -Installer $fixture.Installer -CaseRoot $root -Prelude $prelude -Arguments (Get-FirstRunArguments $fixture)
+    Assert-That ($result.Code -eq 1) "exit $($result.Code)"
+    Assert-That ($result.All -match '16\.2-rc23' -and $result.All -match '-ReplaceToolchain') $result.All
+    Assert-That (@(Get-Recorded $log 'elevate').Count -eq 0) 'elevated without -ReplaceToolchain'
+    $result = Invoke-Case -Installer $fixture.Installer -CaseRoot $root -Prelude $prelude `
+        -Arguments (Get-FirstRunArguments $fixture @('-ReplaceToolchain'))
+    Assert-That ($result.Code -eq 0) "with -ReplaceToolchain: exit $($result.Code): $($result.All)"
+    Assert-That (@(Get-Recorded $log 'elevate').Count -eq 1) 'no elevation with -ReplaceToolchain'
+}
+
+Test-Case 'should install rc24 only with -InstallToolchain when nothing is registered' {
+    $root = New-CaseRoot
+    $fixture = New-Candidate $root
+    $log = Join-Path $root 'calls.log'
+    $prelude = (Get-RecordingPrelude $log) + "`nfunction Get-Rc24Registration { `$null }"
+    $result = Invoke-Case -Installer $fixture.Installer -CaseRoot $root -Prelude $prelude -Arguments (Get-FirstRunArguments $fixture)
+    Assert-That ($result.Code -eq 0) "exit $($result.Code): $($result.All)"
+    Assert-That (@(Get-Recorded $log 'download').Count -eq 0) 'downloaded without consent'
+    Assert-That ($result.All -match '-Toolchain') "no -Toolchain next step: $($result.All)"
+    $result = Invoke-Case -Installer $fixture.Installer -CaseRoot $root -Prelude $prelude `
+        -Arguments (Get-FirstRunArguments $fixture @('-InstallToolchain'))
+    Assert-That ($result.Code -eq 0) "with -InstallToolchain: exit $($result.Code): $($result.All)"
+    $download = @(Get-Recorded $log 'download')
+    Assert-That ($download.Count -eq 1) "downloads: $($download.Count)"
+    Assert-That ($download[0] -eq "download|$Rc24Url|48065003|$Rc24Sha") "download: $($download[0])"
+    $elevate = @(Get-Recorded $log 'elevate')
+    Assert-That ($elevate.Count -eq 1 -and $elevate[0] -eq "elevate|$Rc24Target|48065003|$Rc24Sha") "elevation: $($elevate -join ', ')"
+}
+
+Test-Case 'should keep the CLI and print the -Toolchain step when the UAC prompt is declined' {
+    $root = New-CaseRoot
+    $fixture = New-Candidate $root
+    $log = Join-Path $root 'calls.log'
+    $declined = 'function Invoke-ElevatedSetup { throw (New-Object System.ComponentModel.Win32Exception 1223) }'
+    $prelude = (Get-RecordingPrelude $log $declined) + "`nfunction Get-Rc24Registration { `$null }"
+    $result = Invoke-Case -Installer $fixture.Installer -CaseRoot $root -Prelude $prelude `
+        -Arguments (Get-FirstRunArguments $fixture @('-InstallToolchain'))
+    Assert-That ($result.Code -eq 1) "exit $($result.Code)"
+    Assert-That ($result.All -match '-Toolchain') "no -Toolchain next step: $($result.All)"
+    Assert-That ($null -ne (Get-JunctionTarget (Join-Path $fixture.Prefix 'current'))) 'the CLI was removed'
+}
+
+# A console program that records its raw command line and exits 0.
+function Get-FakeSetup([string]$Dir) {
+    $path = Join-Path $Dir 'fake-setup.exe'
+    $record = (Join-Path $Dir 'setup-args.txt').Replace('\', '\\')
+    Add-Type -OutputType ConsoleApplication -OutputAssembly $path -TypeDefinition @"
+public static class FakeSetup {
+    public static int Main(string[] args) {
+        System.IO.File.WriteAllText("$record", System.Environment.CommandLine);
+        return 0;
+    }
+}
+"@
+    return $path
+}
+
+Test-Case 'should verify the setup inside the admin-only folder and run it with the silent options' {
+    $root = New-CaseRoot
+    $installer = New-AssembledInstaller $root '9.1.0'
+    $admin = Join-Path $root 'Program Files\Clorraine'
+    $setup = Get-FakeSetup $root
+    $bytes = (Get-Item -LiteralPath $setup).Length
+    $sha = Get-Sha256 $setup
+    $target = Join-Path $admin 'amiga-gcc-16.2-rc24'
+    $record = Join-Path $root 'setup-args.txt'
+    $call = "exit (Invoke-ElevatedStaging -AdminRoot '$admin' -Source '$setup' -Target '$target' -Bytes $bytes -Sha256 '{0}')"
+    $result = Invoke-Case -Installer $installer -CaseRoot $root -Body ($call -f ('0' * 64))
+    Assert-That ($result.Code -eq 3) "mismatch exit $($result.Code): $($result.All)"
+    Assert-That (-not (Test-Path -LiteralPath $record)) 'the setup ran despite a mismatch'
+    $result = Invoke-Case -Installer $installer -CaseRoot $root -Body ($call -f $sha)
+    Assert-That ($result.Code -eq 0) "exit $($result.Code): $($result.All)"
+    $commandLine = [IO.File]::ReadAllText($record)
+    $expected = '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /NOCLOSEAPPLICATIONS /SP- /DIR="' + $target + '" /LOG="'
+    Assert-That ($commandLine.Contains($expected)) "command line: $commandLine"
+    Assert-That ($commandLine -match [regex]::Escape($admin + '\.staging-') + '[^\\"]+\\setup\.log"') "log path: $commandLine"
+    $staging = @(Get-ChildItem -LiteralPath $admin -Force -Filter '.staging-*')
+    Assert-That ($staging.Count -eq 0) 'the staging folder is still present'
+}
+
+Test-Case 'should pick FS-UAE from the flag, environment, config, PATH, the prefix, then Program Files' {
+    $root = New-CaseRoot
+    $installer = New-AssembledInstaller $root '9.1.0'
+    $prefix = Join-Path $root 'prefix'
+    $places = [ordered]@{
+        flag = Join-Path $root 'flag\fs-uae.exe'
+        env = Join-Path $root 'env\fs-uae.exe'
+        config = Join-Path $root 'config\fs-uae.exe'
+        path = Join-Path $root 'onpath\fs-uae.exe'
+        prefix = Join-Path $prefix 'fs-uae\3.2.35\FS-UAE\Windows\x86-64\fs-uae.exe'
+        programs = Join-Path $root 'programs\FS-UAE\Windows\x86-64\fs-uae.exe'
+    }
+    foreach ($file in $places.Values) {
+        New-Item -ItemType Directory -Force -Path (Split-Path -Parent $file) | Out-Null
+        Set-Content -LiteralPath $file -Value 'fixture'
+    }
+    $configFile = Join-Path $root 'appdata\clorraine\config'
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $configFile) | Out-Null
+    $order = @($places.Keys)
+    for ($i = 0; $i -lt $order.Count; $i++) {
+        $flag = if ($i -le 0) { $places.flag } else { '' }
+        $lines = @(
+            ('$env:CLORRAINE_FS_UAE = ' + $(if ($i -le 1) { "'" + $places.env + "'" } else { '$null' })),
+            ('$env:PATH = ' + $(if ($i -le 3) { "'" + (Split-Path -Parent $places.path) + ";' + `$env:PATH" } else { '$env:PATH' })),
+            ('$env:ProgramFiles = ''' + (Join-Path $root 'programs') + ''''))
+        if ($i -le 2) { Set-Content -LiteralPath $configFile -Value ('fs-uae=' + $places.config) } else { Remove-Item -LiteralPath $configFile -Force -ErrorAction SilentlyContinue }
+        if ($i -eq 5) { Remove-Item -LiteralPath $places.prefix -Force }
+        $body = ($lines -join "`n") + "`n[Console]::Out.WriteLine((Find-FsUae '$flag' '$prefix')); exit 0"
+        $result = Invoke-Case -Installer $installer -CaseRoot $root -Body $body
+        $chosen = $result.Out.Trim()
+        Assert-That (Test-SamePath $chosen $places[$order[$i]]) "step $($order[$i]): chose '$chosen'"
+    }
+}
+
+Test-Case 'should download the pinned FS-UAE only with -InstallFsUae and unpack it under the prefix' {
+    $root = New-CaseRoot
+    $fixture = New-Candidate $root
+    $log = Join-Path $root 'calls.log'
+    $rc24 = Join-Path $root 'rc24'
+    New-Item -ItemType Directory -Force -Path $rc24 | Out-Null
+    $zip = Join-Path $root 'fs-uae-fixture.zip'
+    Add-Type -AssemblyName System.IO.Compression
+    $stream = [IO.File]::Open($zip, 'CreateNew')
+    $archive = New-Object IO.Compression.ZipArchive($stream, [IO.Compression.ZipArchiveMode]::Create)
+    $entry = $archive.CreateEntry('FS-UAE/Windows/x86-64/fs-uae.exe')
+    $writer = $entry.Open(); $writer.WriteByte(77); $writer.Dispose()
+    $archive.Dispose(); $stream.Dispose()
+    $isolate = "`$env:CLORRAINE_FS_UAE = `$null; `$env:ProgramFiles = '$root\no-programs'; `$env:CLORRAINE_TEST_DOWNLOAD_FROM = '$zip'"
+    $prelude = (Get-RecordingPrelude $log $isolate) + "`n" + (Get-RegistrationStub '16.2-rc24' $rc24)
+    $base = @('-Archive', $fixture.Zip, '-Checksums', $fixture.Sums, '-Prefix', $fixture.Prefix, '-NoHello', '-NoVSCode', '-NoStarter')
+    $result = Invoke-Case -Installer $fixture.Installer -CaseRoot $root -Prelude $prelude -Arguments $base
+    Assert-That ($result.Code -eq 0) "exit $($result.Code): $($result.All)"
+    Assert-That (@(Get-Recorded $log 'download').Count -eq 0) 'downloaded FS-UAE without consent'
+    $result = Invoke-Case -Installer $fixture.Installer -CaseRoot $root -Prelude $prelude -Arguments ($base + '-InstallFsUae')
+    Assert-That ($result.Code -eq 0) "with -InstallFsUae: exit $($result.Code): $($result.All)"
+    $download = @(Get-Recorded $log 'download')
+    Assert-That ($download.Count -eq 1 -and $download[0] -eq "download|$FsUaeUrl|49123213|$FsUaeSha") "download: $($download -join ', ')"
+    Assert-That (Test-Path (Join-Path $fixture.Prefix 'fs-uae\3.2.35\FS-UAE\Windows\x86-64\fs-uae.exe')) 'FS-UAE was not unpacked under the prefix'
+}
+
+Test-Case 'should choose a 512 KB KS3.1 A1200 ROM and never a 256 KB one' {
+    $root = New-CaseRoot
+    $installer = New-AssembledInstaller $root '9.1.0'
+    $fakeHome = Join-Path $root 'home'
+    $roms = Join-Path $fakeHome 'amiga\roms'
+    New-Item -ItemType Directory -Force -Path $roms | Out-Null
+    $good = Join-Path $roms 'KICK31A1200.ROM'
+    [IO.File]::WriteAllBytes($good, (New-Object byte[] 524299))
+    [IO.File]::WriteAllBytes((Join-Path $roms 'kick13.rom'), (New-Object byte[] 262144))
+    $body = "`$env:CLORRAINE_KICKSTART = `$null; `$env:USERPROFILE = '$fakeHome'; `$env:PUBLIC = '$root\public'; [Console]::Out.WriteLine((Find-Kickstart '')); exit 0"
+    $result = Invoke-Case -Installer $installer -CaseRoot $root -Body $body
+    Assert-That (Test-SamePath $result.Out.Trim() $good) "chose '$($result.Out.Trim())'"
+    Remove-Item -LiteralPath $good -Force
+    $result = Invoke-Case -Installer $installer -CaseRoot $root -Body $body
+    Assert-That ($result.Out.Trim() -eq '') "chose '$($result.Out.Trim())' without a 512 KB ROM"
+}
+
+Test-Case 'should skip the PC hello with a GCC note for Clang only and the Windows hint for none' {
+    $root = New-CaseRoot
+    $fixture = New-Candidate $root
+    $log = Join-Path $root 'calls.log'
+    $rc24 = Join-Path $root 'rc24'
+    New-Item -ItemType Directory -Force -Path $rc24 | Out-Null
+    $arguments = @('-Archive', $fixture.Zip, '-Checksums', $fixture.Sums, '-Prefix', $fixture.Prefix, '-NoEmulator', '-NoVSCode', '-NoStarter')
+    $clang = 'function Find-HostCompiler { [pscustomobject]@{ Kind = ''clang''; Path = ''C:\llvm\bin\clang.exe'' } }'
+    $prelude = (Get-RecordingPrelude $log $clang) + "`n" + (Get-RegistrationStub '16.2-rc24' $rc24)
+    $result = Invoke-Case -Installer $fixture.Installer -CaseRoot $root -Prelude $prelude -Arguments $arguments
+    Assert-That ($result.Code -eq 0) "Clang only: exit $($result.Code): $($result.All)"
+    Assert-That ($result.All.Contains('Clang found; the PC hello needs GCC (w64devkit or MSYS2), or set CLORRAINE_CC')) $result.All
+    Assert-That (@(Get-Recorded $log 'clorraine' | Where-Object { $_ -like 'clorraine|run|*hello.clo' }).Count -eq 0) 'the PC hello ran with Clang'
+    $prelude = (Get-RecordingPrelude $log) + "`n" + (Get-RegistrationStub '16.2-rc24' $rc24)
+    $result = Invoke-Case -Installer $fixture.Installer -CaseRoot $root -Prelude $prelude -Arguments $arguments
+    Assert-That ($result.Code -eq 0) "no compiler: exit $($result.Code): $($result.All)"
+    Assert-That ($result.All.Contains('install GCC (for example w64devkit or MSYS2 UCRT64) or set CLORRAINE_CC')) $result.All
+}
+
 # --- Summary -----------------------------------------------------------------
 
 Get-ChildItem -LiteralPath "HKCU:\$ScratchKeyBase" -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force
