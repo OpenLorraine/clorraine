@@ -13,7 +13,7 @@ flags=(-std=c99 -mcrt=nix13 -m68000 -fwrapv -O2 -ffunction-sections -fdata-secti
 mkdir -p "$out"
 progs=$(awk -F'\t' 'NR>1 && $2=="hosted-amiga-13" && $3=="yes" {print $1}' "$rec")
 if [ "$seeded" = --seeded ]; then
-    printf 'static unsigned char big[614400];\nint main(void) { return big[7]; }\n' > "$out/seeded.c"
+    printf 'static unsigned char big[614400];\nint main(int argc, char **argv) { (void)argv; big[argc] = 1; return big[7]; }\n' > "$out/seeded.c"
     m68k-amigaos-gcc "${flags[@]}" -o "$out/seeded" "$out/seeded.c" -lamiga -lm
     read -r t d b _ < <(m68k-amigaos-size "$out/seeded" | tail -1)
     tot=$((t + d + b))
