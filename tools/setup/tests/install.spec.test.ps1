@@ -196,13 +196,14 @@ function Invoke-Case {
     if (-not $PathKey) { $PathKey = New-ScratchPathKey 'C:\unrelated' }
     if (-not $Body) { $Body = 'exit (Invoke-Installer ' + (ConvertTo-ArgText $Arguments) + ')' }
     $runner = Join-Path $CaseRoot ('runner-' + [guid]::NewGuid().ToString('N').Substring(0, 6) + '.ps1')
+    # Each concatenation is parenthesized: the comma binds tighter than +.
     $lines = @(
         '$ErrorActionPreference = ''Stop''',
-        '$env:APPDATA = ''' + $appdata.Replace("'", "''") + '''',
+        ('$env:APPDATA = ''' + $appdata.Replace("'", "''") + ''''),
         '$env:CLORRAINE_INSTALL_LIB = ''1''',
-        '. ''' + $Installer.Replace("'", "''") + '''',
+        ('. ''' + $Installer.Replace("'", "''") + ''''),
         'function Test-Interactive { $false }',
-        '$script:PathRegistryKey = ''' + $PathKey + '''',
+        ('$script:PathRegistryKey = ''' + $PathKey + ''''),
         $Prelude,
         $Body
     )
@@ -337,7 +338,7 @@ Test-Case 'should refuse a zip entry that climbs out of the version folder befor
         -Arguments @('-Archive', $zip, '-Checksums', $sums, '-Prefix', $prefix, '-NoToolchain')
     Assert-That ($result.Code -eq 1) "exit $($result.Code)"
     $escaped = @(Get-ChildItem -LiteralPath $root -Recurse -Force -Filter 'evil.txt' -ErrorAction SilentlyContinue)
-    Assert-That ($escaped.Count -eq 0) ('evil.txt was written: ' + ($escaped.FullName -join ', '))
+    Assert-That ($escaped.Count -eq 0) ('evil.txt was written: ' + (($escaped | ForEach-Object { $_.FullName }) -join ', '))
     Assert-That (-not (Test-Path (Join-Path $prefix 'versions\9.1.0-*'))) 'a version folder was created'
     Assert-That (-not (Test-Path (Join-Path $prefix 'current'))) 'current was created'
 }
@@ -409,7 +410,7 @@ Test-Case 'should keep the active version when a run fails after extraction' {
     Assert-That ($result.Code -eq 1) "exit $($result.Code)"
     Assert-That (Test-SamePath (Get-JunctionTarget (Join-Path $a.Prefix 'current')) $a.Folder) 'current no longer targets A'
     $left = @(Get-ChildItem -LiteralPath (Join-Path $a.Prefix 'versions') -Force | Where-Object { $_.Name -like '9.2.0-*' -or $_.Name -like '.tmp-*' })
-    Assert-That ($left.Count -eq 0) ('left behind: ' + ($left.Name -join ', '))
+    Assert-That ($left.Count -eq 0) ('left behind: ' + (($left | ForEach-Object { $_.Name }) -join ', '))
 }
 
 # --- PATH --------------------------------------------------------------------
