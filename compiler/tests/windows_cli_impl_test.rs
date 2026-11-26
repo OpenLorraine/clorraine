@@ -372,3 +372,50 @@ fn should_keep_unix_uri_formatting_unchanged() {
         Ok(DocumentUri::File("/tmp/a b/x.clo".into()))
     );
 }
+
+#[test]
+fn should_keep_the_drive_root_skip_a_semicolon_folder_and_drop_the_verbatim_prefix() {
+    use clc::clorraine::platform::tool_search_path;
+    assert_eq!(
+        tool_search_path(HostOs::Windows, OsStr::new(r"C:\gcc.exe"), None),
+        Some(OsString::from(r"C:\"))
+    );
+    assert_eq!(tool_search_path(HostOs::Windows, OsStr::new(r"C:\tc;x\bin\gcc.exe"), None), None);
+    assert_eq!(
+        tool_search_path(HostOs::Windows, OsStr::new(r"\\?\C:\tc\bin\gcc.exe"), Some(OsStr::new(r"C:\Windows"))),
+        Some(OsString::from(r"C:\tc\bin;C:\Windows"))
+    );
+    assert_eq!(
+        tool_search_path(HostOs::Windows, OsStr::new(r"\\server\share\tc\bin\gcc.exe"), None),
+        Some(OsString::from(r"\\server\share\tc\bin"))
+    );
+}
+
+#[test]
+fn should_give_a_windows_toolchain_command_its_folder_on_path_and_a_unix_one_none() {
+    use clc::clorraine::platform::tool_command_for;
+    let windows = tool_command_for(HostOs::Windows, Path::new(r"C:\tc\bin\gcc.exe"), Some(OsStr::new(r"C:\Windows")));
+    let path: Vec<_> = windows
+        .get_envs()
+        .filter(|(name, _)| *name == OsStr::new("PATH"))
+        .map(|(_, value)| value.map(OsStr::to_owned))
+        .collect();
+    assert_eq!(path, vec![Some(OsString::from(r"C:\tc\bin;C:\Windows"))]);
+    let unix = tool_command_for(HostOs::Unix, Path::new("/opt/tc/bin/gcc"), Some(OsStr::new("/usr/bin")));
+    assert_eq!(unix.get_envs().count(), 0, "a Unix command keeps the caller's environment");
+}
+
+#[test]
+fn should_refuse_a_windows_toolchain_root_with_a_semicolon() {
+    use clc::clorraine::{validate_for, Validation};
+    let scratch = std::env::temp_dir().join(format!("clc-windows-impl-semicolon-{}", std::process::id()));
+    let root = scratch.join("tc;x");
+    std::fs::create_dir_all(root.join("bin")).expect("bin");
+    std::fs::write(root.join("bin").join("m68k-amigaos-gcc.exe"), "").expect("compiler");
+    let error = validate_for(HostOs::Windows, &root, Validation::Selection)
+        .err()
+        .expect("a root with ';' is rejected");
+    let _ = std::fs::remove_dir_all(&scratch);
+    assert_eq!(error.code, 2);
+    assert!(error.message.contains("contains a ';'"), "{}", error.message);
+}

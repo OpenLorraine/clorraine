@@ -160,6 +160,15 @@ pub fn validate_for(os: HostOs, selected: &Path, mode: Validation) -> Result<Too
     }
     // The Windows rc24 compiler splits its own library path at a space, so a
     // root such as one under Program Files fails on every Amiga build.
+    if matches!(os, HostOs::Windows) && shown_root.to_string_lossy().contains(';') {
+        return Err(error(
+            2,
+            format!(
+                "--toolchain: '{}' contains a ';', which cannot be put on PATH; install it in a folder without one",
+                display::sanitize(&shown_root.display().to_string())
+            ),
+        ));
+    }
     if matches!(os, HostOs::Windows) && shown_root.to_string_lossy().contains(' ') {
         return Err(error(
             2,
@@ -406,8 +415,7 @@ fn check_glibc() -> Result<(), SetupError> {
 
 /// Returns the compiler's first `--version` line.
 fn compiler_version(compiler: &Path) -> Result<String, SetupError> {
-    let mut command = Command::new(compiler);
-    platform::prepare_tool_command(&mut command, compiler.as_os_str());
+    let mut command = platform::tool_command(compiler);
     command.arg("--version");
     let output = run_limited(command, Duration::from_secs(10)).map_err(|cause| {
         error(
@@ -457,8 +465,7 @@ fn probe(compiler: &Path) -> Result<(), SetupError> {
     }
     for runtime in ["nix20", "nix13"] {
         let output = root.join(format!("probe-{runtime}"));
-        let mut command = Command::new(compiler);
-        platform::prepare_tool_command(&mut command, compiler.as_os_str());
+        let mut command = platform::tool_command(compiler);
         command
             .arg("-std=c99")
             .arg(format!("-mcrt={runtime}"))

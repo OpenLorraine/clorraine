@@ -12,7 +12,6 @@
 
 use std::fmt;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use super::artifacts;
 use super::display;
@@ -96,9 +95,7 @@ pub fn compile(
 ) -> Result<(), IceError> {
     let argv = toolchain::command(tool, mode, c_path, bin_path);
     let program = compiler.unwrap_or_else(|| Path::new(&argv[0]));
-    let mut command = Command::new(program);
-    platform::prepare_tool_command(&mut command, program.as_os_str());
-    let output = command.args(&argv[1..]).output();
+    let output = platform::tool_command(program).args(&argv[1..]).output();
     match output {
         Ok(output) if output.status.success() => Ok(()),
         Ok(output) => Err(IceError {

@@ -183,12 +183,16 @@ pub fn tool_search_path(os: HostOs, program: &OsStr, current: Option<&OsStr>) ->
     if !matches!(os, HostOs::Windows) {
         return None;
     }
-    let text = program.to_string_lossy();
-    let folder = &text[..text.rfind(['\\', '/'])?];
-    if folder.is_empty() {
+    // A path that is not Unicode is left alone rather than guessed at.
+    let text = program.to_str()?;
+    let end = text.rfind(['\\', '/'])?;
+    // `C:` alone means the drive's current folder; the root is `C:\`.
+    let folder = if end == 2 && has_drive(text) { &text[..=end] } else { &text[..end] };
+    // An empty folder has nothing to add, and a `;` would split the entry.
+    if folder.is_empty() || folder.contains(';') {
         return None;
     }
-    let mut path = OsString::from(folder);
+    let mut path = OsString::from(display_path(os, folder));
     if let Some(current) = current.filter(|current| !current.is_empty()) {
         path.push(";");
         path.push(current);
@@ -196,11 +200,19 @@ pub fn tool_search_path(os: HostOs, program: &OsStr, current: Option<&OsStr>) ->
     Some(path)
 }
 
-/// Puts a Windows toolchain program's folder first on its `PATH`.
-pub fn prepare_tool_command(command: &mut std::process::Command, program: &OsStr) {
-    if let Some(path) = tool_search_path(HostOs::current(), program, std::env::var_os("PATH").as_deref()) {
+/// A command for a toolchain program, with the `PATH` from
+/// [`tool_search_path`] for this host.
+pub fn tool_command(program: &Path) -> std::process::Command {
+    tool_command_for(HostOs::current(), program, std::env::var_os("PATH").as_deref())
+}
+
+/// [`tool_command`] for an explicit host family and `PATH`.
+pub fn tool_command_for(os: HostOs, program: &Path, current: Option<&OsStr>) -> std::process::Command {
+    let mut command = std::process::Command::new(program);
+    if let Some(path) = tool_search_path(os, program.as_os_str(), current) {
         command.env("PATH", path);
     }
+    command
 }
 
 /// The hint printed when no host C compiler is found.
