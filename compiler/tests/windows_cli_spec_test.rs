@@ -5,7 +5,8 @@
 //! C string literals, the freestanding runtime only uses raw Linux system
 //! calls on Linux, and the driver's Windows rules are pure functions that take
 //! the host family as a parameter, so a Linux test run exercises the Windows
-//! branches too.
+//! branches too. The language server spells a Windows file one way for every
+//! URI it receives or sends.
 
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
@@ -16,6 +17,7 @@ use clc::clorraine::platform::{
     config_file, display_path, executable_name, host_artifact_name, host_compilers,
     missing_compiler_hint, pe_file_version, shell_word, HostOs,
 };
+use clc::lsp::uri::{from_path_for, normalize_for, parse_for, DocumentUri};
 
 /// Temporary directory that removes itself when the test finishes.
 struct ScratchDir {
@@ -554,4 +556,41 @@ fn should_keep_an_invoked_launcher_path_or_find_the_exe_on_path_on_windows() {
     executable_file(&dir.join("clorraine.exe"));
     let found = launcher_for(HostOs::Windows, OsStr::new("clorraine"), dir.as_os_str());
     assert_eq!(found, format!("{}/clorraine.exe", dir.display()));
+}
+
+// --- Language server paths -------------------------------------------------
+
+/// The file path a Windows document URI parses to.
+fn windows_file(uri: &str) -> String {
+    match parse_for(HostOs::Windows, uri) {
+        Ok(DocumentUri::File(path)) => path.to_string_lossy().into_owned(),
+        other => panic!("{uri} did not parse to a file: {other:?}"),
+    }
+}
+
+#[test]
+fn should_parse_a_vscode_windows_uri_to_a_drive_path_with_backslashes() {
+    assert_eq!(windows_file("file:///c%3A/Users/a%20b/x.clo"), r"C:\Users\a b\x.clo");
+}
+
+#[test]
+fn should_parse_an_unescaped_drive_uri_to_the_same_windows_path() {
+    assert_eq!(windows_file("file:///C:/x/y.clo"), r"C:\x\y.clo");
+}
+
+#[test]
+fn should_reject_a_network_share_uri_on_windows() {
+    let error = parse_for(HostOs::Windows, "file://server/share/x.clo").unwrap_err();
+    assert!(error.contains("network-share paths are not supported"), "{error}");
+}
+
+#[test]
+fn should_format_a_windows_path_as_the_uri_vscode_sends() {
+    assert_eq!(from_path_for(HostOs::Windows, r"C:\a b\x.clo"), "file:///c%3A/a%20b/x.clo");
+}
+
+#[test]
+fn should_spell_one_windows_file_one_way_and_leave_unix_paths_alone() {
+    assert_eq!(normalize_for(HostOs::Windows, r"\\?\c:\x\y.clo"), r"C:\x\y.clo");
+    assert_eq!(normalize_for(HostOs::Unix, "/x/y.clo"), "/x/y.clo");
 }
