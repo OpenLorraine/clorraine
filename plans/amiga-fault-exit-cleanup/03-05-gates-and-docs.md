@@ -29,11 +29,12 @@ ST-cases in [07](07-testing-strategy.md); this list only names the programs.
 | `utility-fault.clo` | vamos, `hosted-amiga` only | `newTagList`, `currentDateStamp`, `createSemaphore`; index fault | ST-19 |
 | `handler-fault.clo` | A500 | `addHandler`, `createPublicPort("ClFaultCleanup")`; index fault | ST-10 |
 | `display-fault.clo` | A500 | two `newBitmap`, `openDisplay`, `displayFlip`; index fault | ST-11 |
-| `window-fault.clo` | A500 | `openWorkbenchWindow`, `openConsole` on it (left open); index fault | ST-12 |
+| `window-fault.clo` | A500 | `openScreen`, `openWindow` on it, `openConsole` on the window (left open); index fault | ST-12 |
 | `font-fault.clo` | A500 | `openDiskFont` (the font the diskfont gate uses); index fault | ST-13 |
 | `worker-fault.clo` | A500 | worker divides by zero; parent joins | ST-14 |
 | `break-timer.clo` | A500 | `addHandler`, `openTimer`; prints `waiting`; `timerWait` of 3000 ticks, then prints `done` | ST-15 |
 | `break-own-mask.clo` | A500 | prints `waiting`; `waitSignals(0x1000)`; prints `break bit` | ST-16 |
+| `device-fault.clo` | A500 | `newBitmap`, `newLayer`, `newCopper`, `newSprite`, `newAnimation`, `openAudio`, `newSample`; index fault | ST-20 |
 | `clean-exit.clo` | A500 | `addHandler` without `removeHandler`, `openDiskFont`; returns 0 | ST-17 |
 | `worker-fault-unjoined.clo` | A500 | `openTimer`; worker divides by zero; the parent calls `timerWait(timer, 50)`, then faults before joining | ST-18 |
 
@@ -59,7 +60,7 @@ ST-cases in [07](07-testing-strategy.md); this list only names the programs.
 - **Build.** All A500 probes and the walker are built for `hosted-amiga-13` (`-mcrt=nix13`).
 - **Walker.** `docker/scripts/fault-cleanup-walker.c` (test-only C, AR-20) prints one line. It
   takes the system state under `Forbid` and prints it after `Permit`:
-  `<tag> vertb <servers on the VERTB chain> port <1 if "ClFaultCleanup" exists else 0> workers <tasks named "clorraine.worker" on TaskReady+TaskWait> view <sys when GfxBase->ActiView is &IntuitionBase->ViewLord, else other> windows <windows on the Workbench screen> diskfont <diskfont.library open count, 0 when not loaded>`.
+  `<tag> vertb <servers on the VERTB chain> port <1 if "ClFaultCleanup" exists else 0> workers <tasks named "clorraine.worker" on TaskReady+TaskWait> view <sys when GfxBase->ActiView is &IntuitionBase->ViewLord, else other> screens <screens on Intuition's list> windows <windows on the Workbench screen> sprites <GfxBase->SpriteReserved> fonts <tf_Accessors of diamond.font on GfxBase->TextFonts, 0 when absent> chip <AvailMem(MEMF_CHIP)> mem <AvailMem(MEMF_ANY)>` (`screens`, `fonts`, `sprites`, `chip`, `mem`: AR-22, AR-23, AR-25). `chip` and `mem` are compared only for `device-fault.clo` (ST-20), the probe that loads nothing resident. No library open count is reported: diskfont.library's count did not move after a program left it open (graphics and intuition were not measured).
 - **Capture disk.** FS-UAE holds the HDF locked while it runs, so the HDF can be read only
   after the run (`a500-diskfont-smoke.sh:131-137`). The gate therefore also mounts a blank
   capture ADF, created per run with `xdftool`, in DF1 (`--floppy-drive-1`). DF0 stays empty, so

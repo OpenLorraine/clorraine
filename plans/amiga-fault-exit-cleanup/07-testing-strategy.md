@@ -72,17 +72,18 @@ field for field, apart from the tag ([03-05 §A500 gate](03-05-gates-and-docs.md
 |---|---|---|---|
 | ST-10 | `handler-fault.clo`: `addHandler(tick)`, `createPublicPort("ClFaultCleanup")`, index fault | `error E11211: index out of range`, then `rc fail`; walker equality (`vertb` and `port 0` unchanged) | FR-1, AR-1, AR-8; exec `AddIntServer` autodoc |
 | ST-11 | `display-fault.clo`: two `newBitmap`, `openDisplay`, `displayFlip`, index fault | `error E11211: index out of range`, `rc fail`; walker equality (`view sys`) | FR-1, AR-1; graphics `LoadView` autodoc |
-| ST-12 | `window-fault.clo`: `openWorkbenchWindow`, `openConsole(window, 0)` left open, index fault | `error E11211: index out of range`, `rc fail`; walker equality (`windows` unchanged: the console device closes first, so its window reference no longer defers the window close) | FR-1, AR-1; Phase 1 review ruling SR-002 |
-| ST-13 | `font-fault.clo`: `openDiskFont` of the diskfont gate's font, index fault | `error E11211: index out of range`, `rc fail`; walker equality (`diskfont` open count unchanged) | FR-1, AR-1, AR-9 rule 9 |
+| ST-12 | `window-fault.clo`: `openScreen(320, 200, 2, …)`, `openWindow` on it, `openConsole(window, 0)` left open, index fault | `error E11211: index out of range`, `rc fail`; walker equality (`screens` unchanged: console, window, and screen are released newest first) | FR-1, AR-1, AR-22 |
+| ST-13 | `font-fault.clo`: `openDiskFont` of the diskfont gate's font, index fault | `error E11211: index out of range`, `rc fail`; walker equality (`fonts` accessor count unchanged) | FR-1, AR-1, AR-23 |
 | ST-14 | `worker-fault.clo`: a `createTask` worker divides by zero; the parent joins it | `error E11210: integer division by zero`, `rc fail`; walker equality (`workers 0`); the gate goes on to the next probe | FR-3, AR-3; RKM: DOS calls need a Process |
 | ST-15 | `break-timer.clo`: `addHandler(tick)`, `openTimer`, prints `waiting`, `timerWait(timer, 3000)`; the gate sends Ctrl-C after `waiting` | `***Break`, `rc fail`; no `done` line; walker equality | FR-4, AR-5, AR-11, AR-12 |
 | ST-16 | `break-own-mask.clo`: prints `waiting`, `waitSignals(0x1000)`, prints `break bit`, returns 0; the gate sends Ctrl-C after `waiting` | `break bit`; no `***Break`; no `rc fail`; walker equality | AR-13a |
-| ST-17 | `clean-exit.clo`: `addHandler(tick)` with no `removeHandler`, `openDiskFont`, prints `clean`, returns 0 | `clean`; no `rc fail`; walker equality (`vertb`, `diskfont`) | FR-1, FR-2, AR-2 |
+| ST-17 | `clean-exit.clo`: `addHandler(tick)` with no `removeHandler`, `openDiskFont`, prints `clean`, returns 0 | `clean`; no `rc fail`; walker equality (`vertb`, `fonts`) | FR-1, FR-2, AR-2, AR-23 |
 | ST-18 | `worker-fault-unjoined.clo`: the worker divides by zero; the parent calls `timerWait(timer, 50)`, then indexes out of range without joining | `error E11211: index out of range`, then `error E11210: integer division by zero`, then `rc fail`; walker equality (`workers 0`) | FR-3, AR-10 |
+| ST-20 | `device-fault.clo`: `newBitmap`, `newLayer` on it, `newCopper`, `newSprite(2, 16)`, `newAnimation(4, 16, 2)`, `openAudio(1)`, `newSample`, index fault | `error E11211: index out of range`, `rc fail`; walker equality including `sprites`, `chip` (free chip memory), and `mem` (free memory of every kind; the emulated A500 also has slow RAM, where layers, copper lists, and device requests live) | FR-1, AR-1, AR-25 |
 
 **Red-phase expectations** (baseline behaviour, from the assessment verifier runs):
 - These fail before implementation: ST-1..ST-6, ST-3b, and ST-19 (orphan memory or open count), ST-9 (no hook
-  exists), ST-10..ST-13 and ST-17 (walker mismatch), ST-14 and ST-18 (hang), ST-15 (`done`
+  exists), ST-10..ST-13, ST-17, and ST-20 (walker mismatch), ST-14 and ST-18 (hang), ST-15 (`done`
   line, no `***Break`).
 - These may pass before implementation and are regression guards, with the justification
   recorded at the red phase: ST-7 (the existing faults acquire nothing; the new
@@ -97,7 +98,7 @@ field for field, apart from the tag ([03-05 §A500 gate](03-05-gates-and-docs.md
 | --------- | ---------------- | --------- |
 | `compiler/tests/amiga_fault_cleanup_spec_test.rs` | ST-1..ST-6, ST-3b, ST-8, ST-9, ST-19 | registry, hook, vamos kinds |
 | `docker/scripts/run-fault-amiga.sh` | ST-7 (and ST-1..ST-6, ST-3b, ST-19 as run-fault cases) | fault leg |
-| `docker/scripts/a500-fault-cleanup-smoke.sh` | ST-10..ST-18 | A500 acceptance |
+| `docker/scripts/a500-fault-cleanup-smoke.sh` | ST-10..ST-18, ST-20 | A500 acceptance |
 
 ### Implementation Tests (edge cases, internals)
 
@@ -107,6 +108,7 @@ field for field, apart from the tag ([03-05 §A500 gate](03-05-gates-and-docs.md
 | same | `cl_trap`/`cl_panic` test the worker-list head, never read `tc_UserData`, and never name `cl_exit_hook`; the worker-path walk runs under `Forbid`; the worker path has no stdio or `exit` | High |
 | same | each breakable wait includes `SIGBREAKF_CTRL_C` and drops it under `cl_exiting`; the unbreakable sites are unchanged; `cl_timer_free` aborts a pending request | High |
 | same | hook phases appear in the order servers → workers → registry → chip state → library bases; the registry loop pops before release | Med |
+| same | a C harness around an emitted program calls `cl_lib_open` on test-only base slots for `dos.library` under `vamos`: a base opened there is closed at exit, an already-open base is left alone (AR-25). This is the only behavioural check of the library-close phase: on Kickstart 1.3, diskfont.library's open count did not move after a program left it open, and the graphics and intuition counts were not measured | High |
 | same | cross-build of a program that imports every `std.amiga` module on both profiles with `-Werror` (both CRTs) | High |
 | `amiga_exec_impl_test.rs`, `amiga_workbench_impl_test.rs`, `amiga_intuition_impl_test.rs` | update only the pins whose shim text intentionally changes (join, device wait, `WaitPort`) | Med |
 

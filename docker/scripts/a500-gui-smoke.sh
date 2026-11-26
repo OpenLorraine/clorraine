@@ -276,6 +276,24 @@ if [ "${reported}" -ne 1 ]; then
     exit 1
 fi
 
+# The report's data block reaches the ADF before AmigaDOS writes the file's
+# header block, which waits in the floppy track buffer until the drive goes
+# idle. Stopping the emulator earlier leaves a file xdftool cannot read, so
+# wait until the image has stopped changing for three seconds.
+last_sum=""
+stable=0
+for _ in $(seq 1 30); do
+    sum="$(sha1sum "${repo_dir}/${adf}" | awk '{print $1}')"
+    if [ "${sum}" = "${last_sum}" ]; then
+        stable=$((stable + 1))
+        [ "${stable}" -ge 3 ] && break
+    else
+        stable=0
+        last_sum="${sum}"
+    fi
+    sleep 1
+done
+
 docker stop -t 5 "${container}" >/dev/null 2>&1 || true
 wait "${runner}" 2>/dev/null || true
 

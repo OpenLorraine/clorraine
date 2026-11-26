@@ -257,6 +257,39 @@ int cl_res_untrack(void (*release)(void *), void *handle)
     return 0;
 }
 
+/* The base globals the shim itself opened, oldest first. A base that is
+ * already non-null belongs to whoever opened it (libnix opens many bases at
+ * startup and closes them itself), so only a null-to-open transition here is
+ * recorded. Sized for every distinct base global the shim files open. */
+#define CL_LIB_TABLE_MAX 20
+static void *cl_lib_slots[CL_LIB_TABLE_MAX];
+static ULONG cl_lib_count;
+
+/* Open the library for the base global at `slot` (`&Base`) unless it is
+ * already open, and record a base opened here so the exit hook closes it.
+ * The slot is read and written through memcpy because every base global has
+ * its own struct pointer type. Returns the base, or NULL when the library
+ * cannot be opened or recorded. */
+void *cl_lib_open(void *slot, const char *name, ULONG version)
+{
+    void *base;
+
+    memcpy(&base, slot, sizeof base);
+    if (base != NULL) {
+        return base;
+    }
+    if (cl_lib_count >= CL_LIB_TABLE_MAX || !cl_exit_hook_install()) {
+        return NULL;
+    }
+    base = (void *)OpenLibrary((STRPTR)name, version);
+    if (base == NULL) {
+        return NULL;
+    }
+    cl_lib_slots[cl_lib_count++] = slot;
+    memcpy(slot, &base, sizeof base);
+    return base;
+}
+
 /* --- Amiga DOS: file positioning, locks, paths, and volumes. ------------ */
 
 /* A BCPL pointer stores an address divided by four. `InfoData.id_VolumeNode`
@@ -824,7 +857,7 @@ static ULONG cl_take_token(void)
  * no result is checked. */
 ULONG cl_add_handler(cl_handler_fn handler)
 {
-    if (handler == NULL) {
+    if (handler == NULL || !cl_exit_hook_install()) {
         return 0;
     }
     if (cl_vblank_handler != NULL) {
@@ -845,7 +878,7 @@ ULONG cl_add_handler(cl_handler_fn handler)
  * The VBlank slot is independent. */
 ULONG cl_add_port_handler(cl_handler_fn handler)
 {
-    if (handler == NULL) {
+    if (handler == NULL || !cl_exit_hook_install()) {
         return 0;
     }
     if (cl_ports_handler != NULL) {
@@ -1492,18 +1525,23 @@ struct Library *LayersBase = NULL;
 /* The sprite module clears attached channels when their screen closes. */
 static void cl_sprite_screen_closing(struct Screen *screen);
 
+/* Detach the screen's sprite channels and close it. */
+static void cl_release_screen(void *handle)
+{
+    struct Screen *screen = (struct Screen *)handle;
+
+    cl_sprite_screen_closing(screen);
+    CloseScreen(screen);
+}
+
 /* Open a custom screen; NULL on failure. */
 static void *cl_open_screen_mode(LONG width, LONG height, UBYTE depth,
                                  char *title, UWORD view_modes)
 {
-    if (GfxBase == NULL) {
-        GfxBase = (struct GfxBase *)OpenLibrary((STRPTR) "graphics.library", 33);
-    }
-    if (IntuitionBase == NULL) {
-        IntuitionBase =
-            (struct IntuitionBase *)OpenLibrary((STRPTR) "intuition.library", 33);
-    }
-    if (GfxBase == NULL || IntuitionBase == NULL) {
+    struct Screen *opened;
+
+    if (cl_lib_open(&GfxBase, "graphics.library", 33) == NULL ||
+        cl_lib_open(&IntuitionBase, "intuition.library", 33) == NULL) {
         return NULL;
     }
 
@@ -1525,7 +1563,12 @@ static void *cl_open_screen_mode(LONG width, LONG height, UBYTE depth,
     screen.DefaultTitle = (STRPTR)title;
     screen.Gadgets = NULL;
     screen.CustomBitMap = NULL;
-    return (void *)OpenScreen(&screen);
+    opened = OpenScreen(&screen);
+    if (opened != NULL && !cl_res_track(cl_release_screen, opened)) {
+        CloseScreen(opened);
+        return NULL;
+    }
+    return (void *)opened;
 }
 
 /* Open a custom screen with the classic low-resolution pixel mode. */
@@ -1585,10 +1628,9 @@ void cl_clear(void *screen_handle, UBYTE pen)
 /* Close a screen. Null-safe. Detaches any sprite channels first. */
 void cl_close_screen(void *screen_handle)
 {
-    struct Screen *screen = (struct Screen *)screen_handle;
-    if (screen != NULL) {
-        cl_sprite_screen_closing(screen);
-        CloseScreen(screen);
+    if (screen_handle != NULL) {
+        cl_res_untrack(cl_release_screen, screen_handle);
+        cl_release_screen(screen_handle);
     }
 }
 
@@ -1658,6 +1700,7 @@ typedef struct cl_window {
     int console_refs;   /* open console.device handles on this window */
     int ui_refs;        /* gadtools/BOOPSI handles on this window */
     int close_pending;  /* the Window handle closed while a child was open */
+    cl_res res;         /* recorded from open until the window is destroyed */
 } cl_window;
 
 static void cl_window_free_gadgets(cl_window *handle);
@@ -1665,6 +1708,20 @@ static void cl_window_free_menus(cl_window *handle);
 static cl_gadget_node *cl_window_find_gadget(cl_window *handle, LONG id);
 static cl_menu_node *cl_window_find_menu(cl_window *handle, LONG index);
 static int cl_window_id_taken(cl_window *handle, LONG id);
+void cl_close_window(void *window_handle);
+
+/* Record an open window, closing it again when it cannot be recorded (a new
+ * window has no child references, so the close is immediate). The exit
+ * release is the same user-facing close, so a window a child still refers to
+ * stays open rather than being freed under that child. */
+static void *cl_window_recorded(cl_window *handle)
+{
+    if (!cl_res_add(&handle->res, cl_close_window, handle)) {
+        cl_close_window(handle);
+        return NULL;
+    }
+    return handle;
+}
 
 /* Copy a NUL-terminated string with a hard byte bound. Returns NULL when the
  * source is null or longer than `max`; the allocation is `alloc_size` bytes and
@@ -1761,7 +1818,7 @@ void *cl_open_window(void *screen_handle, LONG x, LONG y, LONG width,
      * screen's input focus at open time. */
     WindowToFront(handle->window);
     ActivateWindow(handle->window);
-    return handle;
+    return cl_window_recorded(handle);
 }
 
 /* Open a window on the default public screen (normally Workbench).
@@ -1789,14 +1846,8 @@ void *cl_open_workbench_window(LONG x, LONG y, LONG width, LONG height,
     if (title == NULL || width <= 0 || height <= 0) {
         return NULL;
     }
-    if (IntuitionBase == NULL) {
-        IntuitionBase = (struct IntuitionBase *)OpenLibrary(
-            (STRPTR) "intuition.library", 33);
-    }
-    if (GfxBase == NULL) {
-        GfxBase = (struct GfxBase *)OpenLibrary((STRPTR) "graphics.library", 33);
-    }
-    if (IntuitionBase == NULL || GfxBase == NULL) {
+    if (cl_lib_open(&IntuitionBase, "intuition.library", 33) == NULL ||
+        cl_lib_open(&GfxBase, "graphics.library", 33) == NULL) {
         return NULL;
     }
     /* Public screens are a 2.0 feature. Returning null keeps the call safe on
@@ -1856,7 +1907,7 @@ void *cl_open_workbench_window(LONG x, LONG y, LONG width, LONG height,
     handle->public_screen = public_screen;
     WindowToFront(handle->window);
     ActivateWindow(handle->window);
-    return handle;
+    return cl_window_recorded(handle);
 }
 
 /* Release the wrapper-owned allocations and the Intuition window. */
@@ -1865,6 +1916,7 @@ static void cl_window_destroy(cl_window *handle)
     if (handle == NULL) {
         return;
     }
+    cl_res_remove(&handle->res);
     if (handle->window != NULL) {
         if (handle->pointer_shown) {
             ClearPointer(handle->window);
@@ -3629,31 +3681,6 @@ void cl_task_free(void *handle)
     (void)cl_task_join_record((cl_task *)handle);
 }
 
-/* The `atexit` hook that releases every recorded OS resource on every exit.
- *
- * It prints nothing. Each record is popped before its release runs, and the
- * loop rereads the tail each time instead of keeping a saved neighbour,
- * because one release may remove other records. A nested `exit` from a release
- * re-enters this hook through libnix, which then finishes the records still
- * linked. Newest first means a dependent goes before what it depends on. */
-void cl_exit_hook(void)
-{
-    cl_res *node;
-
-    cl_exiting = 1;
-    while ((node = cl_res_tail) != NULL) {
-        void (*release)(void *) = node->release;
-        void *handle = node->handle;
-        UBYTE side = node->side;
-
-        cl_res_unlink(node);
-        if (side) {
-            FreeMem(node, (ULONG)sizeof *node);
-        }
-        release(handle);
-    }
-}
-
 /* ------------------------------------------------------------------------- */
 /* Exec libraries and generic devices.                                       */
 /*                                                                           */
@@ -4100,6 +4127,7 @@ LONG cl_device_error(void *handle)
 typedef struct cl_video_chip_buffer {
     void *memory;
     ULONG size;
+    cl_res res;
 } cl_video_chip_buffer;
 
 /* One displayable bitmap. The `BitMap` is the first member so a handle can   */
@@ -4108,6 +4136,7 @@ typedef struct cl_video_bitmap {
     struct BitMap bitmap;
     LONG width;
     LONG height;
+    cl_res res;
 } cl_video_bitmap;
 
 /* One copper builder with one instruction stream per display view. */
@@ -4115,6 +4144,7 @@ typedef struct cl_video_copper {
     struct UCopList *lists[2];
     int count;
     int finished;
+    cl_res res;   /* until freed or moved into a Display */
 } cl_video_copper;
 
 /* One double-buffered custom display. */
@@ -4132,16 +4162,19 @@ typedef struct cl_video_display {
     int front;
     int built;
     int failed;
+    cl_res res;
 } cl_video_display;
 
 /* Open graphics.library once; the screen helpers share the same base. */
 static int cl_video_ensure_graphics(void)
 {
-    if (GfxBase == NULL) {
-        GfxBase = (struct GfxBase *)OpenLibrary((STRPTR) "graphics.library", 33);
-    }
-    return GfxBase != NULL;
+    return cl_lib_open(&GfxBase, "graphics.library", 33) != NULL;
 }
+
+void cl_video_chip_free(void *handle);
+void cl_video_bitmap_free(void *handle);
+void cl_video_copper_free(void *handle);
+void cl_video_display_free(void *handle);
 
 /* Allocate a chip buffer, or NULL. The record itself lives in fast memory. */
 void *cl_video_chip_alloc(ULONG size)
@@ -4162,6 +4195,10 @@ void *cl_video_chip_alloc(ULONG size)
         return NULL;
     }
     buffer->size = size;
+    if (!cl_res_add(&buffer->res, cl_video_chip_free, buffer)) {
+        cl_video_chip_free(buffer);
+        return NULL;
+    }
     return buffer;
 }
 
@@ -4173,6 +4210,7 @@ void cl_video_chip_free(void *handle)
     if (buffer == NULL) {
         return;
     }
+    cl_res_remove(&buffer->res);
     if (buffer->memory != NULL) {
         FreeMem(buffer->memory, buffer->size);
     }
@@ -4299,6 +4337,10 @@ void *cl_video_bitmap_new(LONG width, LONG height, UBYTE depth)
         memset(bitmap->bitmap.Planes[plane], 0,
                (size_t)bitmap->bitmap.BytesPerRow * (size_t)bitmap->bitmap.Rows);
     }
+    if (!cl_res_add(&bitmap->res, cl_video_bitmap_free, bitmap)) {
+        cl_video_bitmap_free(bitmap);
+        return NULL;
+    }
     return bitmap;
 }
 
@@ -4311,6 +4353,7 @@ void cl_video_bitmap_free(void *handle)
     if (bitmap == NULL) {
         return;
     }
+    cl_res_remove(&bitmap->res);
     for (plane = 0; plane < (int)bitmap->bitmap.Depth; plane++) {
         if (bitmap->bitmap.Planes[plane] != NULL) {
             FreeRaster(bitmap->bitmap.Planes[plane],
@@ -4734,6 +4777,7 @@ static void cl_video_copper_destroy(cl_video_copper *copper)
     if (copper == NULL) {
         return;
     }
+    cl_res_remove(&copper->res);
     for (index = 0; index < 2; index++) {
         cl_video_free_user_copper(copper->lists[index]);
         copper->lists[index] = NULL;
@@ -4763,6 +4807,10 @@ void *cl_video_copper_new(void)
             cl_video_copper_destroy(copper);
             return NULL;
         }
+    }
+    if (!cl_res_add(&copper->res, cl_video_copper_free, copper)) {
+        cl_video_copper_destroy(copper);
+        return NULL;
     }
     return copper;
 }
@@ -4965,6 +5013,10 @@ void *cl_video_display_open_at(void *front_handle, void *back_handle,
         display->ras_infos[index].RyOffset = 0;
         display->ras_infos[index].Next = NULL;
     }
+    if (!cl_res_add(&display->res, cl_video_display_free, display)) {
+        cl_video_display_free(display);
+        return NULL;
+    }
     return display;
 }
 
@@ -4994,6 +5046,8 @@ BOOL cl_video_display_set_copper(void *handle, void *copper_handle)
         display->user_copper[index] = copper->lists[index];
         copper->lists[index] = NULL;
     }
+    /* The display owns the instruction streams now; the wrapper goes. */
+    cl_res_remove(&copper->res);
     FreeMem(copper, (ULONG)sizeof *copper);
     return TRUE;
 }
@@ -5078,6 +5132,7 @@ void cl_video_display_free(void *handle)
     if (display == NULL) {
         return;
     }
+    cl_res_remove(&display->res);
     if (display->built) {
         LoadView(display->old_view);
         WaitTOF();
@@ -5132,6 +5187,8 @@ typedef struct cl_sprite {
     UWORD *image;
     UWORD *blank;
     struct Screen *screen;
+    int owns_sprites_flag; /* this attachment turned on the screen's SPRITES mode */
+    cl_res res;
 } cl_sprite;
 
 /* One animation over a fixed set of frame images. */
@@ -5140,10 +5197,38 @@ typedef struct cl_sprite_animation {
     int frame_count;
     int frame;
     UWORD **frames;
+    cl_res res;
 } cl_sprite_animation;
 
 /* Channel ownership is process-wide because the hardware channels are. */
 static cl_sprite *cl_sprite_channels[CL_SPRITE_COUNT];
+
+/* Set once the program enables sprite collisions, so the exit resets CLXCON. */
+static UBYTE cl_sprite_collisions_used;
+
+void cl_sprite_free(void *handle);
+void cl_sprite_animation_free(void *handle);
+
+/* Release the SPRITES mode a departing attachment turned on. While another of
+ * the program's channels is still attached to the same screen, that channel
+ * takes over the duty, so it keeps working; the last one clears the mode. */
+static void cl_sprite_release_mode(cl_sprite *sprite)
+{
+    int index;
+
+    if (!sprite->owns_sprites_flag) {
+        return;
+    }
+    sprite->owns_sprites_flag = 0;
+    for (index = 0; index < CL_SPRITE_COUNT; index++) {
+        cl_sprite *other = cl_sprite_channels[index];
+        if (other != NULL && other != sprite && other->screen == sprite->screen) {
+            other->owns_sprites_flag = 1;
+            return;
+        }
+    }
+    sprite->screen->ViewPort.Modes &= (UWORD)~SPRITES;
+}
 
 /* Bytes in one sprite image: posctl[2] + data[height][2] + reserved[2]. */
 static ULONG cl_sprite_image_bytes(int height)
@@ -5211,6 +5296,7 @@ static void cl_sprite_destroy(cl_sprite *sprite, int free_images)
     if (sprite == NULL) {
         return;
     }
+    cl_res_remove(&sprite->res);
     if (sprite->screen != NULL) {
         sprite->visible = 0;
         cl_sprite_change_image(sprite, sprite->blank);
@@ -5220,6 +5306,7 @@ static void cl_sprite_destroy(cl_sprite *sprite, int free_images)
     }
     (void)FreeSprite((WORD)sprite->simple.num);
     if (sprite->screen != NULL) {
+        cl_sprite_release_mode(sprite);
         RethinkDisplay();
         sprite->screen = NULL;
     }
@@ -5286,6 +5373,10 @@ void *cl_sprite_new(UBYTE channel, UBYTE height)
     sprite->blank = blank;
     sprite->screen = NULL;
     cl_sprite_channels[channel] = sprite;
+    if (!cl_res_add(&sprite->res, cl_sprite_free, sprite)) {
+        cl_sprite_destroy(sprite, 1);
+        return NULL;
+    }
     return sprite;
 }
 
@@ -5305,7 +5396,10 @@ BOOL cl_sprite_attach_screen(void *sprite_handle, void *screen_handle)
         return FALSE;
     }
     sprite->screen = screen;
-    screen->ViewPort.Modes |= SPRITES;
+    if ((screen->ViewPort.Modes & SPRITES) == 0) {
+        sprite->owns_sprites_flag = 1;
+        screen->ViewPort.Modes |= SPRITES;
+    }
     ChangeSprite(&screen->ViewPort, &sprite->simple,
                  sprite->visible ? sprite->image : sprite->blank);
     if (sprite->attach && sprite->simple.posctldata != NULL) {
@@ -5322,7 +5416,8 @@ void cl_sprite_detach(void *handle)
 {
     cl_sprite *sprite = (cl_sprite *)handle;
 
-    if (sprite != NULL) {
+    if (sprite != NULL && sprite->screen != NULL) {
+        cl_sprite_release_mode(sprite);
         sprite->screen = NULL;
     }
 }
@@ -5335,6 +5430,8 @@ static void cl_sprite_screen_closing(struct Screen *screen)
     for (index = 0; index < CL_SPRITE_COUNT; index++) {
         cl_sprite *sprite = cl_sprite_channels[index];
         if (sprite != NULL && sprite->screen == screen) {
+            /* The screen goes away, so its mode needs no restoring. */
+            sprite->owns_sprites_flag = 0;
             sprite->screen = NULL;
         }
     }
@@ -5449,6 +5546,11 @@ BOOL cl_sprite_visible(void *handle)
 /* Enable the four sprite-pair collision groups. */
 void cl_sprite_enable_collisions(void)
 {
+    /* Without the hook nothing could reset CLXCON, so collisions stay off. */
+    if (!cl_exit_hook_install()) {
+        return;
+    }
+    cl_sprite_collisions_used = 1;
     CL_SPRITE_CUSTOM->clxcon = 0xF000;
 }
 
@@ -5489,6 +5591,8 @@ void *cl_sprite_animation_new(UBYTE channel, UBYTE height, UBYTE frames)
     animation->frame_count = (int)frames;
     animation->frame = 0;
     animation->frames[0] = sprite->image;
+    /* The animation owns its sprite from here; only its own record remains. */
+    cl_res_remove(&sprite->res);
     for (index = 1; index < (int)frames; index++) {
         animation->frames[index] = (UWORD *)AllocMem(
             cl_sprite_image_bytes((int)height), MEMF_CHIP | MEMF_CLEAR);
@@ -5505,6 +5609,10 @@ void *cl_sprite_animation_new(UBYTE channel, UBYTE height, UBYTE frames)
             return NULL;
         }
     }
+    if (!cl_res_add(&animation->res, cl_sprite_animation_free, animation)) {
+        cl_sprite_animation_free(animation);
+        return NULL;
+    }
     return animation;
 }
 
@@ -5519,6 +5627,7 @@ void cl_sprite_animation_free(void *handle)
     if (animation == NULL) {
         return;
     }
+    cl_res_remove(&animation->res);
     sprite = animation->sprite;
     if (sprite != NULL) {
         height = sprite->height;
@@ -5656,6 +5765,7 @@ typedef struct cl_sample {
     UWORD period;
     UWORD volume;
     UWORD cycles;
+    cl_res res;
 } cl_sample;
 
 typedef struct cl_audio {
@@ -5667,15 +5777,19 @@ typedef struct cl_audio {
     UBYTE mask;
     WORD alloc_key;
     int write_pending[4];
+    cl_res res;
 } cl_audio;
 
 typedef struct cl_timer {
     struct MsgPort *port;
     struct TimeRequest *request;
+    cl_res res;
 } cl_timer;
 
-/* Forward declaration for the partial-open cleanup path. */
+/* Forward declarations for the partial-open cleanup and exit release. */
 void cl_audio_free(void *handle);
+void cl_sample_free(void *handle);
+void cl_timer_free(void *handle);
 
 /* Create a private reply port for a device request. */
 static struct MsgPort *cl_device_port(void)
@@ -5798,7 +5912,8 @@ void *cl_audio_open(UBYTE channels)
         }
     }
     audio->control = cl_audio_block(audio, 0);
-    if (audio->control == NULL) {
+    if (audio->control == NULL ||
+        !cl_res_add(&audio->res, cl_audio_free, audio)) {
         cl_audio_free(audio);
         return NULL;
     }
@@ -5841,6 +5956,7 @@ void cl_audio_free(void *handle)
     if (audio == NULL) {
         return;
     }
+    cl_res_remove(&audio->res);
     if (audio->open_block != NULL &&
         audio->open_block->ioa_Request.io_Device != NULL) {
         for (index = 0; index < 4; index++) {
@@ -5983,6 +6099,10 @@ void *cl_sample_new(APTR data, ULONG count, UWORD period, UBYTE volume,
     sample->period = period;
     sample->volume = (UWORD)volume;
     sample->cycles = cycles;
+    if (!cl_res_add(&sample->res, cl_sample_free, sample)) {
+        cl_sample_free(sample);
+        return NULL;
+    }
     return sample;
 }
 
@@ -5994,6 +6114,7 @@ void cl_sample_free(void *handle)
     if (sample == NULL) {
         return;
     }
+    cl_res_remove(&sample->res);
     if (sample->data != NULL) {
         FreeMem(sample->data, sample->length);
     }
@@ -6075,6 +6196,10 @@ void *cl_timer_open(void)
         FreeMem(timer, (ULONG)sizeof *timer);
         return NULL;
     }
+    if (!cl_res_add(&timer->res, cl_timer_free, timer)) {
+        cl_timer_free(timer);
+        return NULL;
+    }
     return timer;
 }
 
@@ -6105,6 +6230,7 @@ void cl_timer_free(void *handle)
     if (timer == NULL) {
         return;
     }
+    cl_res_remove(&timer->res);
     if (timer->request != NULL) {
         CloseDevice(&timer->request->tr_node);
         FreeMem(timer->request, (ULONG)sizeof(struct TimeRequest));
@@ -6126,6 +6252,7 @@ void cl_timer_free(void *handle)
 typedef struct cl_font {
     struct TextFont *font;
     int owns;
+    cl_res res;   /* recorded only for a font this handle owns */
 } cl_font;
 
 typedef struct cl_layer {
@@ -6135,7 +6262,10 @@ typedef struct cl_layer {
     int bitmap_height;
     int width;
     int height;
+    cl_res res;
 } cl_layer;
+
+void cl_layer_free(void *handle);
 
 /* Build the TextAttr used by both font openers. */
 static void cl_font_attr(struct TextAttr *attr, char *name, UWORD size,
@@ -6146,6 +6276,8 @@ static void cl_font_attr(struct TextAttr *attr, char *name, UWORD size,
     attr->ta_Style = style;
     attr->ta_Flags = 0;
 }
+
+void cl_font_free(void *handle);
 
 /* Wrap an owned TextFont, or NULL. */
 static void *cl_font_wrap(struct TextFont *font, int owns)
@@ -6165,6 +6297,10 @@ static void *cl_font_wrap(struct TextFont *font, int owns)
     }
     handle->font = font;
     handle->owns = owns;
+    if (owns && !cl_res_add(&handle->res, cl_font_free, handle)) {
+        cl_font_free(handle);
+        return NULL;
+    }
     return handle;
 }
 
@@ -6197,10 +6333,7 @@ void *cl_font_open_disk(char *name, UWORD size, UBYTE style)
     if (!cl_video_ensure_graphics()) {
         return NULL;
     }
-    if (DiskfontBase == NULL) {
-        DiskfontBase = OpenLibrary((STRPTR) "diskfont.library", 33);
-    }
-    if (DiskfontBase == NULL) {
+    if (cl_lib_open(&DiskfontBase, "diskfont.library", 33) == NULL) {
         return NULL;
     }
     cl_font_attr(&attr, name, size, style);
@@ -6225,6 +6358,7 @@ void cl_font_free(void *handle)
     if (font == NULL) {
         return;
     }
+    cl_res_remove(&font->res);
     if (font->owns && font->font != NULL) {
         CloseFont(font->font);
     }
@@ -6314,10 +6448,7 @@ void *cl_layer_new(void *bitmap_handle, LONG x0, LONG y0, LONG x1, LONG y1)
     }
     width = (int)(x1 - x0 + 1);
     height = (int)(y1 - y0 + 1);
-    if (LayersBase == NULL) {
-        LayersBase = OpenLibrary((STRPTR) "layers.library", 33);
-    }
-    if (LayersBase == NULL) {
+    if (cl_lib_open(&LayersBase, "layers.library", 33) == NULL) {
         return NULL;
     }
     info = NewLayerInfo();
@@ -6343,6 +6474,10 @@ void *cl_layer_new(void *bitmap_handle, LONG x0, LONG y0, LONG x1, LONG y1)
     handle->bitmap_height = (int)bitmap->height;
     handle->width = width;
     handle->height = height;
+    if (!cl_res_add(&handle->res, cl_layer_free, handle)) {
+        cl_layer_free(handle);
+        return NULL;
+    }
     return handle;
 }
 
@@ -6354,6 +6489,7 @@ void cl_layer_free(void *handle)
     if (layer == NULL) {
         return;
     }
+    cl_res_remove(&layer->res);
     if (layer->layer != NULL) {
         LONG deleted = DeleteLayer(0, layer->layer);
         if (!deleted) {
@@ -6485,5 +6621,69 @@ void cl_layer_end_update(void *handle)
 
     if (layer != NULL && layer->layer != NULL) {
         EndUpdate(layer->layer, TRUE);
+    }
+}
+
+/* --- The exit hook. -------------------------------------------------------
+ *
+ * libnix runs `atexit` functions before it closes stdio, frees its memory
+ * pool, and closes the libraries it opened itself, so everything the hook
+ * releases is still usable here. It prints nothing.
+ *
+ * The phases run in a fixed order:
+ * 1. interrupt servers, which run asynchronously in the program's code;
+ * 2. the registry, newest record first, so a dependent goes before what it
+ *    depends on;
+ * 3. the custom-chip state the shim changed;
+ * 4. the library bases the shim opened itself.
+ *
+ * Each step pops or clears its state before it acts, and loops reread their
+ * state instead of keeping a saved neighbour, because a release may remove
+ * other records. A nested `exit` from a release re-enters the hook through
+ * libnix, which then finishes what is left. */
+void cl_exit_hook(void)
+{
+    cl_res *node;
+
+    cl_exiting = 1;
+
+    if (cl_vblank_handler != NULL) {
+        cl_vblank_handler = NULL;
+        cl_vblank_token = 0;
+        RemIntServer(INTB_VERTB, &cl_vblank_server);
+    }
+    if (cl_ports_handler != NULL) {
+        cl_ports_handler = NULL;
+        cl_ports_token = 0;
+        RemIntServer(INTB_PORTS, &cl_ports_server);
+    }
+
+    while ((node = cl_res_tail) != NULL) {
+        void (*release)(void *) = node->release;
+        void *handle = node->handle;
+        UBYTE side = node->side;
+
+        cl_res_unlink(node);
+        if (side) {
+            FreeMem(node, (ULONG)sizeof *node);
+        }
+        release(handle);
+    }
+
+    if (cl_sprite_collisions_used) {
+        cl_sprite_collisions_used = 0;
+        CL_SPRITE_CUSTOM->clxcon = 0;
+    }
+
+    while (cl_lib_count > 0) {
+        void *slot = cl_lib_slots[--cl_lib_count];
+        void *base;
+        void *none = NULL;
+
+        memcpy(&base, slot, sizeof base);
+        memcpy(slot, &none, sizeof none);
+        if (base != NULL) {
+            CloseLibrary((struct Library *)base);
+        }
     }
 }

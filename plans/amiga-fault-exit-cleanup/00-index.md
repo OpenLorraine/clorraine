@@ -103,6 +103,7 @@ _Detection evidence:_
   - `compiler/runtime/shim_hosted_amiga.c`, `shim_hosted_amiga_20.c`, `shim_hosted_amiga_optional{,_ui,_services,_net,_rtg}.c`
   - `stdlib/std.amiga.{exec,interrupt,dos,timer}.clo` (doc comments)
   - `docker/scripts/run-fault-amiga.sh`, `Makefile`, `AGENTS.md`, `docs/known-limitations.md`, `site/project/verification.md`
+  - `docker/scripts/a500-gui-smoke.sh` (waits for the ADF to settle before stopping FS-UAE; AR-24)
   - the impl-test pins in `compiler/tests/amiga_{exec,workbench,intuition}_impl_test.rs`
 - Created:
   - `compiler/tests/amiga_fault_cleanup_{spec,impl}_test.rs`

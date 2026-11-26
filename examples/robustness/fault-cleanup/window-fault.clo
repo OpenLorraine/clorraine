@@ -1,0 +1,26 @@
+// Fault-exit cleanup probe for real Kickstart: a custom screen, a window on
+// it, and a console on that window are live when an index goes out of range.
+// The runtime must release them newest first: the console, then the window it
+// refers to, then the screen.
+module robustness.fault_cleanup.window_fault;
+
+import { Screen, Window, openScreen, openWindow } from std.amiga.intuition;
+import { Device, openConsole } from std.amiga.exec;
+
+func main(): i32 {
+    let screen: Screen? = openScreen(320, 200, 2, "fault cleanup");
+    if (screen == null) {
+        return 1;
+    }
+    let window: Window? = openWindow(screen, 10, 20, 240, 80, "fault cleanup");
+    if (window == null) {
+        return 2;
+    }
+    let console: Device? = openConsole(window, 0);
+    if (console == null) {
+        return 3;
+    }
+    let xs: u32[2] = [1, 2];
+    let i: usize = 5;
+    return i32(xs[i]);   // error E11211: index out of range
+}

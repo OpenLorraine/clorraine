@@ -1,0 +1,47 @@
+// Fault-exit cleanup probe for real Kickstart: a layer over a bitmap, a copper
+// builder, a hardware sprite, a sprite animation, an audio channel, and a
+// sample are live when an index goes out of range. The runtime must give the
+// sprite channels back to graphics and return every byte of chip memory.
+module robustness.fault_cleanup.device_fault;
+
+import { Bitmap, Copper, newBitmap, newCopper } from std.amiga.video;
+import { Layer, newLayer } from std.amiga.layers;
+import { Sprite, SpriteAnimation, newSprite, newAnimation } from std.amiga.sprite;
+import { Audio, Sample, openAudio, newSample } from std.amiga.audio;
+import { slice } from std.mem;
+
+func main(): i32 {
+    let bitmap_opt: Bitmap? = newBitmap(320, 200, 2);
+    if (bitmap_opt == null) {
+        return 1;
+    }
+    let bitmap: Bitmap = bitmap_opt;
+    let layer: Layer? = newLayer(bitmap, 0, 0, 99, 99);
+    if (layer == null) {
+        return 2;
+    }
+    let copper: Copper? = newCopper();
+    if (copper == null) {
+        return 3;
+    }
+    let sprite: Sprite? = newSprite(2, 16);
+    if (sprite == null) {
+        return 4;
+    }
+    let animation: SpriteAnimation? = newAnimation(4, 16, 2);
+    if (animation == null) {
+        return 5;
+    }
+    let audio: Audio? = openAudio(1);
+    if (audio == null) {
+        return 6;
+    }
+    let data: u8[4] = [1, 2, 3, 4];
+    let sample: Sample? = newSample(slice(data, 0, 4), 428, 64, 1);
+    if (sample == null) {
+        return 7;
+    }
+    let xs: u32[2] = [1, 2];
+    let i: usize = 5;
+    return i32(xs[i]);   // error E11211: index out of range
+}

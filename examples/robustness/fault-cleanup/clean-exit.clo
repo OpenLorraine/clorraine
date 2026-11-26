@@ -1,0 +1,22 @@
+// Fault-exit cleanup probe for real Kickstart: a program that returns normally
+// while its VBlank server is still installed, and after its disk font was
+// dropped. Nothing removes the server and nothing closes the diskfont.library
+// base the runtime opened, so the exit itself must release both.
+module robustness.fault_cleanup.clean_exit;
+
+import { addHandler } from std.amiga.interrupt;
+import { Font, openDiskFont } from std.amiga.text;
+import { println } from std.io;
+
+func tick(): void {
+}
+
+func main(): i32 {
+    addHandler(tick);
+    let font: Font? = openDiskFont("diamond.font", 12, 0);
+    if (font == null) {
+        return 1;
+    }
+    println("clean");
+    return 0;
+}

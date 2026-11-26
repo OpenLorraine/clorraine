@@ -550,3 +550,461 @@ fn normal_releases_and_cross_port_messages_leave_nothing_behind() {
         assert!(!leaked(&output), "{profile}: the cross-port message was left behind:\n{output}");
     }
 }
+
+/// The hook runs its phases in a fixed order: interrupt servers, the registry,
+/// the custom-chip state, then the library bases the shim opened. Each step
+/// clears its state before it acts, so a nested run cannot repeat it.
+#[test]
+fn the_exit_hook_runs_its_phases_in_order() {
+    let shim = shim();
+    let hook = body(&shim, "void cl_exit_hook(void)");
+    assert_order(
+        "phases",
+        hook,
+        &[
+            "cl_exiting = 1;",
+            "if (cl_vblank_handler != NULL)",
+            "cl_vblank_handler = NULL;",
+            "RemIntServer(INTB_VERTB, &cl_vblank_server);",
+            "if (cl_ports_handler != NULL)",
+            "cl_ports_handler = NULL;",
+            "RemIntServer(INTB_PORTS, &cl_ports_server);",
+            "while ((node = cl_res_tail) != NULL)",
+            "release(handle);",
+            "if (cl_sprite_collisions_used)",
+            "cl_sprite_collisions_used = 0;",
+            "CL_SPRITE_CUSTOM->clxcon = 0;",
+            "while (cl_lib_count > 0)",
+            "cl_lib_slots[--cl_lib_count]",
+            "memcpy(slot, &none, sizeof none);",
+            "CloseLibrary((struct Library *)base);",
+        ],
+    );
+}
+
+/// Installing an interrupt server installs the hook first, and a server is
+/// refused when the hook cannot be installed, so no server can outlive the
+/// program.
+#[test]
+fn interrupt_servers_install_the_hook_first() {
+    let shim = shim();
+    for (signature, add) in [
+        ("ULONG cl_add_handler(cl_handler_fn handler)", "AddIntServer(INTB_VERTB"),
+        ("ULONG cl_add_port_handler(cl_handler_fn handler)", "AddIntServer(INTB_PORTS"),
+    ] {
+        assert_order(
+            signature,
+            body(&shim, signature),
+            &["handler == NULL || !cl_exit_hook_install()", "return 0;", add],
+        );
+    }
+}
+
+/// `cl_lib_open` leaves a base someone else opened alone and records only a
+/// base it opened itself; every base-shim open goes through it.
+#[test]
+fn library_bases_open_through_the_recording_helper() {
+    let shim = shim();
+    assert_order(
+        "lib open",
+        body(&shim, "void *cl_lib_open(void *slot, const char *name, ULONG version)"),
+        &[
+            "memcpy(&base, slot, sizeof base);",
+            "if (base != NULL)",
+            "return base;",
+            "cl_lib_count >= CL_LIB_TABLE_MAX || !cl_exit_hook_install()",
+            "OpenLibrary((STRPTR)name, version)",
+            "cl_lib_slots[cl_lib_count++] = slot;",
+            "memcpy(slot, &base, sizeof base);",
+        ],
+    );
+    for base in ["&GfxBase", "&IntuitionBase", "&DiskfontBase", "&LayersBase"] {
+        assert_contains("lib sites", &shim, &format!("cl_lib_open({base}, "));
+    }
+    // The only other open is the user `Library` handle, which the registry
+    // records separately.
+    assert_eq!(shim.matches("OpenLibrary(").count(), 2, "an unrecorded base open remains");
+    assert_contains("user library", body(&shim, "struct Library *cl_open_library(char *name, UWORD version)"), "OpenLibrary(");
+}
+
+/// Every base-shim kind of this phase registers after a successful acquire,
+/// undoes the acquire when the record fails, and unregisters at its free.
+#[test]
+fn the_display_and_device_kinds_register_after_success() {
+    let shim = shim();
+    let cases: &[(&str, &[&str], &str, &str)] = &[
+        (
+            "static void *cl_open_screen_mode(LONG width, LONG height, UBYTE depth,",
+            &["opened = OpenScreen(&screen);", "!cl_res_track(cl_release_screen, opened)", "CloseScreen(opened);", "return NULL;"],
+            "void cl_close_screen(void *screen_handle)",
+            "cl_res_untrack(cl_release_screen, screen_handle);",
+        ),
+        (
+            "void *cl_video_chip_alloc(ULONG size)",
+            &["buffer->size = size;", "!cl_res_add(&buffer->res, cl_video_chip_free, buffer)", "cl_video_chip_free(buffer);", "return NULL;"],
+            "void cl_video_chip_free(void *handle)",
+            "cl_res_remove(&buffer->res);",
+        ),
+        (
+            "void *cl_video_bitmap_new(LONG width, LONG height, UBYTE depth)",
+            &["AllocRaster(", "!cl_res_add(&bitmap->res, cl_video_bitmap_free, bitmap)", "cl_video_bitmap_free(bitmap);", "return NULL;"],
+            "void cl_video_bitmap_free(void *handle)",
+            "cl_res_remove(&bitmap->res);",
+        ),
+        (
+            "void *cl_video_copper_new(void)",
+            &["UCopperListInit(", "!cl_res_add(&copper->res, cl_video_copper_free, copper)", "cl_video_copper_destroy(copper);", "return NULL;"],
+            "static void cl_video_copper_destroy(cl_video_copper *copper)",
+            "cl_res_remove(&copper->res);",
+        ),
+        (
+            "void *cl_video_display_open_at(void *front_handle, void *back_handle,",
+            &["InitView(", "!cl_res_add(&display->res, cl_video_display_free, display)", "cl_video_display_free(display);", "return NULL;"],
+            "void cl_video_display_free(void *handle)",
+            "cl_res_remove(&display->res);",
+        ),
+        (
+            "void *cl_sprite_new(UBYTE channel, UBYTE height)",
+            &["GetSprite(", "!cl_res_add(&sprite->res, cl_sprite_free, sprite)", "cl_sprite_destroy(sprite, 1);", "return NULL;"],
+            "static void cl_sprite_destroy(cl_sprite *sprite, int free_images)",
+            "cl_res_remove(&sprite->res);",
+        ),
+        (
+            "void *cl_sprite_animation_new(UBYTE channel, UBYTE height, UBYTE frames)",
+            &["cl_res_remove(&sprite->res);", "!cl_res_add(&animation->res, cl_sprite_animation_free, animation)", "cl_sprite_animation_free(animation);", "return NULL;"],
+            "void cl_sprite_animation_free(void *handle)",
+            "cl_res_remove(&animation->res);",
+        ),
+        (
+            "void *cl_audio_open(UBYTE channels)",
+            &["OpenDevice((STRPTR) \"audio.device\"", "!cl_res_add(&audio->res, cl_audio_free, audio)", "cl_audio_free(audio);", "return NULL;"],
+            "void cl_audio_free(void *handle)",
+            "cl_res_remove(&audio->res);",
+        ),
+        (
+            "void *cl_sample_new(APTR data, ULONG count, UWORD period, UBYTE volume,",
+            &["sample->cycles = cycles;", "!cl_res_add(&sample->res, cl_sample_free, sample)", "cl_sample_free(sample);", "return NULL;"],
+            "void cl_sample_free(void *handle)",
+            "cl_res_remove(&sample->res);",
+        ),
+        (
+            "void *cl_timer_open(void)",
+            &["OpenDevice((STRPTR) \"timer.device\"", "!cl_res_add(&timer->res, cl_timer_free, timer)", "cl_timer_free(timer);", "return NULL;"],
+            "void cl_timer_free(void *handle)",
+            "cl_res_remove(&timer->res);",
+        ),
+        (
+            "static void *cl_font_wrap(struct TextFont *font, int owns)",
+            &["handle->owns = owns;", "owns && !cl_res_add(&handle->res, cl_font_free, handle)", "cl_font_free(handle);", "return NULL;"],
+            "void cl_font_free(void *handle)",
+            "cl_res_remove(&font->res);",
+        ),
+        (
+            "void *cl_layer_new(void *bitmap_handle, LONG x0, LONG y0, LONG x1, LONG y1)",
+            &["CreateUpfrontLayer(", "!cl_res_add(&handle->res, cl_layer_free, handle)", "cl_layer_free(handle);", "return NULL;"],
+            "void cl_layer_free(void *handle)",
+            "cl_res_remove(&layer->res);",
+        ),
+    ];
+    for (acquire, order, release, remove) in cases {
+        assert_order(acquire, body_from(&shim, acquire), order);
+        let free = body_from(&shim, release);
+        assert_contains(release, free, remove);
+        // The record goes before anything is released.
+        let remove_at = free.find(remove).expect("remove");
+        for call in ["FreeMem(", "CloseScreen(", "CloseDevice(", "CloseFont(", "DeleteLayer(", "LoadView("] {
+            if let Some(at) = free.find(call) {
+                assert!(remove_at < at, "{release}: unregister after {call}");
+            }
+        }
+    }
+}
+
+/// The text of the definition that starts with `prefix` (a signature that may
+/// continue on the next line), up to its closing brace in column 0.
+fn body_from<'a>(source: &'a str, prefix: &str) -> &'a str {
+    let mut from = 0;
+    loop {
+        let at = source[from..]
+            .find(&format!("\n{prefix}"))
+            .unwrap_or_else(|| panic!("the shim has no definition {prefix:?}"))
+            + from
+            + 1;
+        let rest = &source[at..];
+        let header_end = rest.find(['{', ';']).expect("a declaration ends");
+        if rest.as_bytes()[header_end] == b'{' {
+            let end = rest.find("\n}\n").expect("closing brace");
+            return &rest[..end + 2];
+        }
+        from = at;
+    }
+}
+
+/// Windows: recorded after either open path, unrecorded only where the window
+/// is really destroyed (a close can defer while a console or UI child still
+/// refers to it), and released at exit through that same deferring close.
+#[test]
+fn windows_unregister_where_they_are_destroyed() {
+    let shim = shim();
+    assert_order(
+        "window record",
+        body(&shim, "static void *cl_window_recorded(cl_window *handle)"),
+        &["!cl_res_add(&handle->res, cl_close_window, handle)", "cl_close_window(handle);", "return NULL;"],
+    );
+    for signature in [
+        "void *cl_open_window(void *screen_handle, LONG x, LONG y, LONG width,",
+        "void *cl_open_workbench_window(LONG x, LONG y, LONG width, LONG height,",
+    ] {
+        assert_order(signature, body_from(&shim, signature), &["OpenWindow(&nw);", "return cl_window_recorded(handle);"]);
+    }
+    assert_order(
+        "destroy",
+        body(&shim, "static void cl_window_destroy(cl_window *handle)"),
+        &["cl_res_remove(&handle->res);", "CloseWindow(handle->window);"],
+    );
+    assert_lacks("close", body(&shim, "void cl_close_window(void *window_handle)"), "cl_res_remove");
+}
+
+/// A copper moved into a display stops being recorded; every path that frees
+/// the wrapper unrecords it first.
+#[test]
+fn a_copper_moved_into_a_display_is_unrecorded() {
+    let shim = shim();
+    assert_order(
+        "set copper",
+        body(&shim, "BOOL cl_video_display_set_copper(void *handle, void *copper_handle)"),
+        &[
+            "cl_video_copper_destroy(copper);",
+            "return FALSE;",
+            "cl_video_copper_destroy(copper);",
+            "return FALSE;",
+            "copper->lists[index] = NULL;",
+            "cl_res_remove(&copper->res);",
+            "FreeMem(copper, (ULONG)sizeof *copper);",
+            "return TRUE;",
+        ],
+    );
+}
+
+/// Sprites restore only the chip state the runtime changed: the attachment
+/// that turned the screen's SPRITES mode on owns it, hands it to another
+/// attached channel of the same screen on release, and the last one clears
+/// it. Collisions record their use so the exit can reset CLXCON.
+#[test]
+fn sprites_restore_only_the_state_they_changed() {
+    let shim = shim();
+    assert_order(
+        "attach",
+        body(&shim, "BOOL cl_sprite_attach_screen(void *sprite_handle, void *screen_handle)"),
+        &["(screen->ViewPort.Modes & SPRITES) == 0", "sprite->owns_sprites_flag = 1;", "screen->ViewPort.Modes |= SPRITES;"],
+    );
+    assert_order(
+        "release mode",
+        body(&shim, "static void cl_sprite_release_mode(cl_sprite *sprite)"),
+        &[
+            "if (!sprite->owns_sprites_flag)",
+            "sprite->owns_sprites_flag = 0;",
+            "other != sprite && other->screen == sprite->screen",
+            "other->owns_sprites_flag = 1;",
+            "return;",
+            "sprite->screen->ViewPort.Modes &= (UWORD)~SPRITES;",
+        ],
+    );
+    assert_order(
+        "destroy",
+        body(&shim, "static void cl_sprite_destroy(cl_sprite *sprite, int free_images)"),
+        &["FreeSprite(", "cl_sprite_release_mode(sprite);", "RethinkDisplay();"],
+    );
+    assert_contains("detach", body(&shim, "void cl_sprite_detach(void *handle)"), "cl_sprite_release_mode(sprite);");
+    assert_order(
+        "screen closing",
+        body(&shim, "static void cl_sprite_screen_closing(struct Screen *screen)"),
+        &["sprite->owns_sprites_flag = 0;", "sprite->screen = NULL;"],
+    );
+    assert_order(
+        "collisions",
+        body(&shim, "void cl_sprite_enable_collisions(void)"),
+        &["!cl_exit_hook_install()", "return;", "cl_sprite_collisions_used = 1;", "clxcon = 0xF000;"],
+    );
+}
+
+/// Chip memory, a sample, and a timer are live when an index goes out of
+/// range; `vamos` must report nothing left behind.
+const CHIP_FAULT_SOURCE: &str = r#"module tests.fault_cleanup.chip_fault;
+
+import { ChipBuffer, allocChip } from std.amiga.video;
+import { Sample, newSample } from std.amiga.audio;
+import { Timer, openTimer } from std.amiga.timer;
+import { slice } from std.mem;
+
+func main(): i32 {
+    let chip: ChipBuffer? = allocChip(256);
+    if (chip == null) { return 1; }
+    let data: u8[4] = [1, 2, 3, 4];
+    let sample: Sample? = newSample(slice(data, 0, 4), 428, 64, 1);
+    if (sample == null) { return 2; }
+    let timer: Timer? = openTimer();
+    if (timer == null) { return 3; }
+    let xs: u32[2] = [1, 2];
+    let i: usize = 5;
+    return i32(xs[i]);
+}
+"#;
+
+/// The phase's kinds that run without a display are released at a fault exit.
+#[test]
+fn chip_memory_a_sample_and_a_timer_are_released_at_a_fault() {
+    if !tool_available("m68k-amigaos-gcc") || !tool_available("vamos") {
+        eprintln!("skip: the hosted-amiga toolchain or vamos is absent");
+        return;
+    }
+    for (profile, crt) in [("hosted-amiga", "nix20"), ("hosted-amiga-13", "nix13")] {
+        let (code, output) = build_and_run(&format!("chip-{profile}"), profile, crt, CHIP_FAULT_SOURCE);
+        assert_eq!(code, Some(20), "{profile}: the probe must fault:\n{output}");
+        assert!(output.starts_with("error E11211: index out of range\n"), "{profile}: unexpected output:\n{output}");
+        assert!(!leaked(&output), "{profile}: chip memory, the sample, or the timer was left behind:\n{output}");
+    }
+}
+
+/// A program that imports every `std.amiga` module its profile supports
+/// cross-builds with warnings as errors on that profile's runtime, so every
+/// shim file the registry touches stays warning-free on both CRTs.
+#[test]
+fn a_program_importing_every_amiga_module_builds_warning_free() {
+    if !tool_available("m68k-amigaos-gcc") {
+        eprintln!("skip: m68k-amigaos-gcc is not on PATH");
+        return;
+    }
+    for (profile_name, crt) in [("hosted-amiga", "nix20"), ("hosted-amiga-13", "nix13")] {
+        let profile = clc::profile::Profile::parse(profile_name).expect("a known profile");
+        let mut source = String::from("module tests.fault_cleanup.every_module;\n\n");
+        let mut imported = 0;
+        for module in clc::stdlib::SOURCES {
+            if !module.name.starts_with("std.amiga.") || !profile.supports_module(module.name) {
+                continue;
+            }
+            let export = clc::stdlib::lookup(module.name)
+                .and_then(|found| found.exports.first())
+                .unwrap_or_else(|| panic!("{} exports nothing", module.name));
+            source.push_str(&format!("import {{ {export} }} from {};\n", module.name));
+            imported += 1;
+        }
+        source.push_str("\nfunc main(): i32 {\n    return 0;\n}\n");
+        assert!(imported > 10, "{profile_name}: only {imported} modules found");
+
+        let scratch = ScratchDir::new(&format!("every-{profile_name}"));
+        let source_path = scratch.path().join("main.clo");
+        std::fs::write(&source_path, &source).expect("write the program");
+        let c_path = scratch.path().join("out.c");
+        let emit = Command::new(env!("CARGO_BIN_EXE_clc"))
+            .args(["--profile", profile_name, "-o"])
+            .arg(&c_path)
+            .arg(&source_path)
+            .output()
+            .expect("run clc");
+        assert!(emit.status.success(), "{profile_name}: clc:\n{}\n{source}", text(&emit.stderr));
+        let gcc = Command::new("m68k-amigaos-gcc")
+            .args(["-std=c99", &format!("-mcrt={crt}"), "-m68000", "-fwrapv", "-O0", "-g", "-Wall", "-Wextra", "-Werror", "-o"])
+            .arg(scratch.path().join("program"))
+            .arg(&c_path)
+            .args(["-lamiga", "-lm"])
+            .output()
+            .expect("run m68k-amigaos-gcc");
+        assert!(gcc.status.success(), "{profile_name}: gcc:\n{}", text(&gcc.stderr));
+    }
+}
+
+/// Builds a C harness that wraps an emitted program (its `main` renamed) and
+/// runs `harness_main` under `vamos`. Returns the exit code and all output.
+fn run_shim_harness(tag: &str, profile: &str, crt: &str, harness_main: &str) -> (Option<i32>, String) {
+    let scratch = ScratchDir::new(tag);
+    let source_path = scratch.path().join("main.clo");
+    std::fs::write(&source_path, "module tests.fault_cleanup.harness;\n\nfunc main(): i32 {\n    return 0;\n}\n")
+        .expect("write the program");
+    let emitted = scratch.path().join("program.c");
+    let emit = Command::new(env!("CARGO_BIN_EXE_clc"))
+        .args(["--profile", profile, "-o"])
+        .arg(&emitted)
+        .arg(&source_path)
+        .output()
+        .expect("run clc");
+    assert!(emit.status.success(), "{tag}: clc:\n{}", text(&emit.stderr));
+    let harness = scratch.path().join("harness.c");
+    std::fs::write(
+        &harness,
+        format!("#define main cl_emitted_main\n#include \"program.c\"\n#undef main\n\n{harness_main}"),
+    )
+    .expect("write the harness");
+    let binary = scratch.path().join("harness");
+    let gcc = Command::new("m68k-amigaos-gcc")
+        .args(["-std=c99", &format!("-mcrt={crt}"), "-m68000", "-fwrapv", "-O0", "-g", "-Wall", "-Wextra", "-Werror", "-o"])
+        .arg(&binary)
+        .arg(&harness)
+        .args(["-lamiga", "-lm"])
+        .output()
+        .expect("run m68k-amigaos-gcc");
+    assert!(gcc.status.success(), "{tag}: gcc:\n{}", text(&gcc.stderr));
+    let run = Command::new("timeout")
+        .arg("120")
+        .arg("vamos")
+        .arg(&binary)
+        .current_dir(scratch.path())
+        .output()
+        .expect("run vamos");
+    (run.status.code(), format!("{}{}", text(&run.stdout), text(&run.stderr)))
+}
+
+/// The exit hook closes a library base the runtime opened through its
+/// recording helper, and leaves alone a base that was already open: that one
+/// belongs to whoever opened it. `vamos` counts library opens, so an unclosed
+/// open shows as a library it cannot expunge at shutdown.
+#[test]
+fn the_exit_hook_closes_only_the_library_bases_the_runtime_opened() {
+    if !tool_available("m68k-amigaos-gcc") || !tool_available("vamos") {
+        eprintln!("skip: the hosted-amiga toolchain or vamos is absent");
+        return;
+    }
+    const OPENED_HERE: &str = "\
+/* A base global only this test uses, so the runtime opens it itself. */
+struct Library *cl_test_base = NULL;
+
+int main(void)
+{
+    return cl_lib_open(&cl_test_base, \"dos.library\", 0) == NULL ? 2 : 0;
+}
+";
+    const ALREADY_OPEN: &str = "\
+/* Opened by the test itself and deliberately never closed. */
+struct Library *cl_test_held = NULL;
+/* Opened through the runtime, which must close it. */
+struct Library *cl_test_base = NULL;
+
+int main(void)
+{
+    cl_test_held = OpenLibrary((STRPTR)\"dos.library\", 0);
+    if (cl_test_held == NULL) {
+        return 2;
+    }
+    if (cl_lib_open(&cl_test_held, \"dos.library\", 0) != (void *)cl_test_held) {
+        return 3;
+    }
+    return cl_lib_open(&cl_test_base, \"dos.library\", 0) == NULL ? 4 : 0;
+}
+";
+    for (profile, crt) in [("hosted-amiga", "nix20"), ("hosted-amiga-13", "nix13")] {
+        let (code, output) = run_shim_harness(&format!("lib-opened-{profile}"), profile, crt, OPENED_HERE);
+        assert_eq!(code, Some(0), "{profile}: the harness failed:\n{output}");
+        assert!(!leaked(&output), "{profile}: a base the runtime opened was left open:\n{output}");
+
+        let (code, output) = run_shim_harness(&format!("lib-held-{profile}"), profile, crt, ALREADY_OPEN);
+        assert_eq!(code, Some(0), "{profile}: the harness failed:\n{output}");
+        let held: Vec<&str> = output
+            .lines()
+            .filter(|line| line.contains("can't expunge") && line.contains("'dos.library'"))
+            .collect();
+        assert!(
+            held.len() == 1 && held[0].contains("open count 1"),
+            "{profile}: only the test's own open may remain, exactly once:\n{output}"
+        );
+    }
+}

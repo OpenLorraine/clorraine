@@ -1,0 +1,25 @@
+// Fault-exit cleanup probe for real Kickstart: a double-buffered custom
+// display is on screen when an index goes out of range. The runtime must
+// close it, which loads the system view again.
+module robustness.fault_cleanup.display_fault;
+
+import { Bitmap, Display, newBitmap, openDisplay, displayFlip } from std.amiga.video;
+
+func main(): i32 {
+    let front: Bitmap? = newBitmap(320, 200, 2);
+    if (front == null) {
+        return 1;
+    }
+    let back: Bitmap? = newBitmap(320, 200, 2);
+    if (back == null) {
+        return 2;
+    }
+    let display: Display? = openDisplay(front, back);
+    if (display == null) {
+        return 3;
+    }
+    displayFlip(display);
+    let xs: u32[2] = [1, 2];
+    let i: usize = 5;
+    return i32(xs[i]);   // error E11211: index out of range
+}

@@ -1,0 +1,22 @@
+// Fault-exit cleanup probe for real Kickstart: a VBlank server and a public
+// port are installed when an index goes out of range. The server's code is
+// unloaded with the program, so the runtime must remove it from the interrupt
+// chain, and the public port must disappear.
+module robustness.fault_cleanup.handler_fault;
+
+import { addHandler } from std.amiga.interrupt;
+import { MsgPort, createPublicPort } from std.amiga.exec;
+
+func tick(): void {
+}
+
+func main(): i32 {
+    addHandler(tick);
+    let port: MsgPort? = createPublicPort("ClFaultCleanup");
+    if (port == null) {
+        return 1;
+    }
+    let xs: u32[2] = [1, 2];
+    let i: usize = 5;
+    return i32(xs[i]);   // error E11211: index out of range
+}

@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-26 12:40
-> **Progress**: 12/55 tasks (22%)
+> **Last Updated**: 2026-11-26 18:08
+> **Progress**: 25/55 tasks (45%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -118,7 +118,8 @@ Rules for every task:
 
 ## Phase 2: Interrupt servers, base-shim kinds, library bases, chip state
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill)_
+> **Phase baseline tree**: 8b77ae0b8689899e082b0686ac647132c2d7a97f (HEAD `fa91f5fb`)
+> **Scope mode**: strict · **Expected modification set**: `compiler/runtime/shim_hosted_amiga.c`, `compiler/tests/amiga_fault_cleanup_impl_test.rs`, `examples/robustness/fault-cleanup/`, `docker/scripts/fault-cleanup-walker.c`, `docker/scripts/a500-fault-cleanup-smoke.sh`, `Makefile`, `docker/scripts/a500-gui-smoke.sh` (AR-24), this plan folder, `plans/00-roadmap.md`
 > **Reasoning**: xhigh — interrupt-server removal, display restore, and window ordering on real
 > Kickstart 1.3.
 
@@ -127,31 +128,31 @@ Rules for every task:
 **Reference**: [07](07-testing-strategy.md) ST-10..ST-13, ST-17 · [03-05 §A500 gate](03-05-gates-and-docs.md#a500-gate-sdk-a500-fault-cleanup) · AR-7, AR-17, AR-20
 **Objective**: The A500 gate exists and fails on the baseline.
 
-- [ ] 2.1.1 [spec-author] Write the walker fixture and the gate script (HDF boot plus the per-run capture ADF in DF1, per 03-05 §A500 gate), plus a `Makefile` target `sdk-a500-fault-cleanup` (not yet in `verify`) — `docker/scripts/fault-cleanup-walker.c`, `docker/scripts/a500-fault-cleanup-smoke.sh`, `Makefile`
-- [ ] 2.1.2 [spec-author] Write the probes for ST-10..ST-13 and ST-17, and their gate expectations — `examples/robustness/fault-cleanup/{handler,display,window,font}-fault.clo`, `clean-exit.clo`, `docker/scripts/a500-fault-cleanup-smoke.sh`
-- [ ] 2.1.3 Red phase: `make sdk-a500-fault-cleanup`; record the walker mismatches per ST in this task line
+- [x] 2.1.1 [spec-author] Write the walker fixture and the gate script (HDF boot plus the per-run capture ADF in DF1, per 03-05 §A500 gate), plus a `Makefile` target `sdk-a500-fault-cleanup` (not yet in `verify`) — `docker/scripts/fault-cleanup-walker.c`, `docker/scripts/a500-fault-cleanup-smoke.sh`, `Makefile` ✅ (completed: 2026-11-26 13:35; walker builds -Werror on nix13; the gate boots, captures to DF1, and reports per probe (the red run below); AmigaDOS needs the redirection before the walker's argument)
+- [x] 2.1.2 [spec-author] Write the probes for ST-10..ST-13 and ST-17, and their gate expectations — `examples/robustness/fault-cleanup/{handler,display,window,font}-fault.clo`, `clean-exit.clo`, `docker/scripts/a500-fault-cleanup-smoke.sh` ✅ (completed: 2026-11-26 13:35; window-fault uses a custom screen, window, and console (AR-22); walker gains screens and fonts (AR-22, AR-23); all five emit with zero diagnostics and build -Werror on nix13)
+- [x] 2.1.3 Red phase: `make sdk-a500-fault-cleanup`; record the walker mismatches per ST in this task line ✅ (completed: 2026-11-26 13:35; Red: ST-11 view sys→other; ST-12 screens 1→2; ST-13 fonts 0→1 (the diskfont open count stays 0: diskfont.library's count did not move after a leaked open; the walker field was dropped, AR-23 correction, AR-25); ST-10 the A500 crashes on the command after the probe (the stray VBlank server, DEF-582), so its after line and rc marker are lost; ST-17 not reached because of that crash (its server would crash the same way). Each probe printed its expected first line)
 
 ### Step 2.2: Implementation
 
 **Reference**: [03-01 §Exit phases, §Chip state](03-01-exit-registry.md#exit-phases) · [03-02 §Base shim, §Library bases, §Interrupt servers](03-02-registration-sites.md) · AR-1, AR-2, AR-8, AR-9, AR-14
 
-- [ ] 2.2.1 Exit phase 1 and the hook install in `cl_add_handler`/`cl_add_port_handler` — `compiler/runtime/shim_hosted_amiga.c`
-- [ ] 2.2.2 Implement `cl_lib_open` and exit phase 5 (03-01 §Library bases); route the base-shim library opens (`GfxBase`, `IntuitionBase`, `DiskfontBase`, `LayersBase`) through it — `compiler/runtime/shim_hosted_amiga.c`
-- [ ] 2.2.3 Register `Screen` and `Window` (unregister in `cl_window_destroy`) — `compiler/runtime/shim_hosted_amiga.c`
-- [ ] 2.2.4 Register `ChipBuffer`, `Bitmap`, `Copper` (with the hand-off in `cl_video_display_set_copper`), and `Display` — `compiler/runtime/shim_hosted_amiga.c`
-- [ ] 2.2.5 Register `Sprite` and `SpriteAnimation`; add the SPRITES-flag restore and exit phase 4 (CLXCON) — `compiler/runtime/shim_hosted_amiga.c`
-- [ ] 2.2.6 Register `Audio`, `Sample`, `Timer`, `Font`, and `Layer` — `compiler/runtime/shim_hosted_amiga.c`
-- [ ] 2.2.7 Green phase: `make sdk-a500-fault-cleanup` (ST-10..ST-13, ST-17) and the 1.1.4 commands pass
+- [x] 2.2.1 Exit phase 1 and the hook install in `cl_add_handler`/`cl_add_port_handler` — `compiler/runtime/shim_hosted_amiga.c` ✅ (completed: 2026-11-26 13:46; `make check` 4423 passed; A500 gate green)
+- [x] 2.2.2 Implement `cl_lib_open` and exit phase 5 (03-01 §Library bases); route the base-shim library opens (`GfxBase`, `IntuitionBase`, `DiskfontBase`, `LayersBase`) through it — `compiler/runtime/shim_hosted_amiga.c` ✅ (completed: 2026-11-26 13:46; `make check` 4423 passed; A500 gate green)
+- [x] 2.2.3 Register `Screen` and `Window` (unregister in `cl_window_destroy`) — `compiler/runtime/shim_hosted_amiga.c` ✅ (completed: 2026-11-26 13:46; `make check` 4423 passed; A500 gate green)
+- [x] 2.2.4 Register `ChipBuffer`, `Bitmap`, `Copper` (with the hand-off in `cl_video_display_set_copper`), and `Display` — `compiler/runtime/shim_hosted_amiga.c` ✅ (completed: 2026-11-26 13:46; `make check` 4423 passed; A500 gate green)
+- [x] 2.2.5 Register `Sprite` and `SpriteAnimation`; add the SPRITES-flag restore and exit phase 4 (CLXCON) — `compiler/runtime/shim_hosted_amiga.c` ✅ (completed: 2026-11-26 13:46; `make check` 4423 passed; A500 gate green)
+- [x] 2.2.6 Register `Audio`, `Sample`, `Timer`, `Font`, and `Layer` — `compiler/runtime/shim_hosted_amiga.c` ✅ (completed: 2026-11-26 13:46; `make check` 4423 passed; A500 gate green)
+- [x] 2.2.7 Green phase: `make sdk-a500-fault-cleanup` (ST-10..ST-13, ST-17) and the 1.1.4 commands pass ✅ (completed: 2026-11-26 13:46; `make sdk-a500-fault-cleanup` OK on all five probes (walker equal, expected output and rc); spec test 9/9; `make run-fault-amiga` all fifteen on both profiles; `make check` 4423. Pin fix: the window record's failure path uses `cl_close_window`, so no forward declaration shifts the existing close-order pin)
 
 ### Step 2.3: Implementation tests and hardening
 
-- [ ] 2.3.1 Write impl tests for the phase-2 kind registrations, phase 1 and phase 4, and the `cl_lib_open` use at the base-shim sites; update only the intentionally changed pins — `compiler/tests/amiga_fault_cleanup_impl_test.rs`, `compiler/tests/amiga_intuition_impl_test.rs`
-- [ ] 2.3.2 Write the impl test that cross-builds a program importing every `std.amiga` module on both profiles with `-Werror` (both CRTs) — `compiler/tests/amiga_fault_cleanup_impl_test.rs`
-- [ ] 2.3.3 Phase gate: `make check`, `make run-fault-amiga`, `make sdk-a500-fault-cleanup`, and the A500 gates the base shim touches (`make sdk-a500-boing sdk-a500-sprites sdk-a500-paddle sdk-a500-text sdk-a500-assets sdk-a500-gui sdk-a500-exec sdk-a500-diskfont`)
+- [x] 2.3.1 Write impl tests for the phase-2 kind registrations, phase 1 and phase 4, and the `cl_lib_open` use at the base-shim sites; update only the intentionally changed pins — `compiler/tests/amiga_fault_cleanup_impl_test.rs`, `compiler/tests/amiga_intuition_impl_test.rs` ✅ (completed: 2026-11-26 13:48; 18 impl cases pass; mutation: dropping the sample registration fails the chip/sample/timer vamos case; no existing pin changed. Review fix (RV-001/SR-001, AR-25): the C-harness case for `cl_lib_open` (19 cases); mutation: removing the hook's `CloseLibrary` fails it. ST-20 `device-fault.clo` added to the A500 gate: red on the Phase 1 shim (sprites 1→21, chip −16496 bytes), green on Phase 2; the gate also waits for the capture ADF to settle (RV-002). Fix re-review (SR-001): the walker adds `mem` (all free memory) for ST-20; red on Phase 1 (mem −20616), green on head, and a mutation dropping only the Layer registration fails it (mem −648))
+- [x] 2.3.2 Write the impl test that cross-builds a program importing every `std.amiga` module on both profiles with `-Werror` (both CRTs) — `compiler/tests/amiga_fault_cleanup_impl_test.rs` ✅ (completed: 2026-11-26 13:48; the every-module program builds -Werror on nix20 (hosted-amiga, all std.amiga modules) and nix13 (the 1.3 module set))
+- [x] 2.3.3 Phase gate: `make check`, `make run-fault-amiga`, `make sdk-a500-fault-cleanup`, and the A500 gates the base shim touches (`make sdk-a500-boing sdk-a500-sprites sdk-a500-paddle sdk-a500-text sdk-a500-assets sdk-a500-gui sdk-a500-exec sdk-a500-diskfont`) ✅ (completed: 2026-11-26 14:18; `make check` 4432; `make run-fault-amiga` all fifteen; `sdk-a500-fault-cleanup` OK; boing, sprites, paddle, text, assets, exec, diskfont OK; gui OK 2/2 after the AR-24 settle wait (it failed 3/3 before: the gate stopped FS-UAE before gui.txt's header was flushed))
 
 **Deliverables**:
-- [ ] ST-10..ST-13 and ST-17 green on the A500
-- [ ] Existing A500 gate report lines and captures unchanged
+- [x] ST-10..ST-13 and ST-17 green on the A500
+- [x] Existing A500 gate report lines and captures unchanged
 
 **Test slices**: A500 acceptance (release), vamos fault cleanup (task)
 **Verify (gate)**: as 2.3.3

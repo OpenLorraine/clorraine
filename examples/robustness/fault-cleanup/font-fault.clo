@@ -1,0 +1,17 @@
+// Fault-exit cleanup probe for real Kickstart: a disk font is open when an
+// index goes out of range. The runtime must close the font and the
+// diskfont.library base it opened, so the library's open count returns to
+// what it was before the program ran.
+module robustness.fault_cleanup.font_fault;
+
+import { Font, openDiskFont } from std.amiga.text;
+
+func main(): i32 {
+    let font: Font? = openDiskFont("diamond.font", 12, 0);
+    if (font == null) {
+        return 1;
+    }
+    let xs: u32[2] = [1, 2];
+    let i: usize = 5;
+    return i32(xs[i]);   // error E11211: index out of range
+}

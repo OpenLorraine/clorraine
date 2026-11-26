@@ -55,7 +55,7 @@ export OUTDIR
 export ASAN_SUITE_TIMEOUT
 export UBSAN_SUITE_TIMEOUT
 
-.PHONY: check bench bench-fast bench-base bench-compare bench-flags bench-test bench-compile bench-shape asan ubsan fuzz fuzz-test fuzz-smoke fuzz-smoke-host differential corpus-amiga corpus-fs-uae run-fault-amiga verify run build toolchain-check fs-uae-check dist dist-verify dist-check acceptance acceptance-check setup setup-check vscode-check vscode-package site-dev site-check sdk-registry sdk-issues sdk-a500-smoke sdk-a500-boing sdk-a500-sprites sdk-a500-paddle sdk-a500-text sdk-a500-assets sdk-a500-gui sdk-a500-exec sdk-advanced-build sdk-a600-services sdk-a1200-workbench sdk-bundle9-build sdk-a500-diskfont sdk-a600-addons sdk-a600-ks31-addons sdk-a1200-ks30-addons sdk-a1200-addons sdk-rtg-build sdk-a1200-rtg sdk-a4000-rtg-piv demo demo-check channel-assets demo-youtube
+.PHONY: check bench bench-fast bench-base bench-compare bench-flags bench-test bench-compile bench-shape asan ubsan fuzz fuzz-test fuzz-smoke fuzz-smoke-host differential corpus-amiga corpus-fs-uae run-fault-amiga verify run build toolchain-check fs-uae-check dist dist-verify dist-check acceptance acceptance-check setup setup-check vscode-check vscode-package site-dev site-check sdk-registry sdk-issues sdk-a500-smoke sdk-a500-boing sdk-a500-sprites sdk-a500-paddle sdk-a500-text sdk-a500-assets sdk-a500-gui sdk-a500-exec sdk-a500-fault-cleanup sdk-advanced-build sdk-a600-services sdk-a1200-workbench sdk-bundle9-build sdk-a500-diskfont sdk-a600-addons sdk-a600-ks31-addons sdk-a1200-ks30-addons sdk-a1200-addons sdk-rtg-build sdk-a1200-rtg sdk-a4000-rtg-piv demo demo-check channel-assets demo-youtube
 
 check:
 	./spec/check.sh
@@ -359,6 +359,13 @@ sdk-a500-gui:
 sdk-a500-exec:
 	$(DOCKER_MAKE) exec CMD="cargo build --workspace --quiet && ./target/debug/clorraine build --release --profile hosted-amiga-13 examples/amiga/exec-demo.clo"
 	docker/scripts/a500-exec-smoke.sh build/clorraine/exec-demo/hosted-amiga-13/exec-demo
+
+# A500/KS1.3 fault-cleanup gate: boots the licensed Workbench 1.3.5 HDF, runs
+# the fault-cleanup probes between walker snapshots, and asserts that every
+# probe leaves the system state unchanged.
+sdk-a500-fault-cleanup:
+	$(DOCKER_MAKE) exec CMD="cargo build --workspace --quiet"
+	docker/scripts/a500-fault-cleanup-smoke.sh
 
 # Advanced 2.0+ build: the Workbench and services demos plus the two test-only
 # fixtures. The demos are compiled once with the debug warning line (a
