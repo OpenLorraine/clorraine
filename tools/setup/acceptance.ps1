@@ -297,7 +297,8 @@ $groups = Invoke-Child (Join-Path ([Environment]::SystemDirectory) 'whoami.exe')
 if ($groups.Code -ne 0) { Stop-Acceptance 1 'whoami /groups failed' }
 $standard = -not $groups.Out.Contains('"S-1-5-32-544"')
 function Read-Confirmation([string]$Question) {
-    if ([Console]::IsInputRedirected) { return $false }
+    # Nobody can answer when the console is redirected; pass the switches.
+    if ([Console]::IsInputRedirected -or [Console]::IsOutputRedirected) { return $false }
     return (Read-Host "$Question [y/N]") -match '^(y|yes)$'
 }
 if (-not $UacConfirmed) { $UacConfirmed = Read-Confirmation 'Did a UAC prompt for the rc24 setup appear during this run, and did an administrator approve it?' }
@@ -329,6 +330,9 @@ $json = $record | ConvertTo-Json -Depth 6
 Write-Note "wrote $Output (raw output in $out)"
 $missing = @()
 if ($hostResult -ne 'ok') { $missing += 'the PC hello did not print the hello line' }
+if ($compiler -notmatch 'gcc') { $missing += "the PC hello compiler is not GCC: $compiler" }
+if ($build -lt 22000) { $missing += "Windows build $build is older than Windows 11" }
+if ($fsUae.source -eq 'downloaded' -and $fsUae.version -ne '3.2.35') { $missing += "the downloaded FS-UAE reports $($fsUae.version), not 3.2.35" }
 if (-not $reused) { $missing += 'the second install did not reuse rc24' }
 if (-not $standard) { $missing += 'the account is an administrator, not a standard account' }
 if (-not $UacConfirmed) { $missing += 'the UAC prompt was not confirmed' }

@@ -389,9 +389,14 @@ verify_candidate() {
 # Checks the Windows zip layout and the PowerShell installer pins.
 verify_windows_assets() {
     local zip="$output/$zip_name" ps1="$output/$powershell_name" vsix_file="$output/$vsix_name"
-    python3 - "$zip" "$windows_top" "$version" "$here/pe_check.py" <<'PY' || exit 1
-import importlib.util, sys, zipfile
-path, top, version, checker = sys.argv[1:]
+    # The release README and NOTICE are written by this script, so the zip's
+    # copies must match a fresh rendering for this version.
+    local documents
+    documents="$(mktemp -d "${TMPDIR:-/tmp}/clorraine-documents.XXXXXXXX")"
+    write_windows_documents "$documents"
+    python3 - "$zip" "$windows_top" "$version" "$here/pe_check.py" "$documents" <<'PY' || { rm -rf "$documents"; exit 1; }
+import importlib.util, os, sys, zipfile
+path, top, version, checker, documents = sys.argv[1:]
 spec = importlib.util.spec_from_file_location("pe_check", checker)
 pe_check = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(pe_check)
@@ -405,14 +410,21 @@ if [info.filename for info in infos] != expected:
     sys.exit(f"package: {zip_name} does not hold exactly the release files")
 for info in infos:
     executable = info.filename.endswith(".exe")
-    if info.external_attr >> 16 != (0o100755 if executable else 0o100644) or \
+    if info.create_system != 3 or \
+            info.external_attr != (0o100755 if executable else 0o100644) << 16 or \
             info.date_time != (1980, 1, 1, 0, 0, 0):
         sys.exit(f"package: {zip_name} entry {info.filename} is not a release file entry")
+    leaf = info.filename[len(top) + 1:]
+    if leaf in ("README.md", "NOTICE"):
+        with open(os.path.join(documents, leaf), "rb") as rendered:
+            if archive.read(info) != rendered.read():
+                sys.exit(f"package: {zip_name} entry {info.filename} is not the release {leaf}")
     if executable:
         problem = pe_check.problem(archive.read(info), version)
         if problem:
             sys.exit(f"package: {zip_name} entry {info.filename} {problem}")
 PY
+    rm -rf "$documents"
     grep -Fxq "\$script:Version = '$version'" "$ps1" || die "install.ps1 pin mismatch: Version"
     grep -Fxq "\$script:ArchiveName = '$zip_name'" "$ps1" || die "install.ps1 pin mismatch: ArchiveName"
     grep -Fxq "\$script:ArchiveBytes = '$(wc -c <"$zip")'" "$ps1" || die "install.ps1 pin mismatch: ArchiveBytes"

@@ -154,7 +154,7 @@ a_changed_installer_body_fails_verification() {
 # executables read from the zip.
 a_zip_entry_that_is_not_a_release_entry_fails_verification() {
     local case
-    for case in elf link date; do
+    for case in elf link date dos readme; do
         fixture
         check_status 0 "$(build)" "package build ($case)"
         python3 - "$output/$zip_name" "$case" <<'PY'
@@ -171,6 +171,11 @@ with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as target:
             info.external_attr = 0o120777 << 16
         if case == "date":
             info.date_time = (2020, 1, 1, 0, 0, 0)
+        if case == "dos" and info.filename.endswith("/NOTICE"):
+            info.create_system = 0
+            info.external_attr |= 0x10
+        if case == "readme" and info.filename.endswith("/README.md"):
+            data += b"See [docs](../docs/windows-cli.md).\n"
         target.writestr(info, data)
 PY
         local bytes digest

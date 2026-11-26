@@ -66,3 +66,5 @@
 | RV-708 | 7 | MINOR | tools/setup/tests | fixed |
 | RV-709 | 7 | MINOR | tools/setup/tests | fixed |
 | RV-710 | 7 | MINOR | tools/setup/acceptance.py | fixed |
+| RV-711 | 7 | MINOR | tools/setup/package.sh | fixed |
+| RV-712 | 7 | MINOR | tools/setup/acceptance.ps1 | fixed |
