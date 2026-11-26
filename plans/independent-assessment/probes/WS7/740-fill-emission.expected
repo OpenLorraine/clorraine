@@ -1,0 +1,14 @@
+# WS7-06 / WS3-11 (emitted C for a non-zero fill). Sources: spec/08-arrays-strings.md §2
+# (`[; v]` fills every element of a fixed array with v); spec/17 §1 (one valid C99 unit);
+# 03-01 §Severity (a C compile time above 10x the Phase 0 C compile time of the
+# nearest-size emitted program is Major: Phase 0 m68k GCC on hosted-amiga-13 took
+# 1,903-3,192 ms for 6,178-9,564-line units, findings/WS0-baseline.md, so the limit is
+# about 32 s).
+# Expected: for every size and placement the program prints 1, the emitted C does not
+# grow with the extent beyond a constant (a loop or memset), and m68k GCC finishes
+# within 32 s.
+# Contrast: the 1,024-element cases are the small control; a size-independent lowering
+# shows the same line count at 1,024 and 65,536.
+expect: script
+--- output
+<module|local>-<n>: C <constant> lines; gcc < 32000 ms; output '1'
