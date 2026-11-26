@@ -35,9 +35,10 @@ const MINIMUM_GLIBC: (u32, u32) = (2, 38);
 
 /// A complete, validated toolchain.
 pub struct Toolchain {
-    /// Canonical toolchain root.
+    /// The canonical toolchain root, in the spelling people write (no
+    /// verbatim `\\?\` prefix on Windows).
     pub root: PathBuf,
-    /// Absolute compiler inside the root.
+    /// The absolute compiler inside the root, in the same spelling.
     pub compiler: PathBuf,
     /// The first line reported by `--version`.
     pub version: String,
@@ -111,8 +112,9 @@ pub fn run(options: &Options) -> Result<(), SetupError> {
 /// Validates a toolchain root and returns its selected compiler.
 ///
 /// Relative roots are resolved against the caller's current directory. Every
-/// returned path is canonical, so a later directory change or replacement
-/// alias cannot select a different compiler.
+/// returned path is resolved and absolute, so a later directory change or
+/// replacement alias cannot select a different compiler; on Windows it is
+/// returned without the verbatim `\\?\` prefix that resolving adds.
 pub fn validate(selected: &Path, mode: Validation) -> Result<Toolchain, SetupError> {
     validate_for(HostOs::current(), selected, mode)
 }

@@ -71,7 +71,7 @@ The existing functions keep their signatures and call these with `HostOs::curren
 | `toolchain.rs` host and freestanding run tools | The program is resolved at run time: `CLORRAINE_CC`, else the first `host_compilers` entry found on PATH; `Tool.program` becomes the placeholder the resolver replaces | AR-29 |
 | `emulator/select.rs` | PATH fallback looks for `executable_name(os, "fs-uae")`; on Windows the version comes from `pe_file_version` of the executable's bytes (read at most 256 MiB (AR-58); larger is an error); Unix keeps `--version` | AR-14 |
 | `emulator/mod.rs` spawn | On Windows also sets `TEMP` and `TMP` to the run's `tmp`; `XAUTHORITY` only on Unix | AR-14 |
-| `emulator/storage.rs` | Retained-run and error messages use `display_path`; messages name `TEMP` on Windows and `TMPDIR` on Unix; Windows relies on the per-user ACL of `%TEMP%` | AR-38, AR-42 |
+| `emulator/storage.rs` | Retained-run and error messages use `display_path`; messages name `TMP` on Windows (read before `TEMP`) and `TMPDIR` on Unix; the child's `TEMP`/`TMP` use the plain spelling; Windows relies on the per-user ACL of `%TEMP%` | AR-38, AR-42 |
 | `artifacts.rs` | Host and freestanding host-run names from `host_artifact_name`; Amiga artifacts unchanged | AR-45 |
 | `new.rs` launcher and summary | PATH lookup uses `executable_name`; an invoked path is used as written (so the junction path stays); the summary quotes with `platform::shell_word` | AR-32 |
 

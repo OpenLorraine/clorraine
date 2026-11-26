@@ -13,6 +13,7 @@ use std::path::{Path, PathBuf};
 use crate::analysis::{self, SourceFile};
 use crate::ast::{Item, Type, TypeKind};
 use crate::clorraine::cli::DocOptions;
+use crate::clorraine::platform::{self, HostOs};
 use crate::span::{FileId, SourceMap, Span};
 
 /// One documented declaration.
@@ -113,7 +114,9 @@ pub fn run(options: &DocOptions) -> i32 {
             return 1;
         }
     }
-    println!("{}", root.display());
+    // Resolving the root on Windows adds a verbatim `\\?\` prefix that
+    // people never type; print the ordinary spelling.
+    println!("{}", platform::display_path(HostOs::current(), &root.display().to_string()));
     0
 }
 

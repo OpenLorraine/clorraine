@@ -231,6 +231,25 @@ fn should_keep_windows_paths_without_a_drive_verbatim_prefix_and_plain_paths_unc
 }
 
 #[test]
+fn should_name_non_ascii_executables_without_splitting_a_character() {
+    assert_eq!(executable_name(HostOs::Windows, "\u{e9}x\u{e9}"), "\u{e9}x\u{e9}.exe");
+    assert_eq!(executable_name(HostOs::Windows, "\u{20ac}\u{20ac}"), "\u{20ac}\u{20ac}.exe");
+    assert_eq!(executable_name(HostOs::Unix, "\u{20ac}\u{20ac}"), "\u{20ac}\u{20ac}");
+}
+
+#[test]
+fn should_read_the_version_of_an_fs_uae_executable_larger_than_64_mib_on_windows() {
+    // The FS-UAE 3.2.35 executable is about 66 MiB; the version block sits
+    // near the start, and the rest of the file is padding here.
+    let scratch = ScratchDir::new("pe-large");
+    let path = scratch.path().join("fs-uae.exe");
+    std::fs::write(&path, pe_with_info(0x200, 0x0001_0000)).expect("write the fixture");
+    let file = std::fs::OpenOptions::new().write(true).open(&path).expect("open the fixture");
+    file.set_len(70 * 1024 * 1024).expect("grow the fixture");
+    assert_eq!(clc::clorraine::fs_uae_version_for(HostOs::Windows, &path), Ok((3, 2, 35)));
+}
+
+#[test]
 fn should_treat_any_case_of_the_exe_suffix_as_present() {
     assert_eq!(executable_name(HostOs::Windows, "fs-uae.Exe"), "fs-uae.Exe");
     assert_eq!(executable_name(HostOs::Windows, "exe"), "exe.exe");
