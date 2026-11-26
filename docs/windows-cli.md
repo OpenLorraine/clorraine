@@ -26,7 +26,7 @@ The installer walks through the same five steps as on Linux:
    `PATH`.
 2. **Amiga toolchain.** It uses an AmigaPorts rc24 toolchain that is already
    installed, or downloads the pinned upstream setup and installs it into
-   `C:\Program Files\Clorraine`. That step asks for administrator approval
+   `C:\ProgramData\Clorraine`. That step asks for administrator approval
    once (a UAC prompt); declining it keeps the CLI installed.
 3. **Amiga emulator.** It finds FS-UAE (or downloads the pinned FS-UAE 3.2.35
    zip when you agree) and a licensed Kickstart 3.1 A1200 ROM, then runs
@@ -110,7 +110,7 @@ redistribute them. `setup` rejects other toolchain versions.
 | `%LOCALAPPDATA%\Programs\Clorraine\versions\` | Installed versions; `current` is a junction to the active one |
 | `%LOCALAPPDATA%\Programs\Clorraine\examples\` | `hello.clo` and the Amiga intro `hello-amiga.clo` |
 | `%LOCALAPPDATA%\Programs\Clorraine\fs-uae\3.2.35\` | FS-UAE, when the installer downloaded it |
-| `C:\Program Files\Clorraine\amiga-gcc-16.2-rc24\` | The rc24 toolchain, installed for all users; `rc24-setup.log` sits beside it |
+| `C:\ProgramData\Clorraine\amiga-gcc-16.2-rc24\` | The rc24 toolchain, installed for all users; `rc24-setup.log` sits beside it |
 | `%APPDATA%\clorraine\config` | The remembered toolchain, Kickstart, and FS-UAE paths |
 
 The installer looks for a ROM in `%USERPROFILE%\amiga\roms`, your
@@ -138,7 +138,7 @@ is not empty, and the default folder is `amiga-starter`.
 `setup` validates and stores the toolchain, and optionally the emulator:
 
 ```powershell
-clorraine setup --toolchain "C:\Program Files\Clorraine\amiga-gcc-16.2-rc24" `
+clorraine setup --toolchain C:\ProgramData\Clorraine\amiga-gcc-16.2-rc24 `
   --kickstart "$env:USERPROFILE\amiga\roms\amiga-os-310-a1200.rom" `
   --fs-uae "$env:LOCALAPPDATA\Programs\Clorraine\fs-uae\3.2.35\FS-UAE\Windows\x86-64\fs-uae.exe"
 ```
@@ -188,6 +188,8 @@ Installed apps** (`amiga-gcc version 16.2-rc24`).
 
 - Windows 11 x64 only; Windows 10 and PowerShell 7 are untested.
 - Clang cannot build debug programs for the PC yet; use GCC.
+- The rc24 toolchain cannot run from a folder whose path contains a space
+  (such as `C:\Program Files`); `clorraine setup` refuses such a root.
 - The CLI cannot start the rc24 compiler from an SSH logon; use a terminal in
   your signed-in desktop session.
 - Stopping `run --emulator` with Ctrl+C leaves the FS-UAE window open and its

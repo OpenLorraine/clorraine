@@ -450,6 +450,40 @@ public static class AclSetupImpl {
     Assert-That (($actual -join ',') -ceq ($expected -join ',')) "staging access list: $($actual -join ', ')"
 }
 
+Test-Case 'should create a missing admin folder that users can read and run but not change' {
+    $dir = New-Dir 'elevate-new-root'
+    $admin = Join-Path $dir 'Clorraine'
+    $setup = Join-Path $dir 'never.exe'
+    [IO.File]::WriteAllText($setup, 'not run')
+    # The wrong digest stops before the setup runs; the folder is made first.
+    $code = Invoke-ElevatedStaging -Source $setup -Bytes (Get-Item $setup).Length -Sha256 ('0' * 64) -AdminRoot $admin
+    Assert-That ($code -eq 101) "staging exit $code"
+    $acl = Get-Acl -LiteralPath $admin
+    Assert-That $acl.AreAccessRulesProtected 'the admin folder inherits its parent access list'
+    $me = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+    $rules = @($acl.GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier]) |
+        ForEach-Object { $_.IdentityReference.Value + '=' + $_.FileSystemRights })
+    $expected = @('S-1-5-18=FullControl', 'S-1-5-32-544=FullControl', "$me=FullControl", 'S-1-5-32-545=ReadAndExecute, Synchronize') | Sort-Object
+    Assert-That ((($rules | Sort-Object) -join ',') -ceq ($expected -join ',')) "admin folder access list: $($rules -join ', ')"
+    # A second run accepts the folder it created.
+    $again = Invoke-ElevatedStaging -Source $setup -Bytes (Get-Item $setup).Length -Sha256 ('0' * 64) -AdminRoot $admin
+    Assert-That ($again -eq 101) "second run exit $again"
+}
+
+Test-Case 'should stop before downloading when the admin folder path has a space' {
+    $root = New-Dir 'space-root'
+    $code = $null; $message = ''
+    try {
+        & {
+            function Get-Rc24AdminRoot { 'C:\Program Files\Clorraine' }
+            function Invoke-Download { throw 'downloaded' }
+            Install-Rc24 $root
+        } | Out-Null
+    } catch { $code = $_.Exception.Data['ClorraineExitCode']; $message = $_.Exception.Message }
+    Assert-That ($code -eq 1) "exit $code, $message"
+    Assert-That ($message -match 'contains a space') "message: $message"
+}
+
 Test-Case 'should refuse an admin folder that is a link, a file, foreign-owned, or changeable by others' {
     $dir = New-Dir 'elevate-untrusted'
     $setup = Join-Path $dir 'never.exe'
@@ -487,14 +521,15 @@ Test-Case 'should drop a lone carriage return but keep line breaks in multi-line
     Assert-That ((Get-SafeText $text -SingleLine) -ceq 'abc xyz  next') "single line: $(Get-SafeText $text -SingleLine)"
 }
 
-Test-Case 'should take Program Files from the system and not from the environment' {
-    $saved = $env:ProgramFiles
-    $env:ProgramFiles = Join-Path $SuiteRoot 'not-program-files'
+Test-Case 'should take ProgramData from the system and not from the environment' {
+    $saved = $env:ProgramData
+    $env:ProgramData = Join-Path $SuiteRoot 'not-program-data'
     try {
         $root = Get-Rc24AdminRoot
-    } finally { $env:ProgramFiles = $saved }
-    $expected = Join-Path ([Environment]::GetFolderPath('ProgramFiles')) 'Clorraine'
+    } finally { $env:ProgramData = $saved }
+    $expected = Join-Path ([Environment]::GetFolderPath('CommonApplicationData')) 'Clorraine'
     Assert-That (Test-SamePath $root $expected) "the admin folder followed the environment: $root"
+    Assert-That (-not $root.Contains(' ')) "the admin folder has a space: $root"
     $text = Get-ElevatedCommand 'C:\x\setup.exe' 1 ('0' * 64)
     Assert-That (-not $text.Contains('-AdminRoot') -and -not $text.Contains('-Target')) 'the elevated call passes a folder'
 }

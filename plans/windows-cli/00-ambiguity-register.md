@@ -1,6 +1,6 @@
 ## Ambiguity Register: Windows CLI and installer
 
-> **Status**: ✅ GATE PASSED — all 53 items resolved; AR-54 – AR-63 added and resolved during execution
+> **Status**: ✅ GATE PASSED — all 53 items resolved; AR-54 – AR-64 added and resolved during execution
 > **Last Updated**: 2026-11-26 18:30
 > **Evidence**: `spikes/08-windows-cli/README.md`
 
@@ -69,6 +69,7 @@
 | 61 | Technical (runtime) | Which existing `Program Files\Clorraine` the elevated step trusts: an owner check alone passes a folder other accounts may change, and the reviewer proposed also trusting the elevated user's own SID (Phase 6 security re-review SA-006) | Owner and access-list check, fail closed with a repair hint / also trust the current user SID | Owner must be Administrators, SYSTEM, or TrustedInstaller; no allow rule with write-type rights for any other account; the current user is not trusted; 103 names the `icacls /setowner` repair (see AR-61 resolution) | ✅ Resolved |
 | 62 | Technical (runtime) | The Windows evidence record's exact JSON shape and how the producer obtains the rc24 and FS-UAE pins, which 03-05 names but does not spell out | Fixed shape below; pins from the installer text after the registration/config confirm use / re-download both files to hash them | Shape and pin source per the AR-62 resolution | ✅ Resolved |
 | 63 | Technical (runtime) | The Windows docs need an install URL, but v1.2.0 is published with Linux assets only and AR-3 leaves the carrying release to release time; GitHub's `latest` never resolves to a prerelease (Phase 8 docs review DR-801) | Versioned URLs filled in at release / `latest` URLs with a full-release requirement / v1.2.0 URLs | User ruling 2026-11-26: versioned at release; the docs write `vX.Y.Z` until then (see AR-63 resolution) | ✅ Resolved |
+| 64 | Technical (runtime) | rc24 cannot run from a path with a space: installed in `C:\Program Files\Clorraine` (AR-10, AR-34), `clorraine setup` fails with `switch 'Files/…/libnix/lib/' does not start with '-'`; the 8.3 short path fails the same way | `C:\ProgramData\Clorraine` / `C:\Clorraine` | User ruling 2026-11-27: `C:\ProgramData\Clorraine` (see AR-64 resolution) | ✅ Resolved |
 
 ## Coverage Map
 
@@ -399,4 +400,25 @@ Evidence: v1.2.0 is a prerelease; releases/latest resolves to v1.1.2 (GitHub's l
   prereleases), so the earlier releases/latest/download/ choice would 404 for a prerelease
 Superseded: the AI-delegated choice of releases/latest/download/ URLs
 Reopen triggers: the release is published under a scheme without versioned asset URLs
+```
+
+**AR-64 (user ruling 2026-11-27; amends the AR-10 and AR-34 install folder):**
+
+```text
+Authority: user
+Evidence: Windows acceptance run 1: the elevated step installed rc24 into C:\Program Files\
+  Clorraine\amiga-gcc-16.2-rc24 and `clorraine setup` failed in its nix20 probe; a direct
+  m68k-amigaos-gcc -mcrt=nix20 compile fails the same way from the long path and from the
+  8.3 short path (gcc resolves its own long path). The spike's rc24 lived in a path without
+  spaces. A per-user folder is no answer: profile paths such as C:\Users\Clorraine Test
+  contain a space
+Decision: the elevated step installs into %ProgramData%\Clorraine\amiga-gcc-16.2-rc24, taking
+  ProgramData from the CommonApplicationData known folder. ProgramData lets every user add
+  folders, so a missing Clorraine folder is created with a protected access list
+  (Administrators and SYSTEM full control, Users read and execute) and an existing one must
+  pass the AR-61 owner and access-list checks. The installer stops before downloading when the
+  folder path contains a space; on Windows `clorraine setup` refuses a toolchain root with a
+  space and says why (new spec case in windows_cli_spec_test.rs). ST-52's expected target
+  changes to C:\ProgramData\Clorraine\amiga-gcc-16.2-rc24 by this ruling
+Reopen triggers: an rc24 release that quotes its library path
 ```
