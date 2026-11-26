@@ -119,6 +119,7 @@ shows it (host UBSan, vbcc) is not tested for that shape.
 - **Effort**: M
 - **Related**: ASM-WS8-003
 - **Self-refutation (8.3.1)**: the generator list is read from the code at the baseline. Minor (test debt).
+- **Issue**: #94 (tracking issue)
 - **Verdict**: confirmed (Minor, verified) — verifier ses_dea685c4bffegV12VLXpl04mC6 (9.2.5); wording: "no user function or call with effectful arguments" (the only call is `println`); 810's component labels are noisy (about 4 of 11 sampled "ownership" rows belong elsewhere), the conclusion holds.
 
 ### ASM-WS8-002 — Tests and gates assert weaker properties than the behavior they cover
@@ -137,6 +138,7 @@ shows it (host UBSan, vbcc) is not tested for that shape.
 - **Related**: ASM-WS5-008, ASM-WS2-001, ASM-WS5-001
 - **Self-refutation (8.3.1)**: sanitizer-only and compiles-only tests are useful as crash guards; the finding is that some of them are the only test for a behavior. Minor.
 - **Phase 9 correction**: the 800 classifier misses programs whose exit status is computed from values; the census should read "282 spec tests assert a clean sanitizer run plus, at most, a computed exit code (about 32 check the sanitizer only)" and "about 141 compiles-only".
+- **Issue**: #94 (tracking issue)
 - **Verdict**: confirmed (Minor, verified) with a census correction — verifier ses_dea685c4bffegV12VLXpl04mC6 (9.2.5): about 250 of the 282 "sanitizer-only" spec tests also assert a computed exit code (`assert_exit(…, 0)` on a program whose status is computed from values), and 46 of the 187 "compiles-only" do too; the B/C gap rows hold.
 
 ### ASM-WS8-003 — Memory-safety and invalid-C defects recur because drop and emission decisions are made per expression shape, in two stages
@@ -155,6 +157,7 @@ shows it (host UBSan, vbcc) is not tested for that shape.
 - **Related**: ASM-WS2-003, ASM-WS8-001; the `non-lexical-lifetimes` and closeout plans
 - **Self-refutation (8.3.1)**: checked against the code at e24a8752 — `codegen/drop.rs:283` `needs_drop` re-derives from `TypeTable::duplicable`, not from an ownership record; the emitter builds C with `format!` (709 sites); E10305 is reported only on the inference route (`sema/call.rs:792`, `:1325`), which is why explicit arguments bypass it; `own/call.rs` sequences arguments only when they contain a syntactic update. Rated Minor by the rubric (maintainability debt that has caused recorded DEF rows); it is the report's main structural recommendation.
 - **Phase 9 narrowing**: this finding covers causes (2) invalid C from string-composed emission, (3) route-specific checks, and (4) unsequenced effects; cause (1), the second drop decision in codegen, is ASM-WS2-003 and its remedy ("codegen emits only recorded drops") is that finding's. ASM-WS7-001 is not evidence for these classes.
+- **Issue**: #94 (tracking issue)
 - **Verdict**: confirmed (Minor; counts verified, structure probable), narrowed to causes (2)–(4) — verifier ses_dea685c4bffegV12VLXpl04mC6 (9.2.5): cause (1) is ASM-WS2-003's defect and is cited, not counted again; ASM-WS7-001 removed from the "still present" list (a performance blow-up, not one of the four classes); site counts 149 (`own/`), 87, 712.
 
 ### ASM-WS8-004 — The Amiga shims never run under a sanitizer, and UBSan covers a third of the ASan suites
@@ -172,6 +175,7 @@ shows it (host UBSan, vbcc) is not tested for that shape.
 - **Effort**: M
 - **Related**: ASM-WS5-001, ASM-WS5-013
 - **Self-refutation (8.3.1)**: the core runtime already exists twice (host and Amiga) and the host copy is sanitized; the gap is the Amiga-only code. Minor.
+- **Issue**: #94 (tracking issue)
 - **Verdict**: confirmed (Minor, verified) — verifier ses_dea685c4bffegV12VLXpl04mC6 (9.2.5); wording: many WS5 defects are protocol errors no sanitizer would catch, so the gap explains why they were invisible, not that a sanitizer would have found them.
 
 ## Spec questions

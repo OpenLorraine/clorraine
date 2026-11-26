@@ -100,6 +100,7 @@ Runs 2026-11-25 (vamos logs under `build/tmp/assessment/WS5/`, FS-UAE output und
 - **Related**: ASM-WS5-005 (fault inside a worker task); spec/05 §15 (E4) and spec question SQ-WS5-1; ASM-WS4-003 (the same fault writer)
 - **Self-refutation (5.3.1)**: `docs/known-limitations.md` has no entry for OS cleanup after a fault; `run-fault-amiga` checks only the message and exit status. The spec rule that faults skip the ladder is about Clorraine drops; it does not license leaving an interrupt server installed in freed code, which the exec autodoc forbids. Stays Critical.
 - **DEF**: DEF-582 (`plans/00-roadmap.md`)
+- **Issue**: #54 (finding issue)
 - **Verdict**: confirmed (Critical) — verifier ses_dea9a6107ffefWXd6gFWNJQszZ (9.2.4): the predicted crash is reproduced on both lenses (A1200/KS3.1 Software Failure 8000 0004, A500/KS1.3 Guru 00000004 after the fault; contrasts clean) and the leftover public port shown by a PortList count (0→1; contrast 0→0); 503 also orphans the PathInfo block. Sources `probes/WS5/verify-9.2.4/`.
 
 ### ASM-WS5-002 — `savePublicScreen` and `showAlert` call Intuition through a NULL `IntuitionBase` and crash the machine
@@ -118,6 +119,7 @@ Runs 2026-11-25 (vamos logs under `build/tmp/assessment/WS5/`, FS-UAE output und
 - **Related**: ASM-WS5-013; WS5-14 pair list (Intuition opened in two places, missing in a third)
 - **Self-refutation (5.3.1)**: neither the stdlib doc comments nor `docs/known-limitations.md` require opening a screen first. The `sdk-a1200-workbench` gate calls `savePublicScreen` after its window is open, which is why it passes. Stays Critical.
 - **DEF**: DEF-587 (`plans/00-roadmap.md`)
+- **Issue**: #59 (finding issue)
 - **Verdict**: confirmed (Critical, verified) — verifier ses_dea9a6107ffefWXd6gFWNJQszZ (9.2.4): 542/542c re-run on A1200; `showAlert` with no screen newly reproduced on A500/KS1.3 ("Software error - task held"; the screen-first contrast shows the alert).
 
 ### ASM-WS5-003 — `setCurrentDir` unlocks the launcher's current-directory lock and never restores it
@@ -135,6 +137,7 @@ Runs 2026-11-25 (vamos logs under `build/tmp/assessment/WS5/`, FS-UAE output und
 - **Effort**: S
 - **Related**: ASM-WS5-001
 - **Self-refutation (5.3.1)**: the shim comment ("the old lock may be zero at the boot volume root and is not unlocked in that case") shows the release is intentional, not a typo; no limitation covers it. The `vamos` failure is the emulator's own consistency check, not a probe artifact (the contrast passes). Stays Critical (double release of an OS object).
+- **Issue**: #92 (tracking issue)
 - **Verdict**: downgraded Critical→Minor — verifier ses_dea9a6107ffefWXd6gFWNJQszZ (9.2.4): the double release is refuted — from a CLI `UnLock(CurrentDir(new))` is what `C:CD` does, and under Workbench libnix's startup duplicates `wa_Lock` and unlocks the program's lock at exit, so locks balance; what remains is that the launching shell's directory changes and `vamos` exits 1 (A1200 CLI run, no crash).
 
 ### ASM-WS5-004 — `drawText` writes unclipped text through a screen `RastPort` that has no layer
@@ -153,6 +156,7 @@ Runs 2026-11-25 (vamos logs under `build/tmp/assessment/WS5/`, FS-UAE output und
 - **Related**: ASM-WS5-019 (16-bit text length, `RectFill` order); WS6 (safe-surface review)
 - **Self-refutation (5.3.1)**: the doc comment bounds only `pen`; the appendix says layer drawing clips, which does not apply to screen drawing. Not reproduced (no off-screen capture taken): `probable`; escalated as a probable Critical per 03-01 §Escalation.
 - **DEF**: DEF-585 (`plans/00-roadmap.md`)
+- **Issue**: #57 (finding issue)
 - **Verdict**: confirmed (Critical; confidence probable→verified) — verifier ses_dea9a6107ffefWXd6gFWNJQszZ (9.2.4): 200 off-screen `drawText` calls hang the A1200; the in-bounds contrast and an out-of-range `fill` complete. Sources `probes/WS5/verify-9.2.4/`.
 
 ### ASM-WS5-005 — A runtime fault inside a worker task runs libnix `printf` and `exit()` from a plain Exec task
@@ -171,6 +175,7 @@ Runs 2026-11-25 (vamos logs under `build/tmp/assessment/WS5/`, FS-UAE output und
 - **Related**: ASM-WS5-001
 - **Self-refutation (5.3.1)**: the doc comment forbids DOS calls by the user, not compiler-inserted ones; no limitation covers faults in workers. Not reproduced (`probable`; removed by an FS-UAE probe dividing by zero in a worker).
 - **DEF**: DEF-586 (`plans/00-roadmap.md`)
+- **Issue**: #58 (finding issue)
 - **Verdict**: confirmed (Critical; confidence probable→verified) — verifier ses_dea9a6107ffefWXd6gFWNJQszZ (9.2.4): a division by zero in a `createTask` worker prints the fault line and hangs the A1200; the contrast joins (`joined 100`). Sources `probes/WS5/verify-9.2.4/`.
 
 ### ASM-WS5-006 — Safe handles let a borrowed OS object outlive its owner: clip regions and AmigaGuide messages
@@ -189,6 +194,7 @@ Runs 2026-11-25 (vamos logs under `build/tmp/assessment/WS5/`, FS-UAE output und
 - **Related**: WS6-02 (handle lifetimes), ASM-WS5-019 (semaphore freed while owned)
 - **Self-refutation (5.3.1)**: the regions doc comment makes the misuse a documented user error, but spec/17 §10 places memory safety "above the hardware boundary" without exceptions for the stdlib's safe exports. Not reproduced (`probable`).
 - **DEF**: DEF-593 (`plans/00-roadmap.md`)
+- **Issue**: #65 (finding issue)
 - **Verdict**: confirmed (Critical, probable) — verifier ses_dea9a6107ffefWXd6gFWNJQszZ (9.2.4): the code contradicts the layers `InstallClipRegion` rule; one region reproduction attempt showed no failure (memory not reused); the AmigaGuide half was not attempted.
 
 ### ASM-WS5-007 — `cardPresent()` and `cardStatus()` remove `card.resource` from the system
@@ -207,6 +213,7 @@ Runs 2026-11-25 (vamos logs under `build/tmp/assessment/WS5/`, FS-UAE output und
 - **Related**: `examples/amiga/services.clo:50` calls it once, which is why the A600 gate passes
 - **Self-refutation (5.3.1)**: rated Major, not Critical: wrong result and system damage until reboot, but no crash, hang, or data loss shown.
 - **DEF**: DEF-599 (`plans/00-roadmap.md`)
+- **Issue**: #71 (finding issue)
 - **Verdict**: confirmed (Major, verified) — verifier ses_dea9a6107ffefWXd6gFWNJQszZ (9.2.4): reproduced exactly (`card true false`, `card 0` after).
 
 ### ASM-WS5-008 — The screen capture misreads the 2.0+ colour table, and the A1200 Workbench golden pins the wrong colours
@@ -225,6 +232,7 @@ Runs 2026-11-25 (vamos logs under `build/tmp/assessment/WS5/`, FS-UAE output und
 - **Related**: WS8 test integrity (a golden that encodes a defect); `docker/scripts/cscr2png.py`
 - **Self-refutation (5.3.1)**: the colours could in principle be a deliberate palette, but the Workbench 3.1 default palette is grey/black/white/blue and the observed values are the byte-misread prediction to the last digit. Major (wrong output, out-of-bounds read of OS memory).
 - **DEF**: DEF-597 (`plans/00-roadmap.md`)
+- **Issue**: #69 (finding issue)
 - **Verdict**: confirmed (Major, verified) — verifier ses_dea9a6107ffefWXd6gFWNJQszZ (9.2.4): the histogram matches the byte-triple decode; the A600/KS2.05 gate artifact is also yellow/cyan.
 
 ### ASM-WS5-009 — The interrupt servers return with the user handler's condition codes and can end the VERTB chain
@@ -243,6 +251,7 @@ Runs 2026-11-25 (vamos logs under `build/tmp/assessment/WS5/`, FS-UAE output und
 - **Related**: ASM-WS5-001 (the same servers after a fault)
 - **Self-refutation (5.3.1)**: the code shape is measured, the protocol is the autodoc's; the visible impact is system-dependent, hence Major.
 - **DEF**: DEF-600 (`plans/00-roadmap.md`)
+- **Issue**: #72 (finding issue)
 - **Verdict**: confirmed (Major, verified) — verifier ses_dea9a6107ffefWXd6gFWNJQszZ (9.2.4): regenerated assembly shows the tail call and Z clear.
 
 ### ASM-WS5-010 — The busy-pointer image has no sprite header or terminator, so sprite DMA reads past the 64-byte allocation
@@ -261,6 +270,7 @@ Runs 2026-11-25 (vamos logs under `build/tmp/assessment/WS5/`, FS-UAE output und
 - **Related**: ASM-WS5-019 (sprite channel on screen close)
 - **Self-refutation (5.3.1)**: not captured on screen: `probable`. A DMA over-read, not a write: Major.
 - **DEF**: DEF-607 (`plans/00-roadmap.md`)
+- **Issue**: #79 (finding issue)
 - **Verdict**: confirmed (Major, probable) — verifier ses_dea9a6107ffefWXd6gFWNJQszZ (9.2.4): intuition `SetPointer` takes a full sprite definition; not reproduced visually.
 
 ### ASM-WS5-011 — `FileInfoBlock`s on the stack are not guaranteed longword-aligned
@@ -278,6 +288,7 @@ Runs 2026-11-25 (vamos logs under `build/tmp/assessment/WS5/`, FS-UAE output und
 - **Effort**: S
 - **Related**: —
 - **Self-refutation (5.3.1)**: probes 501/502 pass under `vamos`, which does not model BPTR truncation. `probable`.
+- **Issue**: #92 (tracking issue)
 - **Verdict**: downgraded Major→Minor — verifier ses_dea9a6107ffefWXd6gFWNJQszZ (9.2.4): GCC keeps frames a multiple of 4 and the FIB fills the 260-byte frame, so `&fib` is longword-aligned whenever the process stack is; the autodoc rule stands, the misalignment is a hypothesis.
 
 ### ASM-WS5-012 — GadTools: the last gadget is never attached, rendered, or freed
@@ -296,6 +307,7 @@ Runs 2026-11-25 (vamos logs under `build/tmp/assessment/WS5/`, FS-UAE output und
 - **Related**: —
 - **Self-refutation (5.3.1)**: not captured on screen (`probable`).
 - **DEF**: DEF-598 (`plans/00-roadmap.md`)
+- **Issue**: #70 (finding issue)
 - **Verdict**: confirmed (Major; evidence now verified) — verifier ses_dea9a6107ffefWXd6gFWNJQszZ (9.2.4): the existing `sdk-a600-addons` capture (`build/amiga-sdk/a600-addons/intuition.png`, 2026-11-24, shim unchanged since 2026-11-06) shows three of the four gadgets the program adds while it reports `gad 4`.
 
 ### ASM-WS5-013 — The shim's own library bases are never closed
@@ -314,6 +326,7 @@ Runs 2026-11-25 (vamos logs under `build/tmp/assessment/WS5/`, FS-UAE output und
 - **Related**: ASM-WS5-001, ASM-WS5-002
 - **Self-refutation (5.3.1)**: for the ROM-resident graphics and intuition the leak is an open count only; diskfont, bsdsocket, and the optional libraries carry the real cost. Major (shim leak per the rubric).
 - **DEF**: DEF-604 (`plans/00-roadmap.md`)
+- **Issue**: #76 (finding issue)
 - **Verdict**: confirmed (Major, probable) — verifier ses_dea9a6107ffefWXd6gFWNJQszZ (9.2.4): only the user wrapper calls `CloseLibrary`; an open-count detector could not fire even on a seeded leak of ROM libraries (inconclusive).
 
 ### ASM-WS5-014 — Device buffers are not in chip memory on the 1.3 profile, which pre-V36 trackdisk requires
@@ -331,6 +344,7 @@ Runs 2026-11-25 (vamos logs under `build/tmp/assessment/WS5/`, FS-UAE output und
 - **Effort**: S
 - **Related**: —
 - **Self-refutation (5.3.1)**: the lens rule caps it at Minor; Phase 9 may weigh the expansion-RAM case.
+- **Issue**: #92 (tracking issue)
 - **Verdict**: confirmed (Minor, probable) — verifier ses_dea9a6107ffefWXd6gFWNJQszZ (9.2.4).
 
 ### ASM-WS5-015 — Commodity brokers are never activated
@@ -348,6 +362,7 @@ Runs 2026-11-25 (vamos logs under `build/tmp/assessment/WS5/`, FS-UAE output und
 - **Effort**: S
 - **Related**: —
 - **Self-refutation (5.3.1)**: the stdlib exports no activate call either; the gate (`sdk-a600-services`) asserts creation only. `probable`.
+- **Issue**: #92 (tracking issue)
 - **Verdict**: downgraded Major→Minor — verifier ses_dea9a6107ffefWXd6gFWNJQszZ (9.2.4): the module does not expose the input-event network, so no hotkey can depend on activation; what remains is an inactive broker in Exchange and undrained CxMsgs at close.
 
 ### ASM-WS5-016 — The clipboard read never finishes the read protocol
@@ -366,6 +381,7 @@ Runs 2026-11-25 (vamos logs under `build/tmp/assessment/WS5/`, FS-UAE output und
 - **Related**: —
 - **Self-refutation (5.3.1)**: if `CloseDevice` ends the read, the cross-program effect lasts only while the handle lives; the same-handle write case remains. `probable`.
 - **DEF**: DEF-588 (`plans/00-roadmap.md`)
+- **Issue**: #60 (finding issue)
 - **Verdict**: upgraded Major→Critical (confidence probable→verified) — verifier ses_dea9a6107ffefWXd6gFWNJQszZ (9.2.4): on A1200/KS3.1 with the Workbench 3.1 clipboard.device, a `clipboardWrite` after `clipboardRead` on the same handle never returns (step markers stop after the read); the write-write-read contrast completes. Escalated 2026-11-26 02:43. Sources `probes/WS5/verify-9.2.4/`.
 
 ### ASM-WS5-017 — Layer drawing returns without `WaitBlit`, so CPU access to the same bitmap races the blitter
@@ -384,6 +400,7 @@ Runs 2026-11-25 (vamos logs under `build/tmp/assessment/WS5/`, FS-UAE output und
 - **Related**: —
 - **Self-refutation (5.3.1)**: graphics drawing calls do not wait for completion before returning (that is why the shim waits elsewhere). `probable`.
 - **DEF**: DEF-605 (`plans/00-roadmap.md`)
+- **Issue**: #77 (finding issue)
 - **Verdict**: confirmed (Major, probable) — verifier ses_dea9a6107ffefWXd6gFWNJQszZ (9.2.4).
 
 ### ASM-WS5-018 — Classic menus are never laid out: every menu header and item sits at the same position
@@ -402,6 +419,7 @@ Runs 2026-11-25 (vamos logs under `build/tmp/assessment/WS5/`, FS-UAE output und
 - **Related**: —
 - **Self-refutation (5.3.1)**: not captured on screen (`probable`).
 - **DEF**: DEF-606 (`plans/00-roadmap.md`)
+- **Issue**: #78 (finding issue)
 - **Verdict**: confirmed (Major, probable) — verifier ses_dea9a6107ffefWXd6gFWNJQszZ (9.2.4).
 
 ### ASM-WS5-019 — Lower-impact shim defects (grouped)
@@ -439,6 +457,7 @@ Runs 2026-11-25 (vamos logs under `build/tmp/assessment/WS5/`, FS-UAE output und
 - **Effort**: M (all items)
 - **Related**: ASM-WS5-004 (screen text), ASM-WS5-010 (pointer sprite)
 - **Self-refutation (5.3.1)**: (k) follows the autodoc's own example, so it is an edge on the caller's slice, not a protocol error; (o) cannot be checked against a local autodoc and stays a hypothesis.
+- **Issue**: #92 (tracking issue)
 - **Verdict**: confirmed (Minor) — verifier ses_dea9a6107ffefWXd6gFWNJQszZ (9.2.4): items a, h, k, l spot-checked against code and autodocs.
 
 ### ASM-WS5-020 — No Ctrl-C handling in any blocking shim wait
@@ -456,6 +475,7 @@ Runs 2026-11-25 (vamos logs under `build/tmp/assessment/WS5/`, FS-UAE output und
 - **Effort**: M
 - **Related**: ASM-WS5-001
 - **Self-refutation (5.3.1)**: many Amiga programs ignore Ctrl-C; the checklist asks what happens, and the answer is "nothing". Minor.
+- **Issue**: #92 (tracking issue)
 - **Verdict**: confirmed (Minor, probable) — verifier ses_dea9a6107ffefWXd6gFWNJQszZ (9.2.4).
 
 ### ASM-WS5-021 — Host and freestanding shim edges: NULL `memcpy` with zero length, negative lengths, no `memmove`
@@ -473,6 +493,7 @@ Runs 2026-11-25 (vamos logs under `build/tmp/assessment/WS5/`, FS-UAE output und
 - **Effort**: S
 - **Related**: WS2 sanitizer runs (clean)
 - **Self-refutation (5.3.1)**: Minor (latent).
+- **Issue**: #92 (tracking issue)
 - **Verdict**: confirmed (Minor) — verifier ses_dea9a6107ffefWXd6gFWNJQszZ (9.2.4).
 
 ### ASM-WS5-022 — Integer formatting divides with libgcc's 32-bit routine on the 68000
@@ -490,6 +511,7 @@ Runs 2026-11-25 (vamos logs under `build/tmp/assessment/WS5/`, FS-UAE output und
 - **Effort**: S
 - **Related**: ASM-WS4-001 (templates cost 33% more than C on the A500)
 - **Self-refutation (5.3.1)**: an optimization below the Major threshold on its own; the Major is ASM-WS4-001.
+- **Issue**: #87 (finding issue)
 - **Verdict**: confirmed (Opportunity, verified) — verifier ses_dea9a6107ffefWXd6gFWNJQszZ (9.2.4): the 530 measurement reproduces exactly.
 
 ### ASM-WS5-023 — `clipboardWrite` reports success for raw data that the 3.1 clipboard device discards, so `clipboardRead` never sees it
@@ -508,6 +530,7 @@ Runs 2026-11-25 (vamos logs under `build/tmp/assessment/WS5/`, FS-UAE output und
 - **Related**: ASM-WS5-016; ASM-WS8-002
 - **Phase 9 correction**: impact — `clipboardWrite` returns true while a raw clip is either dropped (no clip yet) or stored altered (padded to 8 bytes after an IFF clip exists); root cause — the device treats clips as IFF and has no defined behavior for non-IFF data; the known-limitations entry (`docs/known-limitations.md:62-64`) misattributes this symptom to the environment.
 - **DEF**: DEF-595 (`plans/00-roadmap.md`)
+- **Issue**: #67 (finding issue)
 - **Verdict**: confirmed (Major, verified) with a corrected impact and root cause — verifier ses_dea685c4bffegV12VLXpl04mC6 (9.2.5, a session other than the raiser): on a fresh unit a raw write is discarded; after an IFF clip exists the same 4-byte raw write is stored as an 8-byte clip and read back as 8 bytes; both report success. `docs/known-limitations.md:62-64` attributes the same symptom to the probe environment.
 
 ## Spec questions

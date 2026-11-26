@@ -51,6 +51,7 @@ checklist item `WS0`.
 - **Recommendation**: give data-dominated benchmarks a floor on `.text` instead of the file size, or exclude the table bytes from the host-binary floor; alternatively record `lookup` as exempt from the host floor with its reason.
 - **Effort**: S
 - **Related**: `plans/constant-array-initializer` (added `lookup`); WS8-05/WS8-06 (gate integrity)
+- **Issue**: #88 (tracking issue)
 - **Verdict**: confirmed (Minor) — verifier ses_dea9a6131ffesU3qOxzrQQoINm (9.2.1): the floor check fails with the same byte counts (`host/lookup` 30,912 > 85% of 34,880); `bench-flags` is outside `check`/`verify`.
 
 ## Spec questions

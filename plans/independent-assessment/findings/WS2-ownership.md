@@ -74,6 +74,7 @@ no leak, double free, use after free, or undefined behavior was observed on any 
 - **Related**: DEF-23, DEF-45 (leak fixes that introduced scope owners); AR-B2 (`eval-emission-integrity`); SQ-WS2-1
 - **Self-refutation (2.3.1)**: `docs/known-limitations.md` has no entry on temporary drop timing; no DEF row records it; spec/04 §3, spec/17, and D5/PF-040 agree on the statement end. The existing spec tests that describe a release "when the statement ends" (for example `compiler/tests/conditional_projection_residue_spec_test.rs:4600-4660`) assert only leak-freedom and the exit code, never the drop point, so they cannot catch it (input to WS8-02/WS8-03). Not a regression of a closed DEF: the scope-owner binding was the fix for DEF-23/DEF-45. Severity stays Major: values and memory safety are correct, but deleter timing and order are observable and differ from the spec.
 - **DEF**: DEF-584 (`plans/00-roadmap.md`)
+- **Issue**: #56 (finding issue)
 - **Verdict**: upgraded Major→Critical — verifier ses_dea9a612affe7B68nL0nJN0bQn (9.2.2): an accepted program produces wrong output; a temporary `File` written in one statement is still open when the same function reopens it, so the read returns 0 bytes (probe 260, host and hosted-amiga), and the drop point is function exit, not the enclosing scope's end. Escalated 2026-11-26 02:16.
 
 - **Phase 9 corrections** (from verifier ses_dea9a612affe7B68nL0nJN0bQn, applied by the author): the drop point is **function exit** (or the next execution of the same statement), not the end of the enclosing scope — the `__cl_owned<N>` slots are function-level and released at the function's cleanup label; a temporary created inside a nested block outlives the block. Critical evidence: probe `probes/WS2/260-file-temp-close.clo` (committed after the verifier's run), command `make -C docker exec CMD="python3 plans/independent-assessment/probes/WS1/probe.py plans/independent-assessment/probes/WS2 --clc build/tmp/assessment/baseline/clc --sanitize --only 260"` — `writeBytes(mk(path), bytes(data))` then a reopen and `readFile` prints `wrote 5` / `read 0` on host (debug, release, ASan, UBSan) and hosted-amiga (debug, release); the contrast (the File bound in an inner block) prints `read 5`. On a real Kickstart the still-open `MODE_NEWFILE` handle likely also makes the reopen fail (exclusive lock; inferred, not run).
@@ -94,6 +95,7 @@ no leak, double free, use after free, or undefined behavior was observed on any 
 - **Related**: ASM-WS2-001
 - **Self-refutation (2.3.1)**: spec/03 §4 and STR-11 are explicit; no ruling admits call-result field moves; no limitation lists it. Minor, because the accepted program is memory-safe.
 - **Phase 9 addition**: the nested-path move `let t: Tok = mk().p.a;` (spec/03 §4: nested paths are E10026) is accepted as well (verifier scratch `build/tmp/assessment/verify/ws2/p2/nested.clo`), ASan-clean.
+- **Issue**: #90 (tracking issue)
 - **Verdict**: confirmed (Minor, verified) — verifier ses_dea9a612affe7B68nL0nJN0bQn (9.2.2): spec/03 §4 requires E10026; clc accepts; single release, ASan-clean. The nested path `mk().p.a` is accepted too (same cause).
 
 ### ASM-WS2-003 — Move, copy, and drop decisions are re-derived at about 230 sites in two stages with different predicates
@@ -111,6 +113,7 @@ no leak, double free, use after free, or undefined behavior was observed on any 
 - **Effort**: XL
 - **Related**: WS8-07, WS8-08
 - **Self-refutation (2.3.1)**: a site count is not proof of disagreement, and no WS2 probe exposed a live disagreement, so the confidence stays `probable` and the severity Minor (maintainability debt with recorded DEFs, 03-01 §Severity); WS8-08 decides whether it is the structural cause of the recurring classes.
+- **Issue**: #90 (tracking issue)
 - **Verdict**: confirmed (Minor, probable) — verifier ses_dea9a612affe7B68nL0nJN0bQn (9.2.2): `codegen/drop.rs:283` re-derives the release decision apart from `own.rs:675`; the decision sites are in 10 files under `own/` (11 with `own.rs`), not 12; DEF-56/59/61 and DEF-57 are the better DEF citations.
 
 ## Spec questions

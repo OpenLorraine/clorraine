@@ -665,68 +665,89 @@ record `findings/WS0-emission-record.tsv`; verifier reports `verification/verdic
 `probes/WS<n>/`, verifier reproductions under `probes/WS2/260-*`, `probes/WS3/verify-9.2.3/`,
 and `probes/WS5/verify-9.2.4/`.
 
-**DEF and GitHub issue mapping** (filled in tasks 10.3.2 and 10.3.4):
+**Theme parent issues** (report §8 entries):
+
+| Roadmap entry | Issue |
+|---------------|-------|
+| R1 | #40 |
+| R2 | #41 |
+| R3 | #42 |
+| R4 | #43 |
+| R5 | #44 |
+| R6 | #45 |
+| R7 | #46 |
+| R8 | #47 |
+| R9 | #48 |
+| R10 | #49 |
+| R11 | #50 |
+| R12 | #51 |
+| R13 | #52 |
+| R14 | #53 |
+
+Comments posted instead of new issues: #20 (ASM-WS4-006 flag measurements), #15 (ASM-WS7-003 68020 numbers). Minor findings are listed in tracking issues #88–#94.
+
+**DEF and GitHub issue mapping**:
 
 | ID | Severity | DEF | Issue |
 |----|----------|-----|-------|
-| ASM-WS5-001 | Critical | DEF-582 | — |
-| ASM-WS1-002 | Critical | DEF-583 | — |
-| ASM-WS2-001 | Critical | DEF-584 | — |
-| ASM-WS5-004 | Critical | DEF-585 | — |
-| ASM-WS5-005 | Critical | DEF-586 | — |
-| ASM-WS5-002 | Critical | DEF-587 | — |
-| ASM-WS5-016 | Critical | DEF-588 | — |
-| ASM-WS3-001 | Critical | DEF-589 | — |
-| ASM-WS1-004 | Critical | DEF-590 | — |
-| ASM-WS1-005 | Critical | DEF-591 | — |
-| ASM-WS3-002 | Critical | DEF-592 | — |
-| ASM-WS5-006 | Critical | DEF-593 | — |
-| ASM-WS6-001 | Major | DEF-594 | — |
-| ASM-WS5-023 | Major | DEF-595 | — |
-| ASM-WS7-001 | Major | DEF-596 | — |
-| ASM-WS5-008 | Major | DEF-597 | — |
-| ASM-WS5-012 | Major | DEF-598 | — |
-| ASM-WS5-007 | Major | DEF-599 | — |
-| ASM-WS5-009 | Major | DEF-600 | — |
-| ASM-WS1-001 | Major | DEF-601 | — |
-| ASM-WS3-003 | Major | DEF-602 | — |
-| ASM-WS6-002 | Major | DEF-603 | — |
-| ASM-WS5-013 | Major | DEF-604 | — |
-| ASM-WS5-017 | Major | DEF-605 | — |
-| ASM-WS5-018 | Major | DEF-606 | — |
-| ASM-WS5-010 | Major | DEF-607 | — |
-| ASM-WS3-008 | Major | DEF-608 | — |
-| ASM-WS3-007 | Major | DEF-609 | — |
-| ASM-WS7-002 | Major | DEF-610 | — |
-| ASM-WS4-002 | Major | DEF-611 | — |
-| ASM-WS4-001 | Major | DEF-612 | — |
-| ASM-WS0-001 | Minor | n/a | — |
-| ASM-WS1-003 | Minor | n/a | — |
-| ASM-WS2-002 | Minor | n/a | — |
-| ASM-WS2-003 | Minor | n/a | — |
-| ASM-WS3-004 | Minor | n/a | — |
-| ASM-WS3-005 | Minor | n/a | — |
-| ASM-WS3-006 | Minor | n/a | — |
-| ASM-WS5-003 | Minor | n/a | — |
-| ASM-WS5-011 | Minor | n/a | — |
-| ASM-WS5-014 | Minor | n/a | — |
-| ASM-WS5-015 | Minor | n/a | — |
-| ASM-WS5-019 | Minor | n/a | — |
-| ASM-WS5-020 | Minor | n/a | — |
-| ASM-WS5-021 | Minor | n/a | — |
-| ASM-WS6-003 | Minor | n/a | — |
-| ASM-WS6-004 | Minor | n/a | — |
-| ASM-WS6-005 | Minor | n/a | — |
-| ASM-WS8-001 | Minor | n/a | — |
-| ASM-WS8-002 | Minor | n/a | — |
-| ASM-WS8-003 | Minor | n/a | — |
-| ASM-WS8-004 | Minor | n/a | — |
-| ASM-WS4-003 | Opportunity | n/a | — |
-| ASM-WS4-004 | Opportunity | n/a | — |
-| ASM-WS4-005 | Opportunity | n/a | — |
-| ASM-WS4-006 | Opportunity | n/a | — |
-| ASM-WS5-022 | Opportunity | n/a | — |
-| ASM-WS7-003 | Opportunity | n/a | — |
+| ASM-WS5-001 | Critical | DEF-582 | #54 |
+| ASM-WS1-002 | Critical | DEF-583 | #55 |
+| ASM-WS2-001 | Critical | DEF-584 | #56 |
+| ASM-WS5-004 | Critical | DEF-585 | #57 |
+| ASM-WS5-005 | Critical | DEF-586 | #58 |
+| ASM-WS5-002 | Critical | DEF-587 | #59 |
+| ASM-WS5-016 | Critical | DEF-588 | #60 |
+| ASM-WS3-001 | Critical | DEF-589 | #61 |
+| ASM-WS1-004 | Critical | DEF-590 | #62 |
+| ASM-WS1-005 | Critical | DEF-591 | #63 |
+| ASM-WS3-002 | Critical | DEF-592 | #64 |
+| ASM-WS5-006 | Critical | DEF-593 | #65 |
+| ASM-WS6-001 | Major | DEF-594 | #66 |
+| ASM-WS5-023 | Major | DEF-595 | #67 |
+| ASM-WS7-001 | Major | DEF-596 | #68 |
+| ASM-WS5-008 | Major | DEF-597 | #69 |
+| ASM-WS5-012 | Major | DEF-598 | #70 |
+| ASM-WS5-007 | Major | DEF-599 | #71 |
+| ASM-WS5-009 | Major | DEF-600 | #72 |
+| ASM-WS1-001 | Major | DEF-601 | #73 |
+| ASM-WS3-003 | Major | DEF-602 | #74 |
+| ASM-WS6-002 | Major | DEF-603 | #75 |
+| ASM-WS5-013 | Major | DEF-604 | #76 |
+| ASM-WS5-017 | Major | DEF-605 | #77 |
+| ASM-WS5-018 | Major | DEF-606 | #78 |
+| ASM-WS5-010 | Major | DEF-607 | #79 |
+| ASM-WS3-008 | Major | DEF-608 | #80 |
+| ASM-WS3-007 | Major | DEF-609 | #81 |
+| ASM-WS7-002 | Major | DEF-610 | #82 |
+| ASM-WS4-002 | Major | DEF-611 | #83 |
+| ASM-WS4-001 | Major | DEF-612 | #84 |
+| ASM-WS0-001 | Minor | n/a | #88 |
+| ASM-WS1-003 | Minor | n/a | #89 |
+| ASM-WS2-002 | Minor | n/a | #90 |
+| ASM-WS2-003 | Minor | n/a | #90 |
+| ASM-WS3-004 | Minor | n/a | #91 |
+| ASM-WS3-005 | Minor | n/a | #91 |
+| ASM-WS3-006 | Minor | n/a | #91 |
+| ASM-WS5-003 | Minor | n/a | #92 |
+| ASM-WS5-011 | Minor | n/a | #92 |
+| ASM-WS5-014 | Minor | n/a | #92 |
+| ASM-WS5-015 | Minor | n/a | #92 |
+| ASM-WS5-019 | Minor | n/a | #92 |
+| ASM-WS5-020 | Minor | n/a | #92 |
+| ASM-WS5-021 | Minor | n/a | #92 |
+| ASM-WS6-003 | Minor | n/a | #93 |
+| ASM-WS6-004 | Minor | n/a | #93 |
+| ASM-WS6-005 | Minor | n/a | #93 |
+| ASM-WS8-001 | Minor | n/a | #94 |
+| ASM-WS8-002 | Minor | n/a | #94 |
+| ASM-WS8-003 | Minor | n/a | #94 |
+| ASM-WS8-004 | Minor | n/a | #94 |
+| ASM-WS4-003 | Opportunity | n/a | #85 |
+| ASM-WS4-004 | Opportunity | n/a | report only |
+| ASM-WS4-005 | Opportunity | n/a | #86 |
+| ASM-WS4-006 | Opportunity | n/a | #20 (comment) |
+| ASM-WS5-022 | Opportunity | n/a | #87 |
+| ASM-WS7-003 | Opportunity | n/a | #15 (comment) |
 
 ### ST-10 checklist
 

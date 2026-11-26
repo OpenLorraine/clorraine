@@ -60,6 +60,7 @@ rejection, including a wrong diagnostic code; diagnostic wording is not assessed
 - **Related**: WS1-04 (literal typing); WS3-01 (strict build)
 - **Self-refutation (1.3.1)**: spec/01 LEX-14/LEX-15 are explicit; no DEF row or limitation covers an un-annotated out-of-range literal. The impact needs an unusual source spelling, but the result is a silent value change or strict-build failure. Stays Major.
 - **DEF**: DEF-601 (`plans/00-roadmap.md`)
+- **Issue**: #73 (finding issue)
 - **Verdict**: confirmed (Major) — verifier ses_dea9a6131ffesU3qOxzrQQoINm (9.2.1): `check_int` (`sema/expr.rs:690-707`) checks fit only with a context type; a missing diagnostic with a silent wrap (implementation-defined, C99 6.3.1.3p3).
 
 ### ASM-WS1-002 — Call arguments with side effects are evaluated right to left
@@ -78,6 +79,7 @@ rejection, including a wrong diagnostic code; diagnostic wording is not assessed
 - **Related**: WS3-03, WS3-08; the same argument-order class was fixed for narrower shapes in DEF-184 (update operands), DEF-278 (owning argument before a later update), DEF-438 (take-deref carrier hoist), and DEF-552 (later statement-store literal) — each fix pinned only the shape it found, so plain effectful calls were never pinned (input to WS8-07/WS8-08)
 - **Self-refutation (1.3.1)**: spec/04 §3 is unambiguous ("There is no implementation-defined order"); `docs/known-limitations.md` has no evaluation-order entry; no DEF row records two plain effectful calls. Not a regression of a closed DEF but a new instance of a recurring class. Severity stays Critical (an accepted program miscompiles).
 - **DEF**: DEF-583 (`plans/00-roadmap.md`)
+- **Issue**: #55 (finding issue)
 - **Verdict**: confirmed (Critical) — verifier ses_dea9a6131ffesU3qOxzrQQoINm (9.2.1): `2 1` and `321` on every profile and line; the argument pins in `own/call.rs` fire only for syntactic updates; no ruling accepts the order (DEF-278 fixed only the owning-argument shape).
 
 ### ASM-WS1-003 — Data inclusion (`embed`) is staged out, but chapter 13 reads stable and the limitation is undocumented
@@ -95,6 +97,7 @@ rejection, including a wrong diagnostic code; diagnostic wording is not assessed
 - **Effort**: M
 - **Related**: `plans/clorraine-compiler-mvp/00-ambiguity-register.md` AR-10 (user ruling: data inclusion staged out of the MVP, E10213/E10214 goldens skipped by an explicit list); `plans/def-critical-major-closeout/00-ambiguity-register.md` AR-23 (user ruling 2026-10-24: a module-level `let embed` follows spec/04 §16 and is E10213; the spec/13 §1 sentence is a recorded frozen inconsistency); WS8-01/WS8-05 (excluded golden)
 - **Self-refutation (1.3.1)**: the absence of `embed` is a deliberate, user-ruled staging decision, so it is not a wrongly rejected valid program in the Major sense. What survives is the documentation gap: spec/13 is marked "stable (v1.0)", `docs/known-limitations.md` (the user-facing list) does not mention that every `embed` is rejected, and `E10224` ("expression is not constant") is a misleading diagnostic for a staged feature. Rated Minor.
+- **Issue**: #89 (tracking issue)
 - **Verdict**: confirmed (Minor) — verifier ses_dea9a6131ffesU3qOxzrQQoINm (9.2.1): staged out by ruling; the defect is the missing limitation entry and the diagnostic shape (E10224/E10213 instead of the promised E90000).
 
 ### ASM-WS1-004 — `clc` aborts with a stack overflow on moderately deep nesting
@@ -113,6 +116,7 @@ rejection, including a wrong diagnostic code; diagnostic wording is not assessed
 - **Related**: WS7-06; the LSP shares `analysis.rs`
 - **Self-refutation (1.3.1)**: no DEF row, plan, or `docs/known-limitations.md` entry sets a nesting limit; 03-01 §Severity rates any `clc` crash Critical (AR #15). The exposure is generated or table-like code rather than typical hand-written code, which the report states. Stays Critical.
 - **DEF**: DEF-590 (`plans/00-roadmap.md`)
+- **Issue**: #62 (finding issue)
 - **Verdict**: confirmed (Critical) — verifier ses_dea9a6131ffesU3qOxzrQQoINm (9.2.1): every deep case aborts with a stack overflow; thresholds reproduce (700/800 nested calls, 1,100/1,250 `+` terms); no depth guard in `compiler/src`.
 
 ### ASM-WS1-005 — Polymorphic recursion with explicit type arguments hangs `clc` instead of E10305
@@ -131,6 +135,7 @@ rejection, including a wrong diagnostic code; diagnostic wording is not assessed
 - **Related**: WS2-08 (generics); DEF-397 (`qualified-access-residue`, fixed): "an explicit type-argument list fixes the instance", which is why the explicit path skips the recursion check
 - **Self-refutation (1.3.1)**: the explicit-list skip is intended by DEF-397, but spec/07 STR-24 makes E10305 apply to any instantiation recursion beyond the cap, and a hang is never an intended outcome. Stays Critical.
 - **DEF**: DEF-591 (`plans/00-roadmap.md`)
+- **Issue**: #63 (finding issue)
 - **Verdict**: confirmed (Critical) — verifier ses_dea9a6131ffesU3qOxzrQQoINm (9.2.1): `is_recursive_instantiation` (`sema/call.rs:957`) skips the explicit path; the 288-byte program times out at 120 s while the inferred twin reports E10305 at once.
 
 ## Spec questions

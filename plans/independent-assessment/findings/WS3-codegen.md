@@ -65,6 +65,7 @@ Main runs 2026-11-25 (logs under `build/tmp/assessment/WS3/`; committed records
 - **Related**: ASM-WS3-002; spec/17 §7; DEF-112 and DEF-138 (collisions with compiler-generated locals, fixed)
 - **Self-refutation (3.3.1)**: `docs/known-limitations.md` §7 covers function and global names against the shim and generated helpers, not locals against C keywords or header macros; no DEF row covers it. Stays Critical (accepted program, invalid C on every leg; plausible names).
 - **DEF**: DEF-589 (`plans/00-roadmap.md`)
+- **Issue**: #61 (finding issue)
 - **Verdict**: confirmed (Critical, verified) — verifier ses_dea9a6112ffeMR984F2rpPTplg (9.2.3): `restrict`, `_Bool`, and header/NDK macros reach C unescaped; `is_c_keyword` (`compiler/src/codegen.rs:1204-1213`) lists the C89 keywords plus `inline` and `bool` only.
 
 ### ASM-WS3-002 — A module function can collide with a generic instance symbol
@@ -83,6 +84,7 @@ Main runs 2026-11-25 (logs under `build/tmp/assessment/WS3/`; committed records
 - **Related**: ASM-WS3-001; `docs/known-limitations.md` §7 (the user-symbol collision check renames functions that collide with shim names and with `cl_init_*`, `cl_zero_ClSlice_*`, `cl_lambda_*` helpers, but generic instance symbols `cl_<name>__<key>` are not in that list); DEF-140 (a different generic-key collision, fixed)
 - **Self-refutation (3.3.1)**: not documented and not covered by the existing rename mechanism. Rated Critical by the rubric (invalid C), with the rarity stated in Impact; Phase 9 may weigh likelihood.
 - **DEF**: DEF-592 (`plans/00-roadmap.md`)
+- **Issue**: #64 (finding issue)
 - **Verdict**: confirmed (Critical, verified) — verifier ses_dea9a6112ffeMR984F2rpPTplg (9.2.3): probe 342 fails on all three profiles; the type-side analogue (`struct _i32` next to `Pair<i32>`) is escaped, so only function names collide.
 
 ### ASM-WS3-003 — A value-position `++`/`--` emits signed C increment, undefined on the host and vbcc legs at the limit
@@ -101,6 +103,7 @@ Main runs 2026-11-25 (logs under `build/tmp/assessment/WS3/`; committed records
 - **Related**: ASM-WS1-002 (the same expressions are where evaluation order is pinned)
 - **Self-refutation (3.3.1)**: the m68k GCC legs pass `-fwrapv`, so shipped GCC binaries are defined; the defect is real for the host profile and the vbcc leg, which spec/17 §14 covers ("or -fwrapv" applies only where the flag is passed). Stays Major (latent UB in emitted C).
 - **DEF**: DEF-602 (`plans/00-roadmap.md`)
+- **Issue**: #74 (finding issue)
 - **Verdict**: confirmed (Major, verified) — verifier ses_dea9a6112ffeMR984F2rpPTplg (9.2.3): UBSan reports the overflow at `return ++y;`; the host line has no `-fwrapv`.
 
 ### ASM-WS3-004 — On the host profile `usize` is 32 bits, so a pointer round trip through `usize` crashes
@@ -118,6 +121,7 @@ Main runs 2026-11-25 (logs under `build/tmp/assessment/WS3/`; committed records
 - **Effort**: M
 - **Related**: spec/17 §3 (mapping table); WS1 probe 048 (layout) passed because no field is `usize`
 - **Self-refutation (3.3.1)**: spec/17 §3 itself maps `usize` to `ULONG`, which reads as an Amiga-ABI statement; together with spec/02 §2 the host case is ambiguous enough that a spec ruling may settle it. Minor (host only).
+- **Issue**: #91 (tracking issue)
 - **Verdict**: confirmed (Minor, verified) — verifier ses_dea9a6112ffeMR984F2rpPTplg (9.2.3).
 
 ### ASM-WS3-005 — Appended runtime code inherits the last `#line`, so its diagnostics and debug lines point into `.clo` files
@@ -135,6 +139,7 @@ Main runs 2026-11-25 (logs under `build/tmp/assessment/WS3/`; committed records
 - **Effort**: S
 - **Related**: ASM-WS3-001
 - **Self-refutation (3.3.1)**: no limitation or DEF covers it; affects tooling, not program behavior. Minor.
+- **Issue**: #91 (tracking issue)
 - **Verdict**: confirmed (Minor, verified) — verifier ses_dea9a6112ffeMR984F2rpPTplg (9.2.3); correction: `stdlib/std.io.clo` has 75 lines, not 80.
 
 ### ASM-WS3-006 — The emitted C depends on how the source path is spelled and embeds absolute paths
@@ -152,6 +157,7 @@ Main runs 2026-11-25 (logs under `build/tmp/assessment/WS3/`; committed records
 - **Effort**: S
 - **Related**: spec/13 §3 (determinism)
 - **Self-refutation (3.3.1)**: with one fixed invocation the output is byte-identical (Phase 0, 93/93), which is what the gates rely on; "logical source path" is undefined in the spec, so the finding is Minor and may become a spec question.
+- **Issue**: #91 (tracking issue)
 - **Verdict**: confirmed (Minor, verified) — verifier ses_dea9a6112ffeMR984F2rpPTplg (9.2.3): an absolute invocation embeds the repository root 58/27/224 times.
 
 ### ASM-WS3-007 — vbcc compile time grows about cubically with `switch` size
@@ -170,6 +176,7 @@ Main runs 2026-11-25 (logs under `build/tmp/assessment/WS3/`; committed records
 - **Related**: WS7-06 (compile-time scaling); `docs/known-limitations.md` lists vbcc limits for bsdsocket headers only
 - **Self-refutation (3.3.1)**: the root cause is in vbcc, not in an invalid emission; but the compile-matrix bound of 03-01 §Severity is exceeded for a plausible program shape (1,000-case `switch` 57 s, limit 12 s). Stays Major on the vbcc leg; no shipped GCC binary is affected.
 - **DEF**: DEF-609 (`plans/00-roadmap.md`)
+- **Issue**: #81 (finding issue)
 - **Verdict**: confirmed (Major, verified) — verifier ses_dea9a6112ffeMR984F2rpPTplg (9.2.3): 1,000 cases take 57–158 s against the 12.2 s limit; `-O1` alone does not bring it under (57.4 s at 1,000), so the `-O1` recommendation is insufficient by itself.
 
 ### ASM-WS3-008 — An `else if` chain of 127 or more arms makes vbcc crash or reject the emitted C
@@ -187,6 +194,7 @@ Main runs 2026-11-25 (logs under `build/tmp/assessment/WS3/`; committed records
 - **Effort**: S
 - **Related**: ASM-WS3-007; ASM-WS1-004
 - **DEF**: DEF-608 (`plans/00-roadmap.md`)
+- **Issue**: #80 (finding issue)
 - **Verdict**: confirmed (Major, verified) — verifier ses_dea685c4bffegV12VLXpl04mC6 (9.2.5, a session other than the raiser): vbcc segfaults at 127 arms and reports "too many (128) nested blocks" at 128/200/500; GCC accepts all; plain nested blocks up to 128 compile.
 
 ## Spec questions
