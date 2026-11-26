@@ -25,7 +25,8 @@ The installer walks through the same five steps as on Linux:
    `%LOCALAPPDATA%\Programs\Clorraine`. It offers to add the CLI to your user
    `PATH`.
 2. **Amiga toolchain.** It uses an AmigaPorts rc24 toolchain that is already
-   installed, or downloads the pinned upstream setup and installs it into
+   installed in a folder without spaces (and offers to reinstall one that is
+   not), or downloads the pinned upstream setup and installs it into
    `C:\ProgramData\Clorraine`. That step asks for administrator approval
    once (a UAC prompt); declining it keeps the CLI installed.
 3. **Amiga emulator.** It finds FS-UAE (or downloads the pinned FS-UAE 3.2.35

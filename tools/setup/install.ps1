@@ -944,6 +944,7 @@ function Invoke-ElevatedStaging([string]$Source, [long]$Bytes, [string]$Sha256, 
         [string]$Target = '', [string[]]$TrustedSid = $null) {
     $ErrorActionPreference = 'Stop'
     $trusted = @('S-1-5-32-544', 'S-1-5-18', 'S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464')
+    $testLocation = [bool]$AdminRoot
     if ($AdminRoot) {
         if ($null -eq $TrustedSid) { $TrustedSid = @([Security.Principal.WindowsIdentity]::GetCurrent().User.Value) }
     } else {
@@ -953,25 +954,13 @@ function Invoke-ElevatedStaging([string]$Source, [long]$Bytes, [string]$Sha256, 
     $trusted += $TrustedSid
     if (-not $Target) { $Target = Join-Path $AdminRoot 'amiga-gcc-16.2-rc24' }
     try {
-        $existing = Get-Item -LiteralPath $AdminRoot -Force -ErrorAction SilentlyContinue
-        if ($null -ne $existing) {
-            if (($existing.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or -not $existing.PSIsContainer) { return 103 }
-            $sidType = [System.Security.Principal.SecurityIdentifier]
-            $acl = Get-Acl -LiteralPath $AdminRoot
-            if ($trusted -notcontains $acl.GetOwner($sidType).Value) { return 103 }
-            # Write data, append, write attributes and extended attributes,
-            # delete children, delete, change the access list or the owner,
-            # and the generic write and all rights.
-            $change = 0x2 -bor 0x4 -bor 0x10 -bor 0x40 -bor 0x100 -bor 0x10000 -bor 0x40000 -bor 0x80000 -bor 0x10000000 -bor 0x40000000
-            $mayChange = $trusted + @('S-1-3-0')
-            foreach ($rule in $acl.GetAccessRules($true, $true, $sidType)) {
-                if ($rule.AccessControlType -ne 'Allow') { continue }
-                if (([int64]$rule.FileSystemRights -band $change) -eq 0) { continue }
-                if ($mayChange -notcontains $rule.IdentityReference.Value) { return 103 }
-            }
-        } else {
+        $sidType = [System.Security.Principal.SecurityIdentifier]
+        if ($null -eq (Get-Item -LiteralPath $AdminRoot -Force -ErrorAction SilentlyContinue)) {
             $rootSecurity = New-Object System.Security.AccessControl.DirectorySecurity
             $rootSecurity.SetAccessRuleProtection($true, $false)
+            # Without a test location the owner is the Administrators group
+            # whatever the token's default owner is, so a later run trusts it.
+            if (-not $testLocation) { $rootSecurity.SetOwner((New-Object System.Security.Principal.SecurityIdentifier 'S-1-5-32-544')) }
             $inherit = [System.Security.AccessControl.InheritanceFlags]'ContainerInherit, ObjectInherit'
             foreach ($sid in @('S-1-5-32-544', 'S-1-5-18') + $TrustedSid) {
                 $principal = New-Object System.Security.Principal.SecurityIdentifier $sid
@@ -979,7 +968,24 @@ function Invoke-ElevatedStaging([string]$Source, [long]$Bytes, [string]$Sha256, 
             }
             $users = New-Object System.Security.Principal.SecurityIdentifier 'S-1-5-32-545'
             $rootSecurity.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule($users, 'ReadAndExecute', $inherit, 'None', 'Allow')))
+            # CreateDirectory returns a folder someone else made in the
+            # meantime unchanged, so the checks below run on every path.
             [void][IO.Directory]::CreateDirectory($AdminRoot, $rootSecurity)
+        }
+        $existing = Get-Item -LiteralPath $AdminRoot -Force -ErrorAction SilentlyContinue
+        if ($null -eq $existing) { return 104 }
+        if (($existing.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or -not $existing.PSIsContainer) { return 103 }
+        $acl = Get-Acl -LiteralPath $AdminRoot
+        if ($trusted -notcontains $acl.GetOwner($sidType).Value) { return 103 }
+        # Write data, append, write attributes and extended attributes,
+        # delete children, delete, change the access list or the owner,
+        # and the generic write and all rights.
+        $change = 0x2 -bor 0x4 -bor 0x10 -bor 0x40 -bor 0x100 -bor 0x10000 -bor 0x40000 -bor 0x80000 -bor 0x10000000 -bor 0x40000000
+        $mayChange = $trusted + @('S-1-3-0')
+        foreach ($rule in $acl.GetAccessRules($true, $true, $sidType)) {
+            if ($rule.AccessControlType -ne 'Allow') { continue }
+            if (([int64]$rule.FileSystemRights -band $change) -eq 0) { continue }
+            if ($mayChange -notcontains $rule.IdentityReference.Value) { return 103 }
         }
         $staging = Join-Path $AdminRoot ('.staging-' + [guid]::NewGuid().ToString('N').Substring(0, 12))
         if (Test-Path -LiteralPath $staging) { return 102 }
@@ -1067,7 +1073,6 @@ function Test-DeclinedElevation($ErrorRecord) {
 function Install-Rc24([string]$Root) {
     $adminRoot = Get-Rc24AdminRoot
     if ($adminRoot.Contains(' ')) {
-        Write-NextSteps $Root $true
         Stop-Install 1 "the rc24 compiler cannot run from a folder whose path contains a space ($adminRoot); pass -Toolchain with an rc24 root without spaces"
     }
     $work = New-PrivateTemp 'rc24'
@@ -1096,7 +1101,7 @@ function Install-Rc24([string]$Root) {
                 $script:ElevatedUntrustedRoot {
                     $admin = Get-Rc24AdminRoot
                     "$admin is a link, is not owned by Administrators, or lets other accounts change it; nothing was installed. " +
-                        "If an administrator created it, run in an elevated prompt: icacls `"$admin`" /setowner *S-1-5-32-544"
+                        'Delete or rename that folder and rerun; the installer creates it with its own access list'
                 }
                 $script:ElevatedError { 'the elevated step failed before the setup could run' }
                 default {
@@ -1122,8 +1127,24 @@ function Select-Toolchain([string]$Root, [hashtable]$Options, [bool]$Interactive
     $registration = Get-Rc24Registration
     if ($null -ne $registration -and $registration.DisplayVersion -eq $script:Rc24Version -and $registration.InstallLocation) {
         $existing = $registration.InstallLocation.TrimEnd('\')
-        Write-Ok ("using the installed rc24 toolchain in " + (Get-SafeText $existing -SingleLine))
-        return $existing
+        if (-not $existing.Contains(' ')) {
+            Write-Ok ("using the installed rc24 toolchain in " + (Get-SafeText $existing -SingleLine))
+            return $existing
+        }
+        # The rc24 compiler splits its own library path at a space, so this
+        # copy cannot build; offer to install a working one in its place.
+        Write-Warn ("the installed rc24 in " + (Get-SafeText $existing -SingleLine) + ' cannot run: its folder path contains a space')
+        $replace = [bool]$Options['ReplaceToolchain'] -or [bool]$Options['InstallToolchain']
+        if (-not $replace -and $Interactive) {
+            $replace = Read-YesNo "  Reinstall rc24 in $(Get-Rc24AdminRoot) (one UAC prompt)? [Y/n] " $true
+        }
+        if (-not $replace) {
+            Stop-Install 1 'uninstall amiga-gcc under Settings > Apps > Installed apps and rerun, or rerun with -ReplaceToolchain'
+        }
+        $installed = Install-Rc24 $Root
+        # The setup moves the registration but leaves the old files behind.
+        Write-Line ('  the old copy in ' + (Get-SafeText $existing -SingleLine) + ' is no longer used; an administrator can delete that folder')
+        return $installed
     }
     if ($null -ne $registration) {
         $other = Get-SafeText $registration.DisplayVersion

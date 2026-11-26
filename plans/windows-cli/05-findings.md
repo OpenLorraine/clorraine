@@ -83,3 +83,8 @@
 | DR-813 | 8 | MINOR | docs, site, tools/setup/install.ps1 | fixed |
 | DR-814 | 8 | MINOR | docs, site, tools/setup/install.ps1 | fixed |
 | AC-901 | 9 | MAJOR | tools/setup/install.ps1, compiler/src/clorraine/setup.rs | fixed (user ruling, AR-64) |
+| RV-901 | 9 | CRITICAL | tools/setup/install.ps1 | fixed |
+| RV-902 | 9 | MAJOR | tools/setup/install.ps1 | fixed |
+| RV-903 | 9 | MINOR | tools/setup/install.ps1 | fixed |
+| RV-904 | 9 | MINOR | tools/setup/install.ps1 | fixed |
+| RV-905 | 9 | MINOR | compiler/src/clorraine/environment.rs | accepted: needs a hand-edited config; exit 2 with the reason |
