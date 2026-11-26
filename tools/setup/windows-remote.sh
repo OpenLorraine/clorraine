@@ -9,7 +9,7 @@
 #       Run COMMAND as one line of a batch file in the signed-in desktop
 #       session of HOST (working directory %USERPROFILE%\clorraine-remote),
 #       print its output, and exit with its exit code (124 on timeout). Batch
-#       rules apply: write %% for a literal % or a loop variable; ASCII only.
+#       rules apply: write %% for a literal % or a loop variable; printable ASCII.
 #
 # HOST is an ssh destination whose login shell is Windows PowerShell, with
 # key-based authentication. This helper is a convenience for development and

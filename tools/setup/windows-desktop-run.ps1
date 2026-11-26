@@ -7,7 +7,8 @@
 # the current user instead. The user must be signed in at the desktop.
 #
 # The command is written as one line of a batch file, so batch rules apply:
-# write %% for a literal % or a loop variable. It must be ASCII.
+# write %% for a literal % or a loop variable. It must be printable ASCII on
+# one line.
 #
 # Exit codes: the command's own exit code; 124 when it does not finish within
 # -TimeoutSeconds; 2 for a usage error.
@@ -34,7 +35,7 @@ if (-not $Command) {
     [Console]::Error.WriteLine('usage: windows-desktop-run.ps1 -Command LINE | -CommandBase64 B64 [-TimeoutSeconds N] [-WorkingDirectory DIR]')
     exit 2
 }
-if ($Command -match '[^\x20-\x7E]') {
+if ($Command -cmatch '[^\x20-\x7E]') {
     # A batch file is read in the console code page, so anything outside
     # printable ASCII would arrive changed.
     [Console]::Error.WriteLine('windows-desktop-run: the command must be printable ASCII on one line')
