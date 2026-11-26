@@ -1,0 +1,27 @@
+// Ctrl-C probe for real Kickstart: a VBlank server and a timer are live while
+// the program waits 60 seconds on the timer. A Ctrl-C during the wait must end
+// it at once with `***Break` and a failing return code, and the exit must
+// still remove the server.
+module robustness.fault_cleanup.break_timer;
+
+import { addHandler } from std.amiga.interrupt;
+import { Timer, openTimer, timerWait } from std.amiga.timer;
+import { println } from std.io;
+
+func tick(): void {
+}
+
+func main(): i32 {
+    addHandler(tick);
+    let timer_opt: Timer? = openTimer();
+    if (timer_opt == null) {
+        return 1;
+    }
+    let timer: Timer = timer_opt;
+    println("waiting");
+    if (!timerWait(timer, 3000)) {
+        return 2;
+    }
+    println("done");
+    return 0;
+}

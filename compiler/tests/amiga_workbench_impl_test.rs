@@ -428,7 +428,7 @@ fn the_app_message_path_is_pinned() {
     let shim = shim();
     for needle in [
         "void *cl_wait_app_message(void *port_handle)",
-        "(void)WaitPort(port);",
+        "cl_wait_port_or_break(port);",
         "message = GetMsg(port);",
         "return (void *)message;",
         "message->am_Type",

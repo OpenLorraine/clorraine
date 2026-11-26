@@ -302,7 +302,7 @@ BOOL cl_gt_next_event(void *window_handle, BOOL wait)
     }
     for (;;) {
         if (wait) {
-            (void)WaitPort(handle->window->UserPort);
+            cl_wait_port_or_break(handle->window->UserPort);
         }
         msg = GT_GetIMsg(handle->window->UserPort);
         if (msg == NULL) {

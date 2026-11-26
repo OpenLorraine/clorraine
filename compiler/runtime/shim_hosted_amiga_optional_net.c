@@ -261,7 +261,7 @@ void *cl_guide_wait(void *handle_void)
     if (signal_mask == 0) {
         return NULL;
     }
-    Wait(signal_mask);
+    (void)cl_wait_or_break(signal_mask);
     raw = GetAmigaGuideMsg(guide->context);
     if (raw == NULL) {
         return NULL;

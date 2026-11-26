@@ -31,3 +31,9 @@
 | RV-003 (P4) | 4 | MINOR | roadmap and plan bookkeeping | fixed |
 | SR-Q2 (P4) | 4 | MINOR | ST-14/ST-18 memory not asserted | deferred (strict scope; spec change) |
 | SR-PRE (P4) | 4 | MINOR | interrupt-context fault with workers | deferred (AR-4, issue #95) |
+| RV-001 (P5) | 5 | MINOR | shim_hosted_amiga.c:cl_wait_io_or_break break order | fixed (break checked before completion) |
+| RV-002 (P5) | 5 | MINOR | 00-ambiguity-register.md date | fixed |
+| SR-001 (P5) | 5 | MINOR | break-timer.clo header claim | fixed (claim narrowed; abort-and-reap pinned by impl test) |
+| SR-002 (P5) | 5 | MINOR | a500-fault-cleanup-smoke.sh header | fixed |
+| SR-Q1/Q2 (P5) | 5 | MINOR | Ctrl-C limits (2.0+ waits untested on target; console-only delivery) | fixed in 6.1.3 known-limitations |
+| SR-PRE (P5) | 5 | MINOR | cl_gt_next_event filtered message in wait mode | deferred (pre-existing) |

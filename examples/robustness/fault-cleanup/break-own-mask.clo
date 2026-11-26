@@ -1,0 +1,16 @@
+// Ctrl-C probe for real Kickstart: the program waits for the Ctrl-C signal
+// itself. A Ctrl-C must then be handed to the program like any other signal it
+// asked for, not end it.
+module robustness.fault_cleanup.break_own_mask;
+
+import { waitSignals } from std.amiga.exec;
+import { println } from std.io;
+
+func main(): i32 {
+    println("waiting");
+    let received: u32 = waitSignals(0x1000);
+    if ((received & 0x1000) != 0) {
+        println("break bit");
+    }
+    return 0;
+}

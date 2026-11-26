@@ -1269,7 +1269,7 @@ fn a_worker_fault_is_reported_once_and_before_the_worker_is_removed() {
         "join",
         join,
         &[
-            "Wait(1UL << record->signal_bit);",
+            "ULONG received = Wait((1UL << record->signal_bit) | cl_break_mask());",
             "if (record->fault_kind != CL_FAULT_NONE)",
             "record->fault_reported = 1;",
             "cl_worker_print_fault(record);",
@@ -1306,4 +1306,110 @@ fn a_worker_fault_is_reported_once_and_before_the_worker_is_removed() {
         body(&shim, "static void cl_worker_print_fault(const cl_task *record)"),
         &["record->fault_kind == CL_FAULT_TRAP", "printf(\"error %s: %s\\n\"", "fwrite(\"panic: \", 1, 7, stdout);", "fflush(stdout);"],
     );
+}
+
+/// A Ctrl-C leaves through one routine that clears the break, so libnix does
+/// not report it again, prints `***Break` after anything already buffered, and
+/// exits 20. While the exit hook runs no wait includes the break bit.
+#[test]
+fn a_break_leaves_like_libnix_and_never_during_the_exit() {
+    let shim = shim();
+    assert_order(
+        "break exit",
+        body(&shim, "static void cl_break_exit(void)"),
+        &["SetSignal(0, SIGBREAKF_CTRL_C);", "fflush(stdout);", "fwrite(\"***Break\\n\", 1, 9, stdout);", "fflush(stdout);", "exit(20);"],
+    );
+    assert_contains("mask", body(&shim, "static ULONG cl_break_mask(void)"), "return cl_exiting ? 0 : SIGBREAKF_CTRL_C;");
+    assert_contains("check", body(&shim, "static void cl_check_break(void)"), "(SetSignal(0, 0) & cl_break_mask()) != 0");
+    assert_order(
+        "wait",
+        body(&shim, "static ULONG cl_wait_or_break(ULONG mask)"),
+        &["Wait(mask | cl_break_mask())", "(received & cl_break_mask()) != 0", "cl_break_exit();"],
+    );
+    assert_order(
+        "port",
+        body(&shim, "static void cl_wait_port_or_break(struct MsgPort *port)"),
+        &["cl_check_break();", "while (IsListEmpty(&port->mp_MsgList))", "cl_wait_or_break(1UL << port->mp_SigBit)"],
+    );
+    assert_order(
+        "io",
+        body(&shim, "static void cl_wait_io_or_break(struct IORequest *request, int *pending)"),
+        &[
+            "ULONG received = SetSignal(0, 0);",
+            "(received & cl_break_mask()) != 0",
+            "AbortIO(request);",
+            "WaitIO(request);",
+            "*pending = 0;",
+            "cl_break_exit();",
+            "if (CheckIO(request) != NULL)",
+            "received = Wait(port_bit | cl_break_mask());",
+        ],
+    );
+}
+
+/// Every listed blocking wait is breakable; `waitSignals` hands the break bit
+/// back when the caller asked for it; a worker fault wins over a break at
+/// join; the timer wait is sent and reaped, and freeing a timer aborts a
+/// request still in flight.
+#[test]
+fn the_listed_waits_are_breakable() {
+    let shim = shim();
+    assert_contains(
+        "window events",
+        body(&shim, "BOOL cl_window_next_event(void *window_handle, BOOL wait)"),
+        "cl_wait_port_or_break(handle->window->UserPort);",
+    );
+    assert_order(
+        "waitSignals",
+        body(&shim, "ULONG cl_wait_signals(ULONG mask)"),
+        &["(mask & SIGBREAKF_CTRL_C) != 0", "return Wait(mask);", "return cl_wait_or_break(mask);"],
+    );
+    assert_order(
+        "join",
+        body(&shim, "static LONG cl_task_join_record(cl_task *record)"),
+        &["Wait((1UL << record->signal_bit) | cl_break_mask())", "(received & cl_break_mask()) != 0 &&", "record->fault_kind == CL_FAULT_NONE", "cl_break_exit();"],
+    );
+    let do_io = body(&shim, "LONG cl_device_do_io(void *handle, APTR data, ULONG length)");
+    assert_order("do io", do_io, &["device->pending = 1;", "SendIO(", "cl_wait_io_or_break(", "WaitIO(", "device->pending = 0;"]);
+    assert_lacks("do io", do_io, "DoIO(");
+    assert_order(
+        "wait io",
+        body(&shim, "LONG cl_device_wait_io(void *handle, APTR data, ULONG length)"),
+        &["cl_wait_io_or_break(", "WaitIO("],
+    );
+    let timer_wait = body(&shim, "BOOL cl_timer_wait(void *handle, ULONG ticks)");
+    assert_order("timer", timer_wait, &["timer->pending = 1;", "SendIO(&timer->request->tr_node);", "cl_wait_io_or_break(&timer->request->tr_node, &timer->pending);", "WaitIO(", "timer->pending = 0;"]);
+    assert_lacks("timer", timer_wait, "DoIO(");
+    assert_order(
+        "timer free",
+        body(&shim, "void cl_timer_free(void *handle)"),
+        &["if (timer->pending)", "AbortIO(&timer->request->tr_node);", "WaitIO(&timer->request->tr_node);", "CloseDevice(&timer->request->tr_node);"],
+    );
+    assert_contains("app message", &suffix("shim_hosted_amiga_20.c"), "cl_wait_port_or_break(port);\n    message = GetMsg(port);");
+    assert_contains(
+        "gadtools",
+        body(&suffix("shim_hosted_amiga_optional_ui.c"), "BOOL cl_gt_next_event(void *window_handle, BOOL wait)"),
+        "cl_wait_port_or_break(handle->window->UserPort);",
+    );
+    assert_contains(
+        "amigaguide",
+        body(&suffix("shim_hosted_amiga_optional_net.c"), "void *cl_guide_wait(void *handle_void)"),
+        "(void)cl_wait_or_break(signal_mask);",
+    );
+}
+
+/// The waits documented as unbreakable stay as they were: audio, the
+/// clipboard, serial, parallel, and printer devices, and DOS `Delay`.
+#[test]
+fn the_unbreakable_waits_are_unchanged() {
+    let shim = shim();
+    assert_contains("delay", body(&shim, "void cl_delay_ticks(ULONG ticks)"), "Delay((LONG)ticks);");
+    let audio_start = shim.find("void *cl_audio_open(UBYTE channels)").expect("audio");
+    let audio_end = shim.find("void *cl_timer_open(void)").expect("timer");
+    assert_lacks("audio", &shim[audio_start..audio_end], "cl_break");
+    let services = suffix("shim_hosted_amiga_optional_services.c");
+    let devices = &services[services.find("/* Clipboard.").expect("clipboard")..services.find("typedef struct cl_nv_data").expect("nv")];
+    assert_contains("devices", devices, "DoIO(");
+    assert_lacks("devices", devices, "cl_break");
+    assert_lacks("devices", devices, "cl_wait_or_break");
 }

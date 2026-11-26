@@ -257,6 +257,84 @@ int cl_res_untrack(void (*release)(void *), void *handle)
     return 0;
 }
 
+/* --- Ctrl-C in the blocking waits. ----------------------------------------
+ *
+ * A Ctrl-C while the program blocks in one of the shim's breakable waits ends
+ * it the way libnix ends a program that sees a break during stdio: the
+ * `***Break` line and exit code 20. The exit hook then releases the OS
+ * resources as for a fault. While the hook runs, no wait includes the break,
+ * so its releases always finish. */
+
+/* Leave after a Ctrl-C. The break is cleared first so libnix's own stdio
+ * check does not report it a second time. */
+static void cl_break_exit(void)
+{
+    SetSignal(0, SIGBREAKF_CTRL_C);
+    fflush(stdout);
+    fwrite("***Break\n", 1, 9, stdout);
+    fflush(stdout);
+    exit(20);
+}
+
+/* The break bit a breakable wait adds to its mask: none during the exit. */
+static ULONG cl_break_mask(void)
+{
+    return cl_exiting ? 0 : SIGBREAKF_CTRL_C;
+}
+
+/* Leave now if a break is already pending. */
+static void cl_check_break(void)
+{
+    if ((SetSignal(0, 0) & cl_break_mask()) != 0) {
+        cl_break_exit();
+    }
+}
+
+/* Wait for any signal in `mask` or a break; a break leaves, and wins over
+ * signals that arrived with it. Returns the signals received. */
+static ULONG cl_wait_or_break(ULONG mask)
+{
+    ULONG received = Wait(mask | cl_break_mask());
+
+    if ((received & cl_break_mask()) != 0) {
+        cl_break_exit();
+    }
+    return received;
+}
+
+/* WaitPort with a break: returns once a message is queued on `port`. A break
+ * is checked before the port, so a queued message never hides it. */
+static void cl_wait_port_or_break(struct MsgPort *port)
+{
+    cl_check_break();
+    while (IsListEmpty(&port->mp_MsgList)) {
+        (void)cl_wait_or_break(1UL << port->mp_SigBit);
+    }
+}
+
+/* Wait for a sent request to come back, or a break. On a break the request
+ * is aborted and reaped first, so no device writes into memory the exit is
+ * about to release. */
+static void cl_wait_io_or_break(struct IORequest *request, int *pending)
+{
+    ULONG port_bit = 1UL << request->io_Message.mn_ReplyPort->mp_SigBit;
+    ULONG received = SetSignal(0, 0);
+
+    /* A break already pending wins even over a request that has finished. */
+    for (;;) {
+        if ((received & cl_break_mask()) != 0) {
+            (void)AbortIO(request);
+            (void)WaitIO(request);
+            *pending = 0;
+            cl_break_exit();
+        }
+        if (CheckIO(request) != NULL) {
+            return;
+        }
+        received = Wait(port_bit | cl_break_mask());
+    }
+}
+
 /* The base globals the shim itself opened, oldest first. A base that is
  * already non-null belongs to whoever opened it (libnix opens many bases at
  * startup and closes them itself), so only a null-to-open transition here is
@@ -3182,7 +3260,7 @@ BOOL cl_window_next_event(void *window_handle, BOOL wait)
     }
     for (;;) {
         if (wait) {
-            (void)WaitPort(handle->window->UserPort);
+            cl_wait_port_or_break(handle->window->UserPort);
         }
         msg = (struct IntuiMessage *)GetMsg(handle->window->UserPort);
         if (msg == NULL) {
@@ -3545,7 +3623,11 @@ ULONG cl_signals(void *port_handle)
 /* Wait for any signal in `mask`, returning the bits that arrived. */
 ULONG cl_wait_signals(ULONG mask)
 {
-    return Wait(mask);
+    /* A caller that asks for the break bit gets it back like any other. */
+    if ((mask & SIGBREAKF_CTRL_C) != 0) {
+        return Wait(mask);
+    }
+    return cl_wait_or_break(mask);
 }
 
 /* The exit release of a fetched message another task sent: reply it, so the
@@ -3773,7 +3855,14 @@ static LONG cl_task_join_record(cl_task *record)
         return 0;
     }
     if (!record->joined) {
-        Wait(1UL << record->signal_bit);
+        ULONG received = Wait((1UL << record->signal_bit) | cl_break_mask());
+
+        /* A fault the worker recorded wins over a break; otherwise a break
+         * leaves, and the exit removes the worker. */
+        if ((received & cl_break_mask()) != 0 &&
+            record->fault_kind == CL_FAULT_NONE) {
+            cl_break_exit();
+        }
         record->joined = 1;
         if (record->fault_kind != CL_FAULT_NONE) {
             /* Report the worker's fault as the parent's own. The worker stays
@@ -4194,7 +4283,11 @@ LONG cl_device_do_io(void *handle, APTR data, ULONG length)
     }
     device->request.io_Data = data;
     device->request.io_Length = length;
-    error = (LONG)DoIO((struct IORequest *)&device->request);
+    device->pending = 1;
+    SendIO((struct IORequest *)&device->request);
+    cl_wait_io_or_break((struct IORequest *)&device->request, &device->pending);
+    error = (LONG)WaitIO((struct IORequest *)&device->request);
+    device->pending = 0;
     if (device->buffer != NULL) {
         device->request.io_Data = device->buffer;
         device->request.io_Length = device->buffer_length;
@@ -4248,7 +4341,11 @@ LONG cl_device_wait_io(void *handle, APTR data, ULONG length)
         return -1;
     }
     if (device->pending) {
-        LONG error = (LONG)WaitIO((struct IORequest *)&device->request);
+        LONG error;
+
+        cl_wait_io_or_break((struct IORequest *)&device->request,
+                            &device->pending);
+        error = (LONG)WaitIO((struct IORequest *)&device->request);
         device->pending = 0;
         cl_device_copy_out(device, data, length);
         return error;
@@ -5976,6 +6073,7 @@ typedef struct cl_audio {
 typedef struct cl_timer {
     struct MsgPort *port;
     struct TimeRequest *request;
+    int pending;   /* a request is with timer.device */
     cl_res res;
 } cl_timer;
 
@@ -6411,7 +6509,11 @@ BOOL cl_timer_wait(void *handle, ULONG ticks)
      * convert PAL 50 Hz ticks to a relative delay. */
     timer->request->tr_time.tv_secs = ticks / 50UL;
     timer->request->tr_time.tv_micro = (ticks % 50UL) * 20000UL;
-    error = DoIO(&timer->request->tr_node);
+    timer->pending = 1;
+    SendIO(&timer->request->tr_node);
+    cl_wait_io_or_break(&timer->request->tr_node, &timer->pending);
+    error = (BYTE)WaitIO(&timer->request->tr_node);
+    timer->pending = 0;
     return error == 0 ? TRUE : FALSE;
 }
 
@@ -6425,6 +6527,11 @@ void cl_timer_free(void *handle)
     }
     cl_res_remove(&timer->res);
     if (timer->request != NULL) {
+        if (timer->pending) {
+            (void)AbortIO(&timer->request->tr_node);
+            (void)WaitIO(&timer->request->tr_node);
+            timer->pending = 0;
+        }
         CloseDevice(&timer->request->tr_node);
         FreeMem(timer->request, (ULONG)sizeof(struct TimeRequest));
     }

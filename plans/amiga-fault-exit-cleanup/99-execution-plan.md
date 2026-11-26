@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-26 23:09
-> **Progress**: 42/55 tasks (76%)
+> **Last Updated**: 2026-11-27 00:34
+> **Progress**: 50/55 tasks (91%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -233,7 +233,8 @@ Rules for every task:
 
 ## Phase 5: Ctrl-C
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill)_
+> **Phase baseline tree**: be2a3960af3d6036f7c61eb8a335b44cec8074c2 (HEAD `51f33aed`)
+> **Scope mode**: strict · **Expected modification set**: `compiler/runtime/shim_hosted_amiga{,_20,_optional_ui,_optional_net}.c`, `compiler/tests/amiga_fault_cleanup_impl_test.rs`, `compiler/tests/amiga_{exec,workbench}_impl_test.rs`, `examples/robustness/fault-cleanup/break-*.clo`, `docker/scripts/a500-fault-cleanup-smoke.sh`, `docker/scripts/a500-exec-smoke.sh` (AR-26), `compiler/tests/amiga_optional_impl_test.rs`, this plan folder, `plans/00-roadmap.md`
 > **Reasoning**: high — device-protocol rewrites at the listed waits, with abort-and-reap on a
 > break.
 
@@ -241,25 +242,25 @@ Rules for every task:
 
 **Reference**: [07](07-testing-strategy.md) ST-15, ST-16 · [03-04](03-04-ctrl-c.md) · AR-5, AR-11–13, AR-17
 
-- [ ] 5.1.1 [spec-author] Write the ST-15 and ST-16 probes and the `xdotool` Ctrl-C steps in the gate — `examples/robustness/fault-cleanup/break-timer.clo`, `break-own-mask.clo`, `docker/scripts/a500-fault-cleanup-smoke.sh`
-- [ ] 5.1.2 Red phase: `make sdk-a500-fault-cleanup`; record ST-15 failing (`done`, no `***Break`) and ST-16's pre-implementation pass with its justification. ST-16's `break bit` proves that the console Ctrl-C reaches a probe with redirected output; if it does not appear, mark this task `[!]` and ask the user before any implementation (03-05 §A500 gate)
+- [x] 5.1.1 [spec-author] Write the ST-15 and ST-16 probes and the `xdotool` Ctrl-C steps in the gate — `examples/robustness/fault-cleanup/break-timer.clo`, `break-own-mask.clo`, `docker/scripts/a500-fault-cleanup-smoke.sh` ✅ (completed: 2026-11-26 23:37; both probes emit clean and build -Werror on nix13. Gate handshake: the startup-sequence writes one console line and a per-probe go-marker to DF1 before each break probe (the probe's own 'waiting' line stays in libnix's stdout buffer until exit, so the host cannot see it live); the host waits for the marker, waits 4 s, focuses FS-UAE, and sends ctrl+c once)
+- [x] 5.1.2 Red phase: `make sdk-a500-fault-cleanup`; record ST-15 failing (`done`, no `***Break`) and ST-16's pre-implementation pass with its justification. ST-16's `break bit` proves that the console Ctrl-C reaches a probe with redirected output; if it does not appear, mark this task `[!]` and ask the user before any implementation (03-05 §A500 gate) ✅ (completed: 2026-11-26 23:40; Red: ST-15 output '***Break / waiting / done', rc fail — the timer wait ignored Ctrl-C for its full 60 s and printed 'done'; libnix's own stdio break check then wrote '***Break' unbuffered at exit, ahead of the buffered lines. ST-16 passed before implementation ('waiting / break bit', rc ok): waitSignals already returns a requested bit, and this proves the console Ctrl-C reaches a probe whose output is redirected on Kickstart 1.3 (the open preflight risk is retired). All other probes OK)
 
 ### Step 5.2: Implementation
 
 **Reference**: [03-04 §Breakable waits, §Precedence, §During the exit](03-04-ctrl-c.md) · AR-11, AR-12, AR-13
 
-- [ ] 5.2.1 Add the break routine, and the breakable window-event wait, `waitSignals` mask rule, and join wait — `compiler/runtime/shim_hosted_amiga.c`
-- [ ] 5.2.2 Convert `cl_device_do_io`, `cl_device_wait_io`, and the timer wait to SendIO + `Wait` with abort-and-reap; add `pending` to `cl_timer` and the abort in `cl_timer_free` — `compiler/runtime/shim_hosted_amiga.c`
-- [ ] 5.2.3 Make the AppMessage, GadTools, and AmigaGuide waits breakable — `compiler/runtime/shim_hosted_amiga_20.c`, `shim_hosted_amiga_optional_ui.c`, `shim_hosted_amiga_optional_net.c`
-- [ ] 5.2.4 Green phase: ST-15 and ST-16 pass; ST-10..ST-14, ST-17, ST-18 still pass
+- [x] 5.2.1 Add the break routine, and the breakable window-event wait, `waitSignals` mask rule, and join wait — `compiler/runtime/shim_hosted_amiga.c` ✅ (completed: 2026-11-26 23:53; cargo test --workspace 4439 (intended pin updates: join wait, AppMessage wait, AmigaGuide wait))
+- [x] 5.2.2 Convert `cl_device_do_io`, `cl_device_wait_io`, and the timer wait to SendIO + `Wait` with abort-and-reap; add `pending` to `cl_timer` and the abort in `cl_timer_free` — `compiler/runtime/shim_hosted_amiga.c` ✅ (completed: 2026-11-26 23:53; cargo test --workspace 4439 (intended pin updates: join wait, AppMessage wait, AmigaGuide wait))
+- [x] 5.2.3 Make the AppMessage, GadTools, and AmigaGuide waits breakable — `compiler/runtime/shim_hosted_amiga_20.c`, `shim_hosted_amiga_optional_ui.c`, `shim_hosted_amiga_optional_net.c` ✅ (completed: 2026-11-26 23:53; cargo test --workspace 4439 (intended pin updates: join wait, AppMessage wait, AmigaGuide wait))
+- [x] 5.2.4 Green phase: ST-15 and ST-16 pass; ST-10..ST-14, ST-17, ST-18 still pass ✅ (completed: 2026-11-26 23:53; `make sdk-a500-fault-cleanup` OK on all ten probes: ST-15 'waiting / ***Break', rc fail, walker equal; ST-16 'waiting / break bit', rc ok; ST-10..ST-14, ST-17, ST-18, ST-20 still OK)
 
 ### Step 5.3: Implementation tests and hardening
 
-- [ ] 5.3.1 Write impl tests: the break bit at every listed wait (dropped under `cl_exiting`), the unchanged unbreakable sites, and the timer abort; update the `WaitPort`/`WaitIO` pins — `compiler/tests/amiga_fault_cleanup_impl_test.rs`, `amiga_exec_impl_test.rs`, `amiga_workbench_impl_test.rs`
-- [ ] 5.3.2 Phase gate: `make check`, `make sdk-a500-fault-cleanup`, and the gates that use the converted waits (`make sdk-a500-exec sdk-a500-gui sdk-a600-addons sdk-a1200-addons`)
+- [x] 5.3.1 Write impl tests: the break bit at every listed wait (dropped under `cl_exiting`), the unchanged unbreakable sites, and the timer abort; update the `WaitPort`/`WaitIO` pins — `compiler/tests/amiga_fault_cleanup_impl_test.rs`, `amiga_exec_impl_test.rs`, `amiga_workbench_impl_test.rs` ✅ (completed: 2026-11-26 23:53; 27 impl cases; pins updated only where the wait intentionally changed: the join wait (amiga_fault_cleanup_impl_test.rs), the AppMessage wait (amiga_workbench_impl_test.rs), the AmigaGuide wait (amiga_optional_impl_test.rs))
+- [x] 5.3.2 Phase gate: `make check`, `make sdk-a500-fault-cleanup`, and the gates that use the converted waits (`make sdk-a500-exec sdk-a500-gui sdk-a600-addons sdk-a1200-addons`) ✅ (completed: 2026-11-27 00:17; `make check` 4442; sdk-a500-fault-cleanup (10 probes), sdk-a500-gui, sdk-a600-addons, and also boing, sprites, paddle, text, assets, diskfont, sdk-a600-services, sdk-a1200-workbench green; sdk-a1200-addons failed once on its network echo step (Phase 5 does not touch sockets) and passed on rerun; sdk-a500-exec failed 2/2 on the AR-24 flush race and passes 2/2 with the AR-26 settle wait)
 
 **Deliverables**:
-- [ ] ST-15 and ST-16 green on the A500
+- [x] ST-15 and ST-16 green on the A500
 
 **Verify (gate)**: as 5.3.2
 

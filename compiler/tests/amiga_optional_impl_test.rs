@@ -783,7 +783,7 @@ fn the_network_guide_shim_pins_the_native_calls() {
         "OpenAmigaGuideAsyncA(&guide->guide, NULL)",
         "HTF_NOACTIVATE",
         "AmigaGuideSignal(guide->context)",
-        "Wait(signal_mask)",
+        "cl_wait_or_break(signal_mask)",
         "GetAmigaGuideMsg(guide->context)",
         "ReplyAmigaGuideMsg(message->message)",
         "CloseAmigaGuide(guide->context)",

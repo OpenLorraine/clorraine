@@ -7,7 +7,10 @@
 # with a window and a console, a disk font, or a layer, copper list, sprites,
 # an audio channel, and a sample) and then faults, or returns normally without
 # releasing them. Two probes fault inside a worker task, which the parent
-# reports. A test-only walker records the system state before and after
+# reports. Two more block in a wait; the gate presses Ctrl-C once in the
+# emulator window with xdotool, a few seconds after the go-marker the
+# startup-sequence writes for that probe. A missed press fails the case: the
+# probe runs to its end or never returns, and the end marker never appears. A test-only walker records the system state before and after
 # every probe; the runtime must leave it exactly as it found it, and each
 # probe must print its expected output and leave with its expected rc.
 #
@@ -34,12 +37,13 @@ rom_rel="${work_rel}/ks13.rom"
 container="clorraine-a500-fault-cleanup-$$"
 done_marker="fault-cleanup-done"
 
-# Each entry is `<probe>|<expected output>|<rc>|<chip>`. The expected output
-# is the probe's whole output, with `\n` between lines. The rc is `fail` when
-# the probe must leave with a failing return code (20, after a fault) and `ok`
-# when it must return normally. The memory column is `chip` for the one probe
-# whose free chip and total memory must also come back exactly (it loads only
-# ROM-resident code); every other probe uses `-`.
+# Each entry is `<probe>|<expected output>|<rc>|<memory>[|break]`. The
+# expected output is the probe's whole output, with `\n` between lines. The rc
+# is `fail` when the probe must leave with a failing return code (20, after a
+# fault or a break) and `ok` when it must return normally. The memory column
+# is `chip` for the one probe whose free chip and total memory must also come
+# back exactly (it loads only ROM-resident code); every other probe uses `-`.
+# A trailing `break` makes the gate press Ctrl-C once while the probe waits.
 CASES=(
     "display-fault|error E11211: index out of range|fail|-"
     "window-fault|error E11211: index out of range|fail|-"
@@ -49,6 +53,8 @@ CASES=(
     "clean-exit|clean|ok|-"
     "worker-fault|error E11210: integer division by zero|fail|-"
     "worker-fault-unjoined|error E11211: index out of range\nerror E11210: integer division by zero|fail|-"
+    "break-timer|waiting\n***Break|fail|-|break"
+    "break-own-mask|waiting\nbreak bit|ok|-|break"
 )
 
 if [ ! -x "${repo_dir}/target/debug/clc" ]; then
@@ -72,7 +78,7 @@ if [ ! -f "${AMIGA_DATA}/hdf/workbench-135.hdf" ]; then
     echo "a500-fault-cleanup-smoke: missing Workbench 1.3.5 HDF under ${AMIGA_DATA}/hdf" >&2
     exit 2
 fi
-for tool in sha1sum; do
+for tool in sha1sum xdotool; do
     command -v "${tool}" >/dev/null 2>&1 \
         || { echo "a500-fault-cleanup-smoke: missing host tool '${tool}'" >&2; exit 2; }
 done
@@ -130,6 +136,13 @@ sdk bash "/work/${work_rel}/build.sh"
         id="$(printf '%02d' "${index}")"
         name="${entry%%|*}"
         echo "SYS:fc/walker >DF1:${id}.wb before"
+        if [ "${entry##*|}" = "break" ]; then
+            # One unredirected line makes this Shell the console's last
+            # user, so the console's Ctrl-C reaches the probe it runs. The
+            # marker tells the host the probe is about to start.
+            echo "Echo \"fault cleanup: Ctrl-C probe ${id}\""
+            echo "Echo >DF1:${id}.go \"break-go-${id}\""
+        fi
         echo "SYS:fc/${name} >DF1:${id}.out"
         echo "IF FAIL"
         echo "  Echo >DF1:${id}.rc \"rc fail\""
@@ -197,6 +210,36 @@ docker run --rm --name "${container}" \
     > "${work}/fs-uae.log" 2>&1 &
 runner=$!
 
+# Press Ctrl-C once for each break probe, a few seconds after its marker
+# appears, so the probe has reached its wait. A second press could reach the
+# next command, so there is no retry; a missed break fails that case.
+index=0
+for entry in "${CASES[@]}"; do
+    index=$((index + 1))
+    [ "${entry##*|}" = "break" ] || continue
+    id="$(printf '%02d' "${index}")"
+    seen=0
+    for _ in $(seq 1 300); do
+        if grep -aq "break-go-${id}" "${repo_dir}/${adf_rel}" 2>/dev/null; then
+            seen=1
+            break
+        fi
+        sleep 1
+    done
+    if [ "${seen}" -ne 1 ]; then
+        echo "a500-fault-cleanup-smoke: ${entry%%|*}: the probe never started" >&2
+        break
+    fi
+    sleep 4
+    window="$(xdotool search --name 'FS-UAE' 2>/dev/null | tail -1 || true)"
+    if [ -n "${window}" ]; then
+        xdotool windowfocus --sync "${window}" || true
+        xdotool mousemove --window "${window}" 10 10 || true
+        sleep 0.3
+    fi
+    xdotool key ctrl+c
+done
+
 # The A500 reaches the Shell in roughly forty seconds; each probe and its two
 # walker runs take a few seconds more. The marker is the last line of the
 # startup-sequence, so its data on the capture disk means every probe ran.
@@ -248,12 +291,8 @@ index=0
 for entry in "${CASES[@]}"; do
     index=$((index + 1))
     id="$(printf '%02d' "${index}")"
-    name="${entry%%|*}"
-    rest="${entry#*|}"
-    want_output="$(printf '%b' "${rest%%|*}")"
-    rest="${rest#*|}"
-    want_rc="${rest%%|*}"
-    want_chip="${rest#*|}"
+    IFS='|' read -r name want_raw want_rc want_chip _ <<< "${entry}"
+    want_output="$(printf '%b' "${want_raw}")"
     before="$(captured "${id}.wb")"
     output="$(captured "${id}.out")"
     rc_line="$(captured "${id}.rc")"

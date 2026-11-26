@@ -288,7 +288,7 @@ void *cl_wait_app_message(void *port_handle)
     if (port == NULL) {
         return NULL;
     }
-    (void)WaitPort(port);
+    cl_wait_port_or_break(port);
     message = GetMsg(port);
     if (message != NULL && !cl_res_track(cl_release_app_message, message)) {
         ReplyMsg(message);
