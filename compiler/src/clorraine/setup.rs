@@ -150,9 +150,11 @@ pub fn validate_for(os: HostOs, selected: &Path, mode: Validation) -> Result<Too
             ),
         )
     })?;
-    let root = shown_path(os, root);
+    // The containment checks compare canonical spellings; people see the
+    // display spelling, which is also what the config stores.
+    let shown_root = shown_path(os, root.clone());
     if !root.is_dir() {
-        return Err(error(2, format!("--toolchain: '{}' is not a directory", root.display())));
+        return Err(error(2, format!("--toolchain: '{}' is not a directory", shown_root.display())));
     }
     let root_text = root
         .to_str()
@@ -161,12 +163,12 @@ pub fn validate_for(os: HostOs, selected: &Path, mode: Validation) -> Result<Too
         return Err(error(2, "--toolchain: canonical path must not contain control characters"));
     }
     let amiga = contained_directory(&root.join("m68k-amigaos"), &root)
-        .ok_or_else(|| error(2, format!("--toolchain: '{}' has no m68k-amigaos tree", root.display())))?;
+        .ok_or_else(|| error(2, format!("--toolchain: '{}' has no m68k-amigaos tree", shown_root.display())))?;
     for required in ["libnix", "ndk-include"] {
         if contained_directory(&amiga.join(required), &root).is_none() {
             return Err(error(
                 2,
-                format!("--toolchain: '{}' has no m68k-amigaos/{required}", root.display()),
+                format!("--toolchain: '{}' has no m68k-amigaos/{required}", shown_root.display()),
             ));
         }
     }
@@ -175,10 +177,9 @@ pub fn validate_for(os: HostOs, selected: &Path, mode: Validation) -> Result<Too
     let compiler = compiler.canonicalize().map_err(|_| {
         error(
             2,
-            format!("--toolchain: '{}' has no bin/{compiler_name}", root.display()),
+            format!("--toolchain: '{}' has no bin/{compiler_name}", shown_root.display()),
         )
     })?;
-    let compiler = shown_path(os, compiler);
     if !compiler.starts_with(&root) {
         return Err(error(2, "--toolchain: the compiler escapes the selected root"));
     }
@@ -191,13 +192,13 @@ pub fn validate_for(os: HostOs, selected: &Path, mode: Validation) -> Result<Too
     if !is_executable(&compiler) {
         return Err(error(
             2,
-            format!("--toolchain: '{}' is not executable", compiler.display()),
+            format!("--toolchain: '{}' is not executable", shown_path(os, compiler.clone()).display()),
         ));
     }
     if mode == Validation::Selection {
         return Ok(Toolchain {
-            root,
-            compiler,
+            root: shown_root,
+            compiler: shown_path(os, compiler),
             version: String::new(),
         });
     }
@@ -216,7 +217,7 @@ pub fn validate_for(os: HostOs, selected: &Path, mode: Validation) -> Result<Too
         ));
     }
     probe(&compiler)?;
-    Ok(Toolchain { root, compiler, version })
+    Ok(Toolchain { root: shown_root, compiler: shown_path(os, compiler), version })
 }
 
 /// Reads the stored toolchain, if any.

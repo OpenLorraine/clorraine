@@ -70,7 +70,7 @@ ruling. Only these expectations change; every other expectation in those suites 
 | ST-20 | `pe_file_version(<minimal PE32+ fixture whose VS_FIXEDFILEINFO is 3.2.35.0>)` | `Some((3, 2, 35))` | AR-14 |
 | ST-21 | `pe_file_version` of an ELF file; of a PE without the signature; of a 100-byte prefix of the fixture | `None` (each) | AR-14 |
 | ST-22 | `select::fs_uae_version_for(Windows, <path of the ST-20 fixture>)` (file not executable) | `Ok((3, 2, 35))` | AR-14 |
-| ST-23 | `fs_uae_version_for(Windows, …)` for a 3.1.66 fixture; for a file over 64 MiB | Error `older than the required 3.2.0`; error `cannot read the FS-UAE version from '<path>'` | AR-14 |
+| ST-23 | `fs_uae_version_for(Windows, …)` for a 3.1.66 fixture; for a file over 256 MiB | Error `older than the required 3.2.0`; error `cannot read the FS-UAE version from '<path>'` | AR-14, AR-58 |
 | ST-24 | `setup::validate_for(Windows, <root with bin/m68k-amigaos-gcc.exe, m68k-amigaos/libnix, m68k-amigaos/ndk-include>, Selection)`; root without the `.exe` | Compiler path ends `m68k-amigaos-gcc.exe`; error contains `has no bin/m68k-amigaos-gcc.exe` | AR-1, AR-10 |
 | ST-25 | `shell_word(Windows, "my app")`; `(Windows, "my-app")`; `(Unix, "it's")` | `"my app"`; `my-app`; `'it'\''s'` | AR-32 |
 | ST-26 | `new::launcher_for(Windows, invoked = r"C:\P\current\bin\clorraine.exe")`; `(Windows, invoked = "clorraine", PATH = <dir containing clorraine.exe>)` | Exactly the invoked path; `<dir>/clorraine.exe` | AR-32 |

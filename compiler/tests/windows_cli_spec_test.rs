@@ -495,7 +495,7 @@ fn should_reject_an_old_or_oversized_fs_uae_executable_on_windows() {
 
     let huge = scratch.path().join("huge.exe");
     let file = std::fs::File::create(&huge).expect("create the large file");
-    file.set_len(64 * 1024 * 1024 + 1).expect("grow the large file");
+    file.set_len(256 * 1024 * 1024 + 1).expect("grow the large file");
     let error = clc::clorraine::fs_uae_version_for(HostOs::Windows, &huge).unwrap_err();
     let expected = format!("cannot read the FS-UAE version from '{}'", huge.display());
     assert!(error.contains(&expected), "{error}");
