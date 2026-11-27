@@ -1,7 +1,7 @@
 # Release docs gate
 
 > **Document**: 00-index.md
-> **Status**: Planning Complete
+> **Status**: Done (2026-11-27)
 > **Implements**: T-06 (user request, 2026-11-27; no RD)
 > **Created**: 2026-11-27 19:13
 > **CodeOps Artifact Schema**: 1

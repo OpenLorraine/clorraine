@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-27 20:57
-> **Progress**: 21/23 tasks (91%)
+> **Last Updated**: 2026-11-28 00:04
+> **Progress**: 23/23 tasks (100%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -76,7 +76,7 @@ review record (AR-10).
 - [x] 4.1.2 `make release-docs-check VERSION=1.3.0`; fix each real docs defect or add an allowlist entry with a true reason ✅ (completed: 2026-11-27 20:19; no stale docs; 37 historical/third-party mentions allowlisted with reasons; checker fixes: blockquote markers, cell/heading-bounded phrase suggestions; replay at 54b0d9b6 reports the three missed v1.3.0 defects (home-page Windows command, both sidebar items))
 - [x] 4.1.3 **approval** Draft `docs/release-reviews/v1.3.0.md`; the maintainer walks the Before-tag items and confirms; tick them and fill `Reviewer` ✅ (completed: 2026-11-27 20:57; the maintainer confirmed the 12 Before-tag items; Reviewer @blendsdk)
 - [x] 4.1.4 Static pass; push (site fixes deploy); wait for the docs deploy ✅ (completed: 2026-11-27 20:57; static: 0 findings on ef51fd50; the last site commit 9e917a12 is deployed (github-pages deployment success))
-- [ ] 4.1.5 **approval** `make release-docs-check VERSION=1.3.0 LIVE=1`; the maintainer confirms the After-deploy items; tick them; live pass
-- [ ] 4.1.6 Roadmap row T-06 Done; close the plan
+- [x] 4.1.5 **approval** `make release-docs-check VERSION=1.3.0 LIVE=1`; the maintainer confirms the After-deploy items; tick them; live pass ✅ (completed: 2026-11-27 23:59; first live run: no findings on the deployed site, links or release body; the maintainer confirmed the After-deploy items; rerun: 0 findings, 0 unreachable (28cc9f9c))
+- [x] 4.1.6 Roadmap row T-06 Done; close the plan ✅ (completed: 2026-11-28 00:04; final gate: make check passed (4529 Rust, 120 release-docs tests); site-check passed at 9e917a12 (no site change since); release-docs-check VERSION=1.3.0 LIVE=1 exit 0)
 
 **Verify (gate)**: `make check && make site-check && make release-docs-check VERSION=1.3.0 LIVE=1`
