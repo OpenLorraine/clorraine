@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-27 19:13
-> **Progress**: 0/22 tasks (0%)
+> **Last Updated**: 2026-11-27 20:06
+> **Progress**: 2/23 tasks (9%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -22,8 +22,8 @@ review record (AR-10).
 > **Reference**: 03-01 · ST-1..ST-23 · AR-1..AR-5, AR-12..AR-14, AR-18..AR-20, AR-25..AR-28, AR-32
 
 ### Session 1.1: Specification tests
-- [ ] 1.1.1 Write the fixture builder and ST-1..ST-23 in `tools/release/tests/docs_check_spec.py`
-- [ ] 1.1.2 Red phase: run the suite; every case fails because the checker does not exist
+- [x] 1.1.1 Write the fixture builder and ST-1..ST-23 in `tools/release/tests/docs_check_spec.py` ✅ (completed: 2026-11-27 20:05; fixture builder + ST-1..ST-23)
+- [x] 1.1.2 Red phase: run the suite; every case fails because the checker does not exist ✅ (completed: 2026-11-27 20:06; suite fails to import: no docs_check module)
 
 ### Session 1.2: Implementation
 - [ ] 1.2.1 `tools/release/docs_rules.py`: manifest loader, `normalize()`, tokens, allowlist matching, dates, changelog sections, review-record parsing
