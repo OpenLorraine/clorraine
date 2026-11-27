@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-11-27 14:55
-> **Progress**: 3/55 tasks (5%)
+> **Progress**: 4/55 tasks (7%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -67,7 +67,7 @@ branch; only Phase 1 reaches `main` before the release (AR-40).
 
 ### Step 1.2: Implementation
 
-- [ ] 1.2.1 Implement the version guard — `tools/vscode/scripts/release-version.mjs` (03-02 §Version guard)
+- [x] 1.2.1 Implement the version guard — `tools/vscode/scripts/release-version.mjs` (03-02 §Version guard) ✅ (completed: 2026-11-27 14:55)
 - [ ] 1.2.2 Implement the workflow — `.github/workflows/publish-vscode.yml` (03-02 §Proposed Changes; look up and pin the artifact actions)
 - [ ] 1.2.3 Green phase: ST-1..ST-10 pass
 
