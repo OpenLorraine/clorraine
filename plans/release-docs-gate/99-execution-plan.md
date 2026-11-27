@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-11-27 20:57
-> **Progress**: 20/23 tasks (87%)
+> **Progress**: 21/23 tasks (91%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -75,7 +75,7 @@ review record (AR-10).
 - [x] 4.1.1 The real `tools/release/docs-manifest.json`: scan set, excluded files, platforms, install surfaces, required claims, banned wording, dated lines, changelogs, theme files ✅ (completed: 2026-11-27 20:19; real manifest: 9 files + site globs, 11 excluded, 2 platforms, 4 install surfaces, 13 required claims, 5 banned phrases, 1 dated line, 2 changelogs, 3 theme files)
 - [x] 4.1.2 `make release-docs-check VERSION=1.3.0`; fix each real docs defect or add an allowlist entry with a true reason ✅ (completed: 2026-11-27 20:19; no stale docs; 37 historical/third-party mentions allowlisted with reasons; checker fixes: blockquote markers, cell/heading-bounded phrase suggestions; replay at 54b0d9b6 reports the three missed v1.3.0 defects (home-page Windows command, both sidebar items))
 - [x] 4.1.3 **approval** Draft `docs/release-reviews/v1.3.0.md`; the maintainer walks the Before-tag items and confirms; tick them and fill `Reviewer` ✅ (completed: 2026-11-27 20:57; the maintainer confirmed the 12 Before-tag items; Reviewer @blendsdk)
-- [ ] 4.1.4 Static pass; push (site fixes deploy); wait for the docs deploy
+- [x] 4.1.4 Static pass; push (site fixes deploy); wait for the docs deploy ✅ (completed: 2026-11-27 20:57; static: 0 findings on ef51fd50; the last site commit 9e917a12 is deployed (github-pages deployment success))
 - [ ] 4.1.5 **approval** `make release-docs-check VERSION=1.3.0 LIVE=1`; the maintainer confirms the After-deploy items; tick them; live pass
 - [ ] 4.1.6 Roadmap row T-06 Done; close the plan
 

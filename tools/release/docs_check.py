@@ -224,12 +224,17 @@ class Static:
 
     def placeholder(self) -> None:
         entry = self.manifest["placeholder"]
-        for label, text in (("committed", committed_text(self.repo, entry["file"])),
-                            ("working-tree", self.raw(entry["file"]))):
-            count = sum(1 for line in (text or "").splitlines() if line.startswith(entry["line_prefix"]))
-            if count != 1:
-                self.add(entry["file"], "placeholder",
-                         f"the {label} file must keep exactly one '{entry['line_prefix']}' line (found {count})")
+        committed = committed_text(self.repo, entry["file"])
+        count = sum(1 for line in (committed or "").splitlines() if line.startswith(entry["line_prefix"]))
+        if count != 1:
+            self.add(entry["file"], "placeholder",
+                     f"the committed file must keep exactly one '{entry['line_prefix']}' line (found {count})")
+        # The release steps replace the line in an uncommitted copy, so the
+        # working tree may hold none; it must never hold more than one.
+        count = sum(1 for line in self.raw(entry["file"]).splitlines() if line.startswith(entry["line_prefix"]))
+        if count > 1:
+            self.add(entry["file"], "placeholder",
+                     f"the working-tree file has {count} '{entry['line_prefix']}' lines")
 
     def dated(self) -> None:
         for entry in self.manifest["dated"]:

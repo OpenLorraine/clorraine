@@ -47,6 +47,17 @@
 | SA-008 | MINOR | Missing SHA256SUMS → unreachable | Fixed (with P2-RV-005) |
 | SA-009 | MINOR | Transport and budget properties untested | Fixed: local-server transport tests, hop count, fake-clock budget, off-site sitemap location |
 
+## Review-fix re-review
+
+| ID | Severity | Finding | Disposition |
+|----|----------|---------|-------------|
+| FX-RV-001 | MAJOR | The working-tree placeholder count failed the documented step-7 state (table in an uncommitted copy) | Fixed: HEAD must hold exactly one; the working tree may hold none, never more than one; spec case added |
+| FX-RV-002 | MINOR | A stale release URL reported two or three times; pattern matched any repository | Fixed: release references anchored to OpenLorraine/clorraine; tags inside them reported once |
+| FX-RV-003 | MINOR | Blockquote markers after trailing spaces, blank lines or nesting survived | Fixed: markers blanked line by line before normalizing |
+| FX-RV-004 | MINOR | Six fixes without a failing control | Fixed: a test each; all seven re-run mutants now fail the suite |
+| FX-RV-005 | MINOR | A malformed deployment id crashed | Fixed: unreachable |
+| FX-RV-006 | MINOR | The grammar the site build reads was outside the deploy filters | Fixed: `editors/clorraine.tmLanguage.json` added to `docs.yml` and the freshness paths |
+
 ## Phase 3 gate
 
 `make check IMAGE=clorraine-sdk:windows-cli`: passed (4529 Rust tests; 66 release-docs tests at that point).

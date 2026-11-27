@@ -90,6 +90,22 @@ class LiveSpecTests(unittest.TestCase):
         code, out = self.live()
         self.assertEqual(code, 0, out)
 
+    def test_should_stop_when_other_deployed_inputs_changed(self) -> None:
+        for path in ("docs/amiga-sdk/coverage.md", "demo/poster.png", "editors/clorraine.tmLanguage.json"):
+            with self.subTest(path=path):
+                self.deployed = True
+                old = self.fx.head()
+                self.fx.write(path, f"changed {path}\n")
+                self.site.deploy(old, "success")
+                code, out = self.live()
+                self.assert_finding(code, out, "deploy-not-current", "site changed", exit_code=4)
+
+    def test_should_ignore_punctuation_after_a_release_url_in_text(self) -> None:
+        url = f"https://github.com/OpenLorraine/clorraine/releases/download/v{VERSION}/install.sh"
+        self.serve("status", self.page_with("status", f"<p>Download {url}.</p>"))
+        code, out = self.live()
+        self.assertEqual(code, 0, out)
+
     def test_should_stop_when_the_sitemap_lists_other_pages(self) -> None:
         self.site.extra_sitemap.append(SITE + "guide/old-page")
         code, out = self.live()

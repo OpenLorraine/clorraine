@@ -127,6 +127,13 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             self.send_response(302)
             self.send_header("Location", "/elsewhere")
             self.end_headers()
+        elif self.path == "/slow":
+            self.send_response(200)
+            self.end_headers()
+            for _ in range(12):
+                self.wfile.write(b"x")
+                self.wfile.flush()
+                __import__("time").sleep(0.25)
         elif self.path == "/big":
             self.send_response(200)
             self.end_headers()
@@ -172,6 +179,16 @@ class TransportTests(unittest.TestCase):
         self.assertEqual(docs_live.http_transport(self.base + "/ok", read_body=False).body, b"")
         self.assertEqual(docs_live.http_transport(self.base + "/ok").body, b"hello")
 
+    def test_should_stop_reading_a_slow_answer_at_the_request_limit(self) -> None:
+        saved = docs_live.REQUEST_TIMEOUT
+        docs_live.REQUEST_TIMEOUT = 1
+        try:
+            with self.assertRaises(Unreachable) as caught:
+                docs_live.http_transport(self.base + "/slow")
+            self.assertIn("longer than", str(caught.exception))
+        finally:
+            docs_live.REQUEST_TIMEOUT = saved
+
     def test_should_send_the_fixed_user_agent_and_no_credentials(self) -> None:
         docs_live.http_transport(self.base + "/ok")
         headers = {key.lower(): value for key, value in _Handler.seen[0].items()}
@@ -201,6 +218,32 @@ class GhTests(unittest.TestCase):
         self.assertEqual(code, 3, out)
         self.assertIn("not installed", out)
         code, out = self.run_live(lambda args: (1, "", "HTTP 502: Bad Gateway"))
+        self.assertEqual(code, 3, out)
+
+    def test_should_stop_calling_gh_when_the_run_budget_is_spent(self) -> None:
+        now = [0.0]
+        docs_live.clock = lambda: now[0]
+        calls = []
+
+        def slow_gh(args):
+            calls.append(args)
+            now[0] += 700
+            return self.site.gh(args)
+
+        try:
+            code, out = self.run_live(slow_gh)
+        finally:
+            docs_live.clock = __import__("time").monotonic
+        self.assertEqual(code, 3, out)
+        self.assertIn("budget", out)
+        self.assertEqual(len(calls), 1, calls)
+
+    def test_should_treat_a_deployment_without_a_numeric_id_as_unreachable(self) -> None:
+        import json
+        from docs_live_fixture import DEPLOYMENTS, api
+        self.site.deploy(self.fx.head(), "success")
+        self.site.gh_answers[api(DEPLOYMENTS)] = (0, json.dumps([{"id": None, "sha": self.fx.head()}]), "")
+        code, out = self.fx.run("--live", fetcher=self.site.transport, gh=self.site.gh)
         self.assertEqual(code, 3, out)
 
     def test_should_treat_a_non_json_answer_as_unreachable(self) -> None:

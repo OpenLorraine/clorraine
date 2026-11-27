@@ -40,7 +40,8 @@ MAX_RETRY_AFTER = 60
 PLAIN_HOSTS = ("openlorraine.github.io", "discord.com", "marketplace.visualstudio.com")
 MARKETPLACE = "marketplace.visualstudio.com"
 CDN_SUFFIX = ".vsassets.io"
-SITE_PATHS = ("site", "docs/amiga-sdk", "demo/poster.png", ".github/workflows/docs.yml")
+SITE_PATHS = ("site", "docs/amiga-sdk", "demo/poster.png", "editors/clorraine.tmLanguage.json",
+              ".github/workflows/docs.yml")
 # The pages VitePress leaves out of the build (`srcExclude` in the site config).
 NOT_PAGES = ("site/README.md", "site/public/**")
 OWNER_REPO = "OpenLorraine/clorraine"
@@ -107,7 +108,10 @@ def http_transport(url: str, read_body: bool = True, deadline: float | None = No
                 chunks.append(chunk)
             return Response(answer.status, dict(answer.headers), b"".join(chunks))
     except urllib.error.HTTPError as error:
-        return Response(error.code, dict(error.headers or {}), b"")
+        try:
+            return Response(error.code, dict(error.headers or {}), b"")
+        finally:
+            error.close()
 
 
 def gh_runner(args: list[str], timeout: float = REQUEST_TIMEOUT) -> tuple[int, str, str]:
@@ -289,7 +293,10 @@ class Live:
             return False
         deployment = deployments[0]
         sha = str(deployment.get("sha", ""))
-        statuses = self.gh_json(["api", f"repos/{OWNER_REPO}/deployments/{int(deployment.get('id', 0))}/statuses?per_page=1"])
+        number = deployment.get("id")
+        if not isinstance(number, int) or isinstance(number, bool):
+            raise Unreachable(f"GitHub answered a deployment without a numeric id: {number!r}")
+        statuses = self.gh_json(["api", f"repos/{OWNER_REPO}/deployments/{number}/statuses?per_page=1"])
         state = statuses[0].get("state") if isinstance(statuses, list) and statuses and isinstance(statuses[0], dict) else None
         if state != "success":
             self.outcome.not_deployed = Finding(where, "deploy-not-current",

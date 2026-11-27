@@ -243,6 +243,14 @@ class StaticSpecTests(unittest.TestCase):
         code, out = self.fx.run()
         self.assert_finding(code, out, "changelog", "CHANGELOG.md", "days old")
 
+    def test_should_accept_the_published_notes_copy_in_the_working_tree(self) -> None:
+        notes = self.fx.read("RELEASE-NOTES.md")
+        filled = notes.replace("PENDING-CHECKSUMS: the release steps replace this line with the asset table.",
+                               "| install.sh | 1 | abc |")
+        (self.fx.root / "RELEASE-NOTES.md").write_text(filled)
+        code, out = self.fx.run()
+        self.assertEqual(code, 0, out)
+
     def test_should_check_the_placeholder_in_the_working_tree_too(self) -> None:
         notes = self.fx.read("RELEASE-NOTES.md")
         (self.fx.root / "RELEASE-NOTES.md").write_text(notes + "PENDING-CHECKSUMS: an uncommitted second line.\n")
@@ -301,9 +309,11 @@ class StaticSpecTests(unittest.TestCase):
         self.assert_finding(code, out, "unreadable", "site/status.md")
 
     def test_should_require_a_release_link_to_name_the_whole_version(self) -> None:
-        self.fx.write("site/guide/roadmap.md", "# Roadmap\n\nSee releases/tag/v1.3 for details.\n")
+        self.fx.write("site/guide/roadmap.md",
+                      "# Roadmap\n\nSee https://github.com/OpenLorraine/clorraine/releases/tag/v1.3 for details.\n")
         code, out = self.fx.run()
         self.assert_finding(code, out, "stale-version", "releases/tag/v1.3")
+        self.assertEqual(out.count("[stale-version]"), 1, out)
 
     def test_should_classify_markdown_files_whatever_the_extension_case(self) -> None:
         self.fx.write("CONTRIBUTING.MD", "# Contributing\n")

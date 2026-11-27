@@ -27,7 +27,11 @@ V_TOKEN = re.compile(
 # A release asset name such as `clorraine-1.3.0-x86_64-linux.tar.gz`.
 ASSET_TOKEN = re.compile(r"(?<![\w.\-])clorraine-(?P<num>\d+\.\d+\.\d+)(?![\w]|\.\d)")
 # A release tag inside a Clorraine release URL must name the whole version.
-RELEASE_REF = re.compile(r"releases/(?:tag|download)/v(?P<num>\d+\.\d+(?:\.\d+)?)(?![\w]|\.\d)")
+RELEASE_REF = re.compile(
+    r"(?i:openlorraine/clorraine)/releases/(?:tag|download)/v(?P<num>\d+\.\d+(?:\.\d+)?)(?![\w]|\.\d)"
+)
+# Blockquote markers at line starts, nested ones included.
+QUOTE_MARKERS = re.compile(r"^[ \t]*(?:>[ \t]?)+", re.M)
 EMAIL = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
 MONTHS = {
     name: index
@@ -262,7 +266,6 @@ _NORMALIZE = re.compile(
     r"|(?P<entity>&(?:#\d+|#x[0-9A-Fa-f]+|[A-Za-z][A-Za-z0-9]*);)"
     r"|(?P<mark>\*\*|__|`)"
     r"|(?P<zwsp>\u200b)"
-    r"|(?P<quote>(?:^|\n)[ \t]*>[ \t]?)"
     r"|(?P<space>\s+)"
 )
 
@@ -271,6 +274,8 @@ def normalize(raw: str) -> Normalized:
     """Prose for comparison: links become `label url`, entities are decoded,
     emphasis, code and blockquote markers and zero-width spaces are dropped,
     and every whitespace run becomes one space."""
+    # Blank the markers in place so offsets and line numbers stay the same.
+    raw = QUOTE_MARKERS.sub(lambda m: " " * len(m.group()), raw)
     starts = [0] + [m.end() for m in re.finditer("\n", raw)]
 
     def line(offset: int) -> int:
@@ -299,7 +304,7 @@ def normalize(raw: str) -> Normalized:
             emit(f"{label} {match.group('url')}", match.start())
         elif kind == "entity":
             emit(html.unescape(match.group()).replace("\u200b", ""), match.start())
-        elif kind in ("space", "quote"):
+        elif kind == "space":
             emit(" ", match.start())
         position = match.end()
     for offset in range(position, len(raw)):
@@ -343,11 +348,14 @@ def tokens(text: str) -> list[Token]:
         Token(m.group(), m.start(), m.end(), m.group("num"), None, True)
         for m in ASSET_TOKEN.finditer(text)
     ]
-    found += [
+    refs = [
         Token(m.group(), m.start(), m.end(), m.group("num"), None, True)
         for m in RELEASE_REF.finditer(text)
     ]
-    return sorted(found, key=lambda token: token.start)
+    # A tag inside a release URL is reported once, as the URL.
+    found = [token for token in found
+             if not any(ref.start <= token.start and token.end <= ref.end for ref in refs)]
+    return sorted(found + refs, key=lambda token: token.start)
 
 
 def phrase_spans(text: str, phrase: str) -> list[tuple[int, int]]:

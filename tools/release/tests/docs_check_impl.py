@@ -29,6 +29,10 @@ class NormalizeTests(unittest.TestCase):
     def test_should_drop_blockquote_markers_at_line_starts(self) -> None:
         self.assertEqual(normalize("> **Preview.** The v1.3.0\n> builds are out; a > b").text,
                          "Preview. The v1.3.0 builds are out; a > b")
+        self.assertEqual(normalize("claim  \n> continued\n\n> > nested").text, "claim continued nested")
+
+    def test_should_read_a_link_label_that_wraps_one_line(self) -> None:
+        self.assertEqual(normalize("[Known\nlimitations](x.md)").text, "Known limitations x.md")
 
     def test_should_map_every_character_to_its_source_line(self) -> None:
         text = normalize("one\n\n**two**\nthree")
@@ -50,8 +54,12 @@ class TokenTests(unittest.TestCase):
         self.assertFalse(found[0].is_current("1.4.0"))
 
     def test_should_find_versions_in_urls_and_asset_names(self) -> None:
-        text = "releases/download/v1.2.0/install.sh and clorraine-1.2.0-x86_64-linux.tar.gz"
-        self.assertEqual(self.names(text), ["releases/download/v1.2.0", "v1.2.0", "clorraine-1.2.0"])
+        text = ("https://github.com/OpenLorraine/clorraine/releases/download/v1.2.0/install.sh and "
+                "clorraine-1.2.0-x86_64-linux.tar.gz, but other/repo/releases/tag/v1.0.0")
+        self.assertEqual(self.names(text), ["OpenLorraine/clorraine/releases/download/v1.2.0", "clorraine-1.2.0", "v1.0.0"])
+
+    def test_should_find_a_token_after_a_hyphen(self) -> None:
+        self.assertEqual(self.names("release-v1.2.0"), ["v1.2.0"])
 
     def test_should_skip_words_that_only_contain_a_v(self) -> None:
         self.assertEqual(self.names("nv1.2 dev1.2.3 x.v1.2 FS-UAE 3.2.35"), [])
