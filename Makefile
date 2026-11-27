@@ -78,14 +78,14 @@ toolchain-check:
 	TMPDIR="$(CURDIR)/build/tmp" CODEOPS_TMPDIR="$(CURDIR)/build/tmp" $(DOCKER_MAKE) exec CMD="cargo build --workspace"
 	TMPDIR="$(CURDIR)/build/tmp" CODEOPS_TMPDIR="$(CURDIR)/build/tmp" bash tools/setup/toolchain_check.sh "$(TOOLCHAIN)"
 
-# Build a local candidate archive, VSIX, installer, and checksums.
-# Docker and Node are maintainer build dependencies; the output stays in
-# build/dist and nothing is tagged, published, or uploaded.
+# Build a local candidate: the Linux archive, the Windows zip, both
+# installers, and checksums. Docker is the maintainer build dependency; the
+# output stays in build/dist and nothing is tagged, published, or uploaded.
+# The VS Code extension is published to the Marketplace by its own workflow,
+# whose version check needs tools/vscode/package.json to match this version.
 dist:
 	@test "$(VERSION)" = "$$(sed -n 's/^[[:space:]]*"version": "\([^"]*\)".*/\1/p' tools/vscode/package.json | head -1)" || { echo "dist: VERSION $(VERSION) does not match tools/vscode/package.json"; exit 1; }
 	$(DOCKER_MAKE) exec CMD="cargo build --release --workspace"
-	@command -v node >/dev/null || { echo "dist: Node.js 22+ is required on PATH"; exit 2; }
-	$(MAKE) vscode-package
 	rm -rf build/dist/stage
 	mkdir -p "build/dist/stage/clorraine-$(VERSION)-x86_64-linux/bin"
 	cp target/release/clc target/release/clorraine target/release/clorraine-lsp \
@@ -104,7 +104,7 @@ dist:
 	printf '# Clorraine %s\n' "$(VERSION)" >"build/dist/wstage/clorraine-$(VERSION)-x86_64-windows/README.md"
 	bash tools/setup/package.sh --stage "build/dist/stage/clorraine-$(VERSION)-x86_64-linux" \
 		--windows-stage "build/dist/wstage/clorraine-$(VERSION)-x86_64-windows" \
-		--output build/dist --version "$(VERSION)" --vsix "build/vscode/clorraine-$(VERSION).vsix"
+		--output build/dist --version "$(VERSION)"
 
 # Check the pins, versions, layout, and checksums of an existing candidate.
 dist-verify:
@@ -120,11 +120,16 @@ dist-check:
 	cd tools/setup && PYTHONPATH=tests python3 -m unittest acceptance_spec acceptance_windows_spec acceptance_windows_impl test_retained_inputs -v
 
 # Run the full local acceptance from an exact candidate and pinned inputs.
+# PUBLISH_RUN and PUBLISH_SHA256 name the run that published the extension;
+# EDITOR_CONFIRMED=1 records the in-person VS Code check.
+ACCEPTANCE_USAGE = usage: make acceptance CANDIDATE=DIR TOOLCHAIN_ARCHIVE=PATH KICKSTART=PATH PUBLISH_RUN=ID PUBLISH_SHA256=HEX [EDITOR_CONFIRMED=1]
 acceptance:
-	@test -n "$(CANDIDATE)" || { echo 'usage: make acceptance CANDIDATE=DIR TOOLCHAIN_ARCHIVE=PATH KICKSTART=PATH'; exit 2; }
-	@test -n "$(TOOLCHAIN_ARCHIVE)" || { echo 'usage: make acceptance CANDIDATE=DIR TOOLCHAIN_ARCHIVE=PATH KICKSTART=PATH'; exit 2; }
-	@test -n "$(KICKSTART)" || { echo 'usage: make acceptance CANDIDATE=DIR TOOLCHAIN_ARCHIVE=PATH KICKSTART=PATH'; exit 2; }
-	bash tools/setup/acceptance.sh "$(CANDIDATE)" "$(TOOLCHAIN_ARCHIVE)" "$(KICKSTART)"
+	@test -n "$(CANDIDATE)" || { echo '$(ACCEPTANCE_USAGE)'; exit 2; }
+	@test -n "$(TOOLCHAIN_ARCHIVE)" || { echo '$(ACCEPTANCE_USAGE)'; exit 2; }
+	@test -n "$(KICKSTART)" || { echo '$(ACCEPTANCE_USAGE)'; exit 2; }
+	@test -n "$(PUBLISH_RUN)" -a -n "$(PUBLISH_SHA256)" || { echo '$(ACCEPTANCE_USAGE)'; exit 2; }
+	PUBLISH_RUN="$(PUBLISH_RUN)" PUBLISH_SHA256="$(PUBLISH_SHA256)" EDITOR_CONFIRMED="$(EDITOR_CONFIRMED)" \
+		bash tools/setup/acceptance.sh "$(CANDIDATE)" "$(TOOLCHAIN_ARCHIVE)" "$(KICKSTART)"
 
 # Validate one recorded acceptance record against the exact local candidate.
 acceptance-check:

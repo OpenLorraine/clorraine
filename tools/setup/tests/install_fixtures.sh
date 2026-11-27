@@ -226,24 +226,15 @@ write_checksums() {
 
 # Replaces the installer template pins and writes an executable fixture.
 assemble_installer() {
-    local template="$1" output="$2" version="$3" archive="$4" vsix="${5:-}"
-    local base bytes digest vsix_base vsix_bytes vsix_digest
+    local template="$1" output="$2" version="$3" archive="$4"
+    local base bytes digest
     base="$(basename "$archive")"
     bytes="$(wc -c <"$archive")"
     digest="$(sha256sum "$archive" | awk '{print $1}')"
-    if [ -z "$vsix" ]; then
-        vsix="$(dirname "$output")/clorraine-$version.vsix"
-        printf 'fixture vsix for %s\n' "$version" >"$vsix"
-    fi
-    vsix_base="$(basename "$vsix")"
-    vsix_bytes="$(wc -c <"$vsix")"
-    vsix_digest="$(sha256sum "$vsix" | awk '{print $1}')"
     python3 - "$template" "$output" "$version" "$base" "https://example.invalid/$base" "$bytes" "$digest" \
-        "$vsix_base" "https://example.invalid/$vsix_base" "$vsix_bytes" "$vsix_digest" \
         "$repo/examples/amiga/hello-intro.clo" <<'PY'
 import sys
-(template, output, version, name, url, size, digest,
- vsix_name, vsix_url, vsix_size, vsix_digest, hello_amiga) = sys.argv[1:]
+(template, output, version, name, url, size, digest, hello_amiga) = sys.argv[1:]
 text = open(template, encoding="utf-8").read()
 for token, value in {
     "@VERSION@": version,
@@ -251,10 +242,6 @@ for token, value in {
     "@ARCHIVE_URL@": url,
     "@ARCHIVE_BYTES@": size,
     "@ARCHIVE_SHA256@": digest,
-    "@VSIX_NAME@": vsix_name,
-    "@VSIX_URL@": vsix_url,
-    "@VSIX_BYTES@": vsix_size,
-    "@VSIX_SHA256@": vsix_digest,
 }.items():
     text = text.replace(token, value)
 intro = open(hello_amiga, encoding="utf-8").read().rstrip("\n")
@@ -301,9 +288,6 @@ if [ "${FAKE_CURL_STATUS:-0}" -ne 0 ]; then
     exit "${FAKE_CURL_STATUS}"
 fi
 source=${FAKE_CURL_SOURCE:-}
-case "$url" in
-    *.vsix) [ -n "${FAKE_CURL_SOURCE_VSIX:-}" ] && source=$FAKE_CURL_SOURCE_VSIX ;;
-esac
 [ -n "$source" ] || exit 0
 cp "$source" "$out"
 if [ "${FAKE_CURL_TRUNCATE:-0}" = 1 ]; then

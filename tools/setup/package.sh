@@ -4,8 +4,9 @@
 # `make dist` stages the Linux and Windows release trees and calls this script;
 # `make dist-verify` calls it with `--verify`. The script never downloads, tags,
 # publishes, or uploads anything. It validates both stage layouts, writes
-# release documents, packages the Linux archive and the Windows zip, copies the
-# VSIX, assembles both installers, and covers all five assets with SHA256SUMS.
+# release documents, packages the Linux archive and the Windows zip, assembles
+# both installers, and covers the four assets with SHA256SUMS. The VS Code
+# extension is published to the Marketplace, not shipped with the release.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -16,11 +17,10 @@ hello_amiga="$here/../../examples/amiga/hello-intro.clo"
 usage() {
     cat <<'EOF'
 Usage: package.sh --stage DIR --windows-stage DIR --output DIR --version VERSION
-                  --vsix FILE [--hello-amiga FILE]
+                  [--hello-amiga FILE]
        package.sh --verify --output DIR --version VERSION
 
-Build the Linux archive, the Windows zip, the VSIX copy, both installers, and
-SHA256SUMS. --hello-amiga replaces the Amiga hello both installers embed.
+Build the Linux archive, the Windows zip, both installers, and SHA256SUMS. --hello-amiga replaces the Amiga hello both installers embed.
 --verify checks an existing candidate instead of writing one.
 EOF
 }
@@ -34,7 +34,6 @@ stage=
 windows_stage=
 output=
 version=
-vsix=
 verify=0
 
 while [ "$#" -gt 0 ]; do
@@ -44,7 +43,6 @@ while [ "$#" -gt 0 ]; do
         --hello-amiga) hello_amiga=$2; shift 2 ;;
         --output) output=$2; shift 2 ;;
         --version) version=$2; shift 2 ;;
-        --vsix) vsix=$2; shift 2 ;;
         --verify) verify=1; shift ;;
         -h|--help) usage; exit 0 ;;
         *) die "unknown option '$1'" ;;
@@ -55,7 +53,6 @@ done
 [ -n "$version" ] || die "--version is required"
 
 archive_name="clorraine-$version-x86_64-linux.tar.gz"
-vsix_name="clorraine-$version.vsix"
 installer_name="install.sh"
 zip_name="clorraine-$version-x86_64-windows.zip"
 powershell_name="install.ps1"
@@ -185,20 +182,14 @@ EOF
 
 # Replaces the installer template pins.
 assemble_installer() {
-    local archive=$1 vsix=$2 target=$3 bytes digest vsix_name vsix_bytes vsix_digest
+    local archive=$1 target=$2 bytes digest
     bytes="$(wc -c <"$archive")"
     digest="$(sha256sum "$archive" | awk '{print $1}')"
-    vsix_name="$(basename "$vsix")"
-    vsix_bytes="$(wc -c <"$vsix")"
-    vsix_digest="$(sha256sum "$vsix" | awk '{print $1}')"
     python3 - "$template" "$target" "$version" "$(basename "$archive")" \
         "https://github.com/OpenLorraine/clorraine/releases/download/v$version/$(basename "$archive")" \
-        "$bytes" "$digest" "$vsix_name" \
-        "https://github.com/OpenLorraine/clorraine/releases/download/v$version/$vsix_name" \
-        "$vsix_bytes" "$vsix_digest" "$hello_amiga" <<'PY'
+        "$bytes" "$digest" "$hello_amiga" <<'PY'
 import sys
-(template, target, version, name, url, size, digest,
- vsix_name, vsix_url, vsix_size, vsix_digest, hello_amiga) = sys.argv[1:]
+(template, target, version, name, url, size, digest, hello_amiga) = sys.argv[1:]
 text = open(template, encoding="utf-8").read()
 # The Amiga hello is embedded in a quoted here-document after the pins, so
 # nothing in it is substituted; only its terminator line must not occur.
@@ -211,10 +202,6 @@ for token, value in {
     "@ARCHIVE_URL@": url,
     "@ARCHIVE_BYTES@": size,
     "@ARCHIVE_SHA256@": digest,
-    "@VSIX_NAME@": vsix_name,
-    "@VSIX_URL@": vsix_url,
-    "@VSIX_BYTES@": vsix_size,
-    "@VSIX_SHA256@": vsix_digest,
 }.items():
     text = text.replace(token, value)
 text = text.replace("@HELLO_AMIGA_SOURCE@", intro)
@@ -250,15 +237,12 @@ PY
 # single-quoted here-string, so nothing in it expands; a line that starts with
 # the closing '@ would end it early. The script must stay ASCII.
 assemble_powershell_installer() {
-    local archive=$1 vsix=$2 target=$3
+    local archive=$1 target=$2
     python3 - "$powershell_template" "$target" "$version" "$(basename "$archive")" \
         "https://github.com/OpenLorraine/clorraine/releases/download/v$version/$(basename "$archive")" \
-        "$(wc -c <"$archive")" "$(sha256sum "$archive" | awk '{print $1}')" "$(basename "$vsix")" \
-        "https://github.com/OpenLorraine/clorraine/releases/download/v$version/$(basename "$vsix")" \
-        "$(wc -c <"$vsix")" "$(sha256sum "$vsix" | awk '{print $1}')" "$hello_amiga" <<'PY'
+        "$(wc -c <"$archive")" "$(sha256sum "$archive" | awk '{print $1}')" "$hello_amiga" <<'PY'
 import re, sys
-(template, target, version, name, url, size, digest,
- vsix_name, vsix_url, vsix_size, vsix_digest, hello_amiga) = sys.argv[1:]
+(template, target, version, name, url, size, digest, hello_amiga) = sys.argv[1:]
 text = open(template, encoding="utf-8").read()
 intro = open(hello_amiga, encoding="utf-8").read().rstrip("\n")
 if any(line.startswith("'@") for line in intro.splitlines()):
@@ -269,10 +253,6 @@ for token, value in {
     "@ARCHIVE_URL@": url,
     "@ARCHIVE_BYTES@": size,
     "@ARCHIVE_SHA256@": digest,
-    "@VSIX_NAME@": vsix_name,
-    "@VSIX_URL@": vsix_url,
-    "@VSIX_BYTES@": vsix_size,
-    "@VSIX_SHA256@": vsix_digest,
 }.items():
     text = text.replace(token, value)
 text = text.replace("@HELLO_AMIGA_SOURCE@", intro)
@@ -285,12 +265,10 @@ open(target, "w", encoding="ascii", newline="\n").write(text)
 PY
 }
 
-# Builds the five candidate assets.
+# Builds the four candidate assets.
 build_candidate() {
     [ -n "$stage" ] || die "--stage is required"
     [ -n "$windows_stage" ] || die "--windows-stage is required"
-    [ -n "$vsix" ] || die "--vsix is required"
-    [ -f "$vsix" ] || die "missing VSIX: $vsix"
     check_stage "$stage"
     check_windows_stage "$windows_stage"
     write_release_documents "$stage"
@@ -299,18 +277,16 @@ build_candidate() {
     local archive="$output/$archive_name"
     rm -f "$archive"
     tar -czf "$archive" -C "$(dirname "$stage")" "$(basename "$stage")"
-    cp "$vsix" "$output/$vsix_name"
-    assemble_installer "$archive" "$output/$vsix_name" "$output/$installer_name"
+    assemble_installer "$archive" "$output/$installer_name"
     rm -f "$output/$zip_name"
     build_windows_zip "$windows_stage" "$output/$zip_name"
-    assemble_powershell_installer "$output/$zip_name" "$output/$vsix_name" "$output/$powershell_name"
+    assemble_powershell_installer "$output/$zip_name" "$output/$powershell_name"
     (
         cd "$output"
-        sha256sum "$archive_name" "$zip_name" "$vsix_name" "$installer_name" "$powershell_name" >SHA256SUMS
+        sha256sum "$archive_name" "$zip_name" "$installer_name" "$powershell_name" >SHA256SUMS
     )
     printf 'package: wrote %s\n' "$output/$archive_name"
     printf 'package: wrote %s\n' "$output/$zip_name"
-    printf 'package: wrote %s\n' "$output/$vsix_name"
     printf 'package: wrote %s\n' "$output/$installer_name"
     printf 'package: wrote %s\n' "$output/$powershell_name"
     printf 'package: wrote %s\n' "$output/SHA256SUMS"
@@ -319,20 +295,29 @@ build_candidate() {
 # Checks the asset set, checksums, archive layout, installer pins, and links.
 verify_candidate() {
     local archive="$output/$archive_name"
-    local target="$output/$vsix_name"
     local installer="$output/$installer_name"
     local sums="$output/SHA256SUMS"
     local bytes digest lines top entry
 
     [ -f "$archive" ] || die "missing archive: $archive"
-    [ -f "$target" ] || die "missing VSIX: $target"
     [ -f "$installer" ] || die "missing installer: $installer"
     [ -f "$output/$zip_name" ] || die "missing Windows archive: $output/$zip_name"
     [ -f "$output/$powershell_name" ] || die "missing installer: $output/$powershell_name"
     [ -f "$sums" ] || die "missing checksums: $sums"
-    [ "$(awk 'END { print NR }' "$sums")" = 5 ] || die "SHA256SUMS must cover exactly five assets"
-    for name in "$archive_name" "$zip_name" "$vsix_name" "$installer_name" "$powershell_name"; do
+    [ "$(awk 'END { print NR }' "$sums")" = 4 ] || die "SHA256SUMS must cover exactly four assets"
+    for name in "$archive_name" "$zip_name" "$installer_name" "$powershell_name"; do
         grep -Fq "  $name" "$sums" || die "SHA256SUMS does not cover $name"
+    done
+    # A VSIX, archive, or installer left from an older candidate must not ride
+    # along with this one; the stage folders `make dist` keeps there are fine.
+    local path name
+    for path in "$output"/*; do
+        [ -f "$path" ] || continue
+        name=$(basename "$path")
+        case "$name" in
+            "$archive_name"|"$zip_name"|"$installer_name"|"$powershell_name"|SHA256SUMS) ;;
+            *.vsix|*.tar.gz|*.zip|install*) die "unexpected file in the candidate: $name" ;;
+        esac
     done
     local failed
     failed="$(cd "$output" && sha256sum -c --quiet SHA256SUMS 2>/dev/null | sed -n 's/: FAILED.*$//p' | head -1)" || true
@@ -344,10 +329,6 @@ verify_candidate() {
     grep -Fq "VERSION='$version'" "$installer" || die "installer pin mismatch: VERSION"
     grep -Fq "ARCHIVE_BYTES='$bytes'" "$installer" || die "installer pin mismatch: ARCHIVE_BYTES"
     grep -Fq "ARCHIVE_SHA256='$digest'" "$installer" || die "installer pin mismatch: ARCHIVE_SHA256"
-    bytes="$(wc -c <"$target")"
-    digest="$(sha256sum "$target" | awk '{print $1}')"
-    grep -Fq "VSIX_BYTES='$bytes'" "$installer" || die "installer pin mismatch: VSIX_BYTES"
-    grep -Fq "VSIX_SHA256='$digest'" "$installer" || die "installer pin mismatch: VSIX_SHA256"
     if grep -Fq "@HELLO_AMIGA_SOURCE@" "$installer" ||
         ! grep -Fxq "module demo.HelloIntro;" "$installer"; then
         die "installer does not embed the Amiga hello"
@@ -388,7 +369,7 @@ verify_candidate() {
 
 # Checks the Windows zip layout and the PowerShell installer pins.
 verify_windows_assets() {
-    local zip="$output/$zip_name" ps1="$output/$powershell_name" vsix_file="$output/$vsix_name"
+    local zip="$output/$zip_name" ps1="$output/$powershell_name"
     # The release README and NOTICE are written by this script, so the zip's
     # copies must match a fresh rendering for this version.
     local documents
@@ -430,9 +411,6 @@ PY
     grep -Fxq "\$script:ArchiveBytes = '$(wc -c <"$zip")'" "$ps1" || die "install.ps1 pin mismatch: ArchiveBytes"
     grep -Fxq "\$script:ArchiveSha256 = '$(sha256sum "$zip" | awk '{print $1}')'" "$ps1" ||
         die "install.ps1 pin mismatch: ArchiveSha256"
-    grep -Fxq "\$script:VsixBytes = '$(wc -c <"$vsix_file")'" "$ps1" || die "install.ps1 pin mismatch: VsixBytes"
-    grep -Fxq "\$script:VsixSha256 = '$(sha256sum "$vsix_file" | awk '{print $1}')'" "$ps1" ||
-        die "install.ps1 pin mismatch: VsixSha256"
     if grep -Eq '@[A-Z0-9_]+@' "$ps1" || ! grep -Fxq "module demo.HelloIntro;" "$ps1"; then
         die "install.ps1 does not embed the Amiga hello"
     fi
@@ -442,7 +420,7 @@ PY
     # Every other byte, pin, and line end must be what the template gives.
     local rebuilt
     rebuilt="$(mktemp "${TMPDIR:-/tmp}/clorraine-install-ps1.XXXXXXXX")"
-    if ! (assemble_powershell_installer "$zip" "$vsix_file" "$rebuilt") ||
+    if ! (assemble_powershell_installer "$zip" "$rebuilt") ||
         ! cmp -s "$rebuilt" "$ps1"; then
         rm -f "$rebuilt"
         die "install.ps1 differs from the template assembled with this candidate"
