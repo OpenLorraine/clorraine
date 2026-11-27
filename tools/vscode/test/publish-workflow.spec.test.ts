@@ -52,6 +52,15 @@ function job(name: string): string[] {
   return block(all, name, 2, jobsStart + 1);
 }
 
+/** The lines of the step named `name` in a job body, from its `- name:` line to the next step. */
+function step(body: string[], name: string): string[] {
+  const start = body.findIndex((line) => line.trim() === `- name: ${name}`);
+  assert.ok(start >= 0, `missing step ${name}`);
+  const level = indent(body[start]);
+  const end = body.findIndex((line, i) => i > start && indent(line) === level && line.trim().startsWith("- "));
+  return body.slice(start, end < 0 ? body.length : end);
+}
+
 /** Non-blank, non-comment lines directly under a block, trimmed. */
 function entries(body: string[]): string[] {
   return body.map((line) => line.trim()).filter((line) => line !== "" && !line.startsWith("#"));
@@ -101,10 +110,16 @@ test("should publish only from a tag after re-checking the built archive", () =>
   assert.ok(flat.includes("needs: build"), "publish needs build");
   const condition = flat.find((line) => line.startsWith("if:"));
   assert.ok(condition, "publish has an if: condition");
-  assert.ok(condition.includes("!inputs.dry_run"), "condition excludes dry runs");
-  assert.ok(condition.includes("startsWith(github.ref, 'refs/tags/v')"), "condition requires a release tag");
+  assert.equal(
+    condition,
+    "if: ${{ !inputs.dry_run && startsWith(github.ref, 'refs/tags/v') }}",
+    "publishing requires both an unticked dry run and a release tag",
+  );
   const text = publish.join("\n");
   const hashCheck = text.indexOf("needs.build.outputs.sha256");
+  const verify = step(publish, "Verify the archive").join("\n");
+  assert.ok(verify.includes("needs.build.outputs.sha256"), "the verify step reads the built hash");
+  assert.ok(verify.includes("sha256sum") && verify.includes("exit 1"), "the verify step hashes the download and fails on a mismatch");
   const install = text.indexOf("npm ci --ignore-scripts");
   const publishLine = publish.find((line) => line.includes("vsce publish"));
   assert.ok(hashCheck >= 0, "publish compares the downloaded archive with the built hash");

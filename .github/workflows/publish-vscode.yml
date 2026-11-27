@@ -25,6 +25,13 @@ on:
 permissions:
   contents: read
 
+# An explicit `shell: bash` runs every step with `-eo pipefail` (the runner
+# default is `bash -e`), so a failed `sha256sum` in a pipeline fails the step
+# instead of yielding an empty hash.
+defaults:
+  run:
+    shell: bash
+
 concurrency:
   group: publish-vscode
   cancel-in-progress: false
@@ -109,6 +116,10 @@ jobs:
           EXPECTED: ${{ needs.build.outputs.sha256 }}
           VERSION: ${{ needs.build.outputs.version }}
         run: |
+          if ! [[ $EXPECTED =~ ^[0-9a-f]{64}$ ]]; then
+            echo "publish: the build job reported no valid SHA-256" >&2
+            exit 1
+          fi
           actual=$(sha256sum "dist/clorraine-$VERSION.vsix" | cut -d' ' -f1)
           if [ "$actual" != "$EXPECTED" ]; then
             echo "publish: archive SHA-256 $actual does not match the build ($EXPECTED)" >&2
