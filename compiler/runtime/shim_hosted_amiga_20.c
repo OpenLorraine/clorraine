@@ -528,13 +528,19 @@ void cl_remove_app_window(void *handle)
     }
 }
 
-/* Capture a public screen by name to a native CSCR file. */
+/* Capture a public screen by name to a native CSCR file. The capture may be
+ * the program's first Intuition call, so the library is opened here when no
+ * screen or window has opened it yet; public screens need V36. */
 BOOL cl_save_public_screen(char *name, char *path)
 {
     struct Screen *screen;
     BOOL ok;
 
     if (name == NULL || path == NULL) {
+        return FALSE;
+    }
+    if (cl_lib_open(&IntuitionBase, "intuition.library", 33) == NULL ||
+        IntuitionBase->LibNode.lib_Version < 36) {
         return FALSE;
     }
     screen = LockPubScreen((STRPTR)name);

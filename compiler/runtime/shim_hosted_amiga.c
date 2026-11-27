@@ -2973,6 +2973,11 @@ void cl_show_alert(char *body)
             return;
         }
     }
+    /* The alert may be the program's first Intuition call, before any screen
+     * or window has opened the library. Without it there is no alert. */
+    if (cl_lib_open(&IntuitionBase, "intuition.library", 33) == NULL) {
+        return;
+    }
     message = (char *)AllocMem(CL_ALERT_MESSAGE_MAX, MEMF_CLEAR);
     if (message == NULL) {
         return;

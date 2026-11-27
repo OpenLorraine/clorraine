@@ -5,6 +5,11 @@
 # classes, starts Workbench with the test fixture, runs the ILBM datatypes
 # viewer, a TCP echo round-trip, and an AmigaGuide async context. The network
 # leg uses FS-UAE's emulated bsdsocket.library with a host echo peer.
+#
+# The crash-safety probes run after those legs, each redirected to its own
+# file, and the startup-sequence then writes done.txt. A probe that crashes or
+# hangs the machine stops everything after it, so the gate waits for done.txt,
+# then for the HD tree to settle, and reports every missing file by name.
 set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -33,12 +38,30 @@ xvfb_display=":${xvfb_num}"
 xvfb_container="clorraine-$(basename "${BASH_SOURCE[0]}" .sh)-xvfb-$$"
 peer_pid=""
 
+# The crash-safety probes, in run order. Each entry is
+# `<probe>|<result file>|<expected line>`; the Makefile recipe builds every
+# probe from examples/robustness/crash-safety/ before this script runs.
+PROBES=(
+    "pubscreen-wb|pub.txt|pub: ok unknown false wb true"
+)
+
+probe_bin() {
+    printf 'build/clorraine/%s/hosted-amiga/%s' "$1" "$1"
+}
+
 for bin in \
     build/clorraine/optional-datatypes/hosted-amiga/optional-datatypes \
     build/clorraine/optional-network/hosted-amiga/optional-network \
     build/clorraine/optional-guide/hosted-amiga/optional-guide; do
     if [ ! -f "${bin}" ]; then
         echo "a1200-addons-smoke: missing binary: ${bin}" >&2
+        exit 2
+    fi
+done
+for entry in "${PROBES[@]}"; do
+    bin="$(probe_bin "${entry%%|*}")"
+    if [ ! -f "${bin}" ]; then
+        echo "a1200-addons-smoke: missing probe: ${bin}" >&2
         exit 2
     fi
 done
@@ -91,6 +114,10 @@ cp "${start_bin}" "${hd}/workbench-start"
 chmod +x "${hd}/workbench-start"
 cp examples/amiga/assets/clorraine.ilbm "${hd}/image.ilbm"
 cp examples/amiga/hello.guide "${hd}/hello.guide"
+for entry in "${PROBES[@]}"; do
+    name="${entry%%|*}"
+    cp "$(probe_bin "${name}")" "${hd}/${name}"
+done
 
 {
     wb_assigns "${hd}"
@@ -101,6 +128,11 @@ CNEXT:workbench-start >CNEXT:wb-start.txt
 CNEXT:optional-datatypes >CNEXT:dt.txt
 CNEXT:optional-guide >CNEXT:guide.txt
 EOF
+    for entry in "${PROBES[@]}"; do
+        IFS='|' read -r name file _ <<< "${entry}"
+        echo "CNEXT:${name} >CNEXT:${file}"
+    done
+    echo "Echo >CNEXT:done.txt \"done\""
 } > "${hd}/s/startup-sequence"
 
 (
@@ -191,14 +223,30 @@ docker run --rm --name "${container}" --network host \
     > "${work}/fs-uae.log" 2>&1 &
 runner=$!
 
-for _ in $(seq 1 90); do
+# done.txt is the last line of the startup-sequence, so it means every leg and
+# probe ran. A redirect creates its file when the command starts, so wait for
+# the HD tree to stay unchanged for three seconds before stopping.
+for _ in $(seq 1 240); do
     sleep 1
-    if [ -f "${hd}/dt.txt" ] && [ -f "${hd}/net.txt" ] &&
-       [ -f "${hd}/guide.txt" ]; then
-        break
-    fi
+    [ -f "${hd}/done.txt" ] && break
 done
-sleep 1
+# A file can vanish while find walks the live HD; that only changes the sum.
+tree_sum() {
+    { find "${hd}" -type f -printf '%P %s %T@\n' 2>/dev/null || true; } | sort | sha1sum
+}
+last_sum=""
+stable=0
+for _ in $(seq 1 30); do
+    sum="$(tree_sum)"
+    if [ "${sum}" = "${last_sum}" ]; then
+        stable=$((stable + 1))
+        [ "${stable}" -ge 3 ] && break
+    else
+        stable=0
+        last_sum="${sum}"
+    fi
+    sleep 1
+done
 docker stop -t 8 "${container}" >/dev/null 2>&1 || true
 wait "${runner}" 2>/dev/null || true
 kill "${peer_pid}" >/dev/null 2>&1 || true
@@ -233,4 +281,34 @@ if ! grep -aq '^startwb 1 screen [1-9a-f]' "${hd}/wb-start.txt"; then
     exit 1
 fi
 
-echo "a1200-addons-smoke: OK (${expected_dt}; ${expected_net}; ${expected_guide})"
+# Every probe is checked, so one red run names all of its failures.
+status=0
+for entry in "${PROBES[@]}"; do
+    IFS='|' read -r name file expected <<< "${entry}"
+    if [ ! -f "${hd}/${file}" ]; then
+        echo "a1200-addons-smoke: ${name}: missing ${file}" >&2
+        status=1
+        continue
+    fi
+    actual="$(line "${hd}/${file}")"
+    if [ "${actual}" != "${expected}" ]; then
+        echo "a1200-addons-smoke: ${name}: ${file} mismatch" >&2
+        echo "  expected: ${expected}" >&2
+        echo "  actual:   ${actual}" >&2
+        status=1
+    fi
+done
+if [ "$(head -c 4 "${hd}/pub.cscr" 2>/dev/null)" != "CSCR" ]; then
+    echo "a1200-addons-smoke: pubscreen-wb: pub.cscr is not a CSCR capture" >&2
+    status=1
+fi
+if [ ! -f "${hd}/done.txt" ]; then
+    echo "a1200-addons-smoke: missing done.txt (a probe crashed or hung)" >&2
+    tail -20 "${work}/fs-uae.log" >&2 || true
+    status=1
+fi
+if [ "${status}" -ne 0 ]; then
+    exit 1
+fi
+
+echo "a1200-addons-smoke: OK (${expected_dt}; ${expected_net}; ${expected_guide}; ${#PROBES[@]} crash-safety probes)"

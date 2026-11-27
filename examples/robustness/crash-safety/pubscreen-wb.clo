@@ -1,0 +1,15 @@
+// Crash-safety probe for a running Workbench: two public-screen captures are
+// the program's first Intuition calls. An unknown screen name must fail cleanly;
+// the Workbench screen must then be captured to CNEXT:pub.cscr. The gate checks
+// the printed line and the capture's header.
+module robustness.crash_safety.pubscreen_wb;
+
+import { savePublicScreen } from std.amiga.workbench;
+import { println } from std.io;
+
+func main(): i32 {
+    let unknown: bool = savePublicScreen("ClNoSuchScreen", "CNEXT:none.cscr");
+    let wb: bool = savePublicScreen("Workbench", "CNEXT:pub.cscr");
+    println($"pub: ok unknown {unknown} wb {wb}");
+    return 0;
+}

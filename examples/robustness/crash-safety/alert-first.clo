@@ -1,0 +1,15 @@
+// Crash-safety probe: an alert shown before the program has opened any screen
+// or window. Nothing has opened intuition.library yet, so the runtime must open
+// it for the alert, or skip the alert when the library cannot be opened. The
+// lines around the call show that the program came back.
+module robustness.crash_safety.alert_first;
+
+import { showAlert } from std.amiga.intuition;
+import { println } from std.io;
+
+func main(): i32 {
+    println("calling");
+    showAlert("probe alert");
+    println("back");
+    return 0;
+}

@@ -1,0 +1,15 @@
+// Crash-safety probe: a public-screen capture as the program's first Intuition
+// call. Nothing has opened intuition.library yet, so the runtime must open it
+// for the capture, or report failure when the library cannot be opened. The
+// screen name does not exist, so the capture itself fails either way.
+module robustness.crash_safety.pubscreen_first;
+
+import { savePublicScreen } from std.amiga.workbench;
+import { println } from std.io;
+
+func main(): i32 {
+    println("calling");
+    let ok: bool = savePublicScreen("ClNoSuchScreen", "RAM:probe");
+    println($"saved {ok}");
+    return 0;
+}

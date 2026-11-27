@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-27 08:36 (preflight fixes applied; no task started)
-> **Progress**: 0/39 tasks (0%)
+> **Last Updated**: 2026-11-27 09:09
+> **Progress**: 9/39 tasks (23%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -53,6 +53,10 @@ Feature phases 1–4 follow the specification-first order. Phase 5 adds no behav
 > current means progress is invisible after crashes, context resets, or session handoffs.
 
 Rules for every task:
+- Commits (`--auto-commit`): one commit and push per phase, after the phase gate and review, as
+  the previous plan did, so `main` never carries a red spec test. Gates run with
+  `IMAGE=clorraine-sdk:windows-cli` until the shared `clorraine-sdk:dev` image gains the
+  `x86_64-pc-windows-gnu` target (the pending Windows CLI post-merge rebuild).
 - Source, tests, and doc comments restate rationale in plain language. They never cite AR/ST/ASM/
   DEF identifiers or `plans/` (AGENTS.md).
 - Probe and scratch output goes under `build/tmp`.
@@ -65,35 +69,41 @@ Rules for every task:
 
 ## Phase 1: Intuition on demand; A1200 probe mechanism
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill)_
+> **Phase baseline tree**: 0eeddfe050652e4ccc204c497905d5c86e2b8fa6 (plan base commit `f4f5fbf4`; scope mode strict)
 > **Reasoning**: medium — two small shim fixes plus a gate extension that later phases reuse.
 
 ### Step 1.1: Specification tests
 
 **Reference**: [07](07-testing-strategy.md) ST-1, ST-2, ST-4 · [03-04 §A1200 leg](03-04-gates-and-docs.md#a1200-leg-sdk-a1200-addons) · AR-2, AR-13, AR-14
 
-- [ ] 1.1.1 [spec-author] Write the probes for ST-1, ST-2, ST-4 — `examples/robustness/crash-safety/{alert-first,pubscreen-first,pubscreen-wb}.clo`
-- [ ] 1.1.2 [spec-author] Write the `vamos` spec test for ST-1 and ST-2 (both profiles where listed, the Intuition-off option, the leak pattern, SDK skip) — `compiler/tests/amiga_crash_safety_spec_test.rs`
-- [ ] 1.1.3 [spec-author] Extend the A1200 gate: build the probes in the `sdk-a1200-addons` recipe, install them, run them after the existing legs, the `done.txt` marker with the bounded settle, and the ST-4 check — `docker/scripts/a1200-addons-smoke.sh`, `Makefile`
-- [ ] 1.1.4 Red phase: `cargo test --test amiga_crash_safety_spec_test` and `make sdk-a1200-addons`; record ST-1/ST-2 failing (A6=0 crash) and ST-4 failing, with the existing legs still passing
+- [x] 1.1.1 [spec-author] Write the probes for ST-1, ST-2, ST-4 — `examples/robustness/crash-safety/{alert-first,pubscreen-first,pubscreen-wb}.clo` ✅ (completed: 2026-11-27 08:56)
+- [x] 1.1.2 [spec-author] Write the `vamos` spec test for ST-1 and ST-2 (both profiles where listed, the Intuition-off option, the leak pattern, SDK skip) — `compiler/tests/amiga_crash_safety_spec_test.rs` ✅ (completed: 2026-11-27 08:56)
+- [x] 1.1.3 [spec-author] Extend the A1200 gate: build the probes in the `sdk-a1200-addons` recipe, install them, run them after the existing legs, the `done.txt` marker with the bounded settle, and the ST-4 check — `docker/scripts/a1200-addons-smoke.sh`, `Makefile` ✅ (completed: 2026-11-27 08:56)
+- [x] 1.1.4 Red phase: `cargo test --test amiga_crash_safety_spec_test` and `make sdk-a1200-addons`; record ST-1/ST-2 failing (A6=0 crash) and ST-4 failing, with the existing legs still passing ✅ (completed: 2026-11-27 08:56)
+
+**Red-phase evidence (2026-11-27 08:56)**: `amiga_crash_safety_spec_test` 0 passed, 2 failed — both probes crash
+calling through A6=0 (`Invalid Memory Access (pc=ffffffaa)`). `make sdk-a1200-addons`: dt, net, guide, and
+the Workbench start pass; `pubscreen-wb: pub.txt mismatch` (empty), `pub.cscr is not a CSCR capture`,
+`missing done.txt`. The spec-test tasks are verified by this red run (the spec test and the gate build and
+fail as specified); `make check` cannot pass until the green phase.
 
 ### Step 1.2: Implementation
 
 **Reference**: [03-01 §Intuition on demand](03-01-intuition-and-clipboard.md#intuition-on-demand) · AR-2
 
-- [ ] 1.2.1 Open Intuition on demand in `cl_show_alert` — `compiler/runtime/shim_hosted_amiga.c`
-- [ ] 1.2.2 Open Intuition on demand in `cl_save_public_screen`, with the V36 check — `compiler/runtime/shim_hosted_amiga_20.c`
-- [ ] 1.2.3 Green phase: ST-1, ST-2, ST-4 pass; the existing A1200 legs still pass
+- [x] 1.2.1 Open Intuition on demand in `cl_show_alert` — `compiler/runtime/shim_hosted_amiga.c` ✅ (completed: 2026-11-27 08:58)
+- [x] 1.2.2 Open Intuition on demand in `cl_save_public_screen`, with the V36 check — `compiler/runtime/shim_hosted_amiga_20.c` ✅ (completed: 2026-11-27 08:58)
+- [x] 1.2.3 Green phase: ST-1, ST-2, ST-4 pass; the existing A1200 legs still pass ✅ (completed: 2026-11-27 08:58; spec 2/2, `sdk-a1200-addons` OK with the probe)
 
 ### Step 1.3: Implementation tests and hardening
 
 **Reference**: [07 §Implementation Tests](07-testing-strategy.md#implementation-tests-edge-cases-internals)
 
-- [ ] 1.3.1 Write the Intuition impl tests; update any pin whose text intentionally changed — `compiler/tests/amiga_crash_safety_impl_test.rs`
-- [ ] 1.3.2 Phase gate: `make check`, `make sdk-a1200-addons`, `make sdk-a1200-workbench`
+- [x] 1.3.1 Write the Intuition impl tests; update any pin whose text intentionally changed — `compiler/tests/amiga_crash_safety_impl_test.rs` ✅ (completed: 2026-11-27 09:08; `make check` 4522 tests)
+- [x] 1.3.2 Phase gate: `make check`, `make sdk-a1200-addons`, `make sdk-a1200-workbench` ✅ (completed: 2026-11-27 09:09; `make check IMAGE=clorraine-sdk:windows-cli` 4522 tests, `sdk-a1200-addons` OK, `sdk-a1200-workbench` OK)
 
 **Deliverables**:
-- [ ] ST-1, ST-2, ST-4 green; the A1200 gate runs probes after its legs with a completion marker
+- [x] ST-1, ST-2, ST-4 green; the A1200 gate runs probes after its legs with a completion marker
 
 **Task verify**: `make check` (4442 tests observed 2026-11-27)
 **Verify (gate)**: `make check && make sdk-a1200-addons && make sdk-a1200-workbench`
