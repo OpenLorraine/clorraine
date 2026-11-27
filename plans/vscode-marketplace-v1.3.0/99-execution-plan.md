@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-27 17:28
-> **Progress**: 46/55 tasks (83%)
+> **Last Updated**: 2026-11-27 17:52
+> **Progress**: 47/55 tasks (85%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -212,7 +212,7 @@ branch; only Phase 1 reaches `main` before the release (AR-40).
 **Reference**: 03-05 §Release procedure · AR-10, AR-17, AR-19, AR-20, AR-28, AR-31, AR-39, AR-40
 
 - [x] 7.1.1 Confirm the user holds other pushes to `main`; rebase `release-1.3.0` onto `origin/main`; `make verify` with the Windows-capable image on the private Xvfb display ✅ (completed: 2026-11-27 17:28; `make verify` all legs passed on 68419c7e; no rebase needed)
-- [ ] 7.1.2 **approval** Push tag `v1.3.0`; dispatch `publish-vscode` from the tag with `dry_run=true` and check the summary
+- [x] 7.1.2 **approval** Push tag `v1.3.0`; dispatch `publish-vscode` from the tag with `dry_run=true` and check the summary ✅ (completed: 2026-11-27 17:52; tag v1.3.0 at d3f5cf84; dry run 46037087599: build success, publish skipped, VSIX 1.3.0 audited, 41,948 bytes)
 - [ ] 7.1.3 **approval** Dispatch from the tag with `dry_run=false`; record run ID and SHA-256; confirm the gallery lists 1.3.0
 - [ ] 7.1.4 `make dist` and `make dist-verify`; record the four asset hashes in `RELEASE-NOTES.md` (checksums section)
 - [ ] 7.1.5 Linux acceptance with `PUBLISH_RUN`/`PUBLISH_SHA256`; user confirms the editor; rerun with `EDITOR_CONFIRMED=1`; `make acceptance-check`
