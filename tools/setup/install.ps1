@@ -279,9 +279,20 @@ function Invoke-Native([string]$File, [string[]]$Arguments = @(), [string]$Worki
     $stderr = $process.StandardError.ReadToEndAsync()
     if ($TimeoutSeconds -gt 0 -and -not $process.WaitForExit($TimeoutSeconds * 1000)) {
         # taskkill /T also stops the children, which may hold the output pipes.
-        & (Join-Path $env:SystemRoot 'System32\taskkill.exe') /T /F /PID $process.Id *> $null
+        # It reports on stderr when a process has already gone; under the
+        # caller's Stop preference that would end the installer, so its
+        # output is ignored here.
+        try {
+            $ErrorActionPreference = 'Continue'
+            & (Join-Path $env:SystemRoot 'System32\taskkill.exe') /T /F /PID $process.Id *> $null
+        } catch {
+        }
         $process.WaitForExit()
-        return [pscustomobject]@{ Code = -1; Out = $stdout.Result; Err = $stderr.Result; TimedOut = $true }
+        # A grandchild outside the killed tree can still hold a pipe open, so
+        # the output is collected for a few seconds at most.
+        $out = if ($stdout.Wait(5000)) { $stdout.Result } else { '' }
+        $err = if ($stderr.Wait(5000)) { $stderr.Result } else { '' }
+        return [pscustomobject]@{ Code = -1; Out = $out; Err = $err; TimedOut = $true }
     }
     $process.WaitForExit()
     return [pscustomobject]@{ Code = $process.ExitCode; Out = $stdout.Result; Err = $stderr.Result; TimedOut = $false }
@@ -1504,11 +1515,12 @@ function Invoke-Editor([string]$Launcher, [string[]]$Arguments) {
 
 # Seconds an editor command may run before it is stopped. Installing the
 # extension talks to the Marketplace, and a stuck proxy must not hang the
-# installer; CLORRAINE_EDITOR_TIMEOUT overrides the bound with a positive
-# whole number of seconds.
+# installer; CLORRAINE_EDITOR_TIMEOUT overrides the bound with a whole number
+# of seconds from 1 to 86400 (one day), which keeps the millisecond wait in
+# range.
 function Get-EditorTimeout {
     $seconds = 0
-    if ([int]::TryParse([string]$env:CLORRAINE_EDITOR_TIMEOUT, [ref]$seconds) -and $seconds -gt 0) { return $seconds }
+    if ([int]::TryParse([string]$env:CLORRAINE_EDITOR_TIMEOUT, [ref]$seconds) -and $seconds -gt 0 -and $seconds -le 86400) { return $seconds }
     return 300
 }
 
@@ -1532,7 +1544,7 @@ function Install-VSCodeExtension([hashtable]$Options, [bool]$Interactive) {
     if ($Options['NoVSCode']) { return 'skipped' }
     $editor = Find-VSCode
     if (-not $editor) {
-        if ($Options['VSCode']) { Write-Warn "VS Code was not found; install it, then run: code --install-extension $script:ExtensionId" }
+        if ($Options['VSCode']) { Write-Warn "VS Code was not found; install VS Code, then run: code --install-extension $script:ExtensionId" }
         return 'unavailable'
     }
     $listed = Invoke-Editor $editor @('--list-extensions')
@@ -1836,7 +1848,14 @@ function Invoke-Main([hashtable]$Options) {
             }
         }
         if ($interactive) { Write-Step 5 'Your first Amiga project' }
-        $summary.VSCode = Install-VSCodeExtension $Options $interactive
+        # The editor step never stops the install: an unexpected error is
+        # reported like any other failure.
+        try {
+            $summary.VSCode = Install-VSCodeExtension $Options $interactive
+        } catch {
+            Write-Warn ('could not set up the VS Code extension: ' + (Get-SafeText $_.Exception.Message -SingleLine) + "; run: code --install-extension $script:ExtensionId")
+            $summary.VSCode = 'failed'
+        }
         if ($summary.Toolchain -or (& $opt 'Starter')) { $summary.Starter = New-Starter $Options $interactive }
         Write-Summary $summary
     } finally {

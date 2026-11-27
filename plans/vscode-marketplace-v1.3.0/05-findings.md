@@ -8,6 +8,14 @@
 | RV-003 | 3 | MINOR | compiler/tests/first_run_spec_test.rs | fixed |
 | RV-004 | 3 | MINOR | compiler/tests/first_run_spec_test.rs | accepted |
 | RV-005 | 3 | MINOR | compiler/templates/starter/README.md | fixed |
+| RV-006 | 4 | MINOR | tools/setup/install.ps1 | fixed |
+| RV-007 | 4 | MINOR | tools/setup/install.ps1 | fixed |
+| RV-008 | 4 | MINOR | tools/setup/install.ps1 | fixed |
+| RV-009 | 4 | MINOR | tools/setup/install.ps1 | fixed |
+| RV-010 | 4 | MINOR | tools/setup/tests | fixed |
+| RV-011 | 4 | MINOR | tools/setup/install.sh | accepted |
+| SA-002 | 4 | MINOR | tools/setup/install.ps1 | fixed |
+| SA-003 | 4 | MINOR | tools/setup/install.ps1 | fixed |
 
 Phase 1 review: correctness reviewer and security auditor dispatched as `general` agents
 (catalog roles unavailable in this session); no critical or major findings; both minor findings
@@ -25,3 +33,13 @@ outdated assertion message; the starter README and the Linux guide now say the t
 Clorraine extension. Accepted: the starter spec checks that both task commands are the extension
 variable rather than scanning for every absolute path (no other field can hold a program path).
 Gate: `make check` passed (4,529 Rust tests plus the Python, installer, bench, and fuzz suites).
+
+Phase 4 review: correctness reviewer and security auditor (`general` agents); no critical or major
+findings. Fixed: taskkill output can no longer end the Windows installer under its Stop preference,
+and the VS Code step has a backstop that turns any unexpected error into a warning (RV-006/SA-002);
+the editor bound is capped at 86400 s on both platforms, keeping the Windows millisecond wait in
+range (RV-007/SA-003); output after a kill is collected for at most 5 s (RV-008); the Windows
+"not found" message matches the spec (RV-009); both suites now cover a failed uninstall (RV-010).
+Accepted: Ctrl-C does not reach a Linux Marketplace install already under way; it stops at the
+bound, and the trade-off is documented in the installer (RV-011). Re-verified: Linux spec 199 and
+impl 40 checks; Windows spec 37/37 and impl 37/37.

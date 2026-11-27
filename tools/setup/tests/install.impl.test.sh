@@ -178,7 +178,7 @@ editor_timeout_parses_the_override() {
     local value actual
     actual=$(unset CLORRAINE_EDITOR_TIMEOUT; editor_timeout)
     if [ "$actual" = 300 ]; then pass; else fail "default bound: $actual"; fi
-    for value in '' abc 0 00 -5 '1 2' 1.5; do
+    for value in '' abc 0 00 -5 '1 2' 1.5 86401 99999999999999999999; do
         actual=$(CLORRAINE_EDITOR_TIMEOUT="$value" editor_timeout)
         if [ "$actual" = 300 ]; then pass; else fail "bound for '$value': $actual"; fi
     done

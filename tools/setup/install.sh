@@ -616,14 +616,19 @@ EOF
 
 # Seconds an editor command may run before it is stopped. Installing the
 # extension talks to the Marketplace, and a stuck proxy must not hang the
-# installer; CLORRAINE_EDITOR_TIMEOUT overrides the bound with a positive
-# whole number of seconds.
+# installer; CLORRAINE_EDITOR_TIMEOUT overrides the bound with a whole number
+# of seconds from 1 to 86400 (one day), as on Windows.
+#
+# The editor runs in timeout's own process group, so Ctrl-C ends the installer
+# but not a Marketplace install already under way; it stops by itself at the
+# bound. Running it in the foreground group would lose the bound's kill of
+# the editor's child processes.
 editor_timeout() {
     local seconds=${CLORRAINE_EDITOR_TIMEOUT:-}
     case "$seconds" in
         ''|*[!0-9]*) seconds=300 ;;
     esac
-    [ "$seconds" -gt 0 ] 2>/dev/null || seconds=300
+    { [ "$seconds" -gt 0 ] && [ "$seconds" -le 86400 ]; } 2>/dev/null || seconds=300
     printf '%s\n' "$seconds"
 }
 

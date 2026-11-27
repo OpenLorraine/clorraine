@@ -921,7 +921,7 @@ Test-Case 'should not treat codium as VS Code' {
     Assert-That ($case.Result.Code -eq 0) $case.Result.All
     Assert-That ($case.Result.Out -match 'STATE=unavailable') $case.Result.All
     Assert-That ($case.Log.Count -eq 0) "codium ran: $($case.Log -join '; ')"
-    Assert-That ($case.Result.All.Contains('VS Code was not found; install it, then run: code --install-extension openlorraine.clorraine')) $case.Result.All
+    Assert-That ($case.Result.All.Contains('VS Code was not found; install VS Code, then run: code --install-extension openlorraine.clorraine')) $case.Result.All
 }
 
 Test-Case 'should only suggest -VSCode in a non-interactive run without it' {
@@ -965,6 +965,15 @@ Test-Case 'should explain a failed reinstall and carry on' {
     Assert-That ($case.Result.Out -match 'STATE=failed') $case.Result.All
     Assert-That ($case.Result.All.Contains('the Clorraine extension was removed but could not be reinstalled from the Marketplace; run: code --install-extension openlorraine.clorraine')) $case.Result.All
     Assert-That ($case.Result.Out.Contains('VS Code    extension not installed; run: code --install-extension openlorraine.clorraine')) $case.Result.All
+}
+
+Test-Case 'should keep the extension and stop when the uninstall fails' {
+    $root = New-CaseRoot
+    $case = Invoke-VSCodeCase $root (New-FakeEditor $root) '@{}' @{ FAKE_INSTALLED = '1'; FAKE_UNINSTALL_FAIL = '1' }
+    Assert-That ($case.Result.Code -eq 0) $case.Result.All
+    Assert-That ($case.Result.Out -match 'STATE=failed') $case.Result.All
+    Assert-That (($case.Log -join '|') -eq '--uninstall-extension openlorraine.clorraine') "calls: $($case.Log -join '|')"
+    Assert-That ($case.Result.All.Contains('could not update the VS Code extension; run: code --install-extension openlorraine.clorraine --force')) $case.Result.All
 }
 
 Test-Case 'should stop a hanging editor at the bound and carry on' {

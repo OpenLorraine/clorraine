@@ -666,7 +666,7 @@ Test-Case 'should take the editor bound only from a positive whole number' {
     try {
         Remove-Item Env:\CLORRAINE_EDITOR_TIMEOUT -ErrorAction SilentlyContinue
         Assert-That ((Get-EditorTimeout) -eq 300) "default: $(Get-EditorTimeout)"
-        foreach ($value in 'abc', '0', '-5', '1.5', ' ') {
+        foreach ($value in 'abc', '0', '-5', '1.5', ' ', '86401', '2147484', '2147483647') {
             $env:CLORRAINE_EDITOR_TIMEOUT = $value
             Assert-That ((Get-EditorTimeout) -eq 300) "bound for '$value': $(Get-EditorTimeout)"
         }

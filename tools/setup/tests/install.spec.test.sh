@@ -563,6 +563,20 @@ vscode_failed_update_is_explained() {
     check_contains "$root/stdout" "VS Code    extension not installed; run: code --install-extension openlorraine.clorraine" "failed summary"
 }
 
+# A failed uninstall keeps the extension, stops the step, and says how to update.
+vscode_failed_uninstall_keeps_the_extension() {
+    fixture
+    local status
+    status="$(FAKE_EDITOR_READY=1 FAKE_EXTENSION_INSTALLED=1 FAKE_UNINSTALL_FAIL=1 FAKE_EDITOR_LOG="$root/editor.log" \
+        run_installer "$root" "$installer" --prefix "$prefix" \
+        --toolchain "$root/fake-toolchain" --no-emulator \
+        --archive "$archive" --checksums "$checksums")"
+    check_status 0 "$status" "failed uninstall is not fatal"
+    check_lines "$root/editor.log" "--uninstall-extension openlorraine.clorraine" "no install after a failed uninstall"
+    check_contains "$root/stderr" "could not update the VS Code extension; run: code --install-extension openlorraine.clorraine --force" \
+        "update warning"
+}
+
 # A hanging editor is stopped at the bound and the install carries on.
 vscode_install_is_bounded() {
     fixture
@@ -710,6 +724,7 @@ vscode_extension_is_installed_from_the_marketplace
 vscode_extension_is_updated_from_the_marketplace
 vscode_is_left_alone_with_no_vscode
 vscode_failed_update_is_explained
+vscode_failed_uninstall_keeps_the_extension
 vscode_install_is_bounded
 installer_has_no_extension_pins
 fs_uae_guest_hello_runs
