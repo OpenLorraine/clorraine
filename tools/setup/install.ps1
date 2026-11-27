@@ -1225,13 +1225,21 @@ function Get-DocumentsFolder { return [Environment]::GetFolderPath('MyDocuments'
 # encrypted Cloanto one (header AMIROMTYPE1) with its rom.key beside it.
 function Test-UsableRom($File) {
     if (@(524288, 524299) -notcontains $File.Length) { return $false }
-    $stream = [IO.File]::OpenRead($File.FullName)
+    # A file that cannot be read is not offered; the search goes on.
     try {
-        $header = New-Object byte[] 11
-        $read = $stream.Read($header, 0, 11)
-    } finally { $stream.Dispose() }
+        $stream = [IO.File]::OpenRead($File.FullName)
+        try {
+            $header = New-Object byte[] 11
+            $read = $stream.Read($header, 0, 11)
+        } finally { $stream.Dispose() }
+    } catch { return $false }
     if ($read -eq 11 -and [Text.Encoding]::ASCII.GetString($header) -ceq 'AMIROMTYPE1') {
-        return Test-Path -LiteralPath (Join-Path $File.DirectoryName 'rom.key') -PathType Leaf
+        if (Test-Path -LiteralPath (Join-Path $File.DirectoryName 'rom.key') -PathType Leaf) { return $true }
+        if (-not $script:SkippedEncryptedRom) {
+            $script:SkippedEncryptedRom = $true
+            Write-Warn ("skipped " + (Get-SafeText $File.FullName -SingleLine) + ': an encrypted Cloanto ROM needs its rom.key in the same folder')
+        }
+        return $false
     }
     return $true
 }

@@ -188,6 +188,11 @@ pub fn kickstart_key_missing_for(os: HostOs, rom: &Path, header: &[u8]) -> bool 
 
 /// Resolves and size-checks the Kickstart image.
 pub(super) fn resolve_rom(explicit: Option<&str>) -> Result<Rom, EnvironmentError> {
+    resolve_rom_for(HostOs::current(), explicit)
+}
+
+/// [`resolve_rom`] for an explicit host family.
+fn resolve_rom_for(os: HostOs, explicit: Option<&str>) -> Result<Rom, EnvironmentError> {
     let selected = match explicit
         .map(OsString::from)
         .or_else(|| std::env::var_os("CLORRAINE_KICKSTART"))
@@ -241,11 +246,16 @@ pub(super) fn resolve_rom(explicit: Option<&str>) -> Result<Rom, EnvironmentErro
             ));
         }
     }
+    // Only Windows reads the header, so Linux opens the image once, as before.
     let mut header = [0u8; 11];
-    let read = File::open(&path)
-        .and_then(|mut file| io::Read::read(&mut file, &mut header))
-        .unwrap_or(0);
-    if kickstart_key_missing_for(HostOs::current(), &path, &header[..read]) {
+    let read = if matches!(os, HostOs::Windows) {
+        File::open(&path)
+            .and_then(|mut file| io::Read::read(&mut file, &mut header))
+            .unwrap_or(0)
+    } else {
+        0
+    };
+    if kickstart_key_missing_for(os, &path, &header[..read]) {
         return Err(input_error(
             2,
             "--kickstart",
@@ -256,7 +266,9 @@ pub(super) fn resolve_rom(explicit: Option<&str>) -> Result<Rom, EnvironmentErro
         ));
     }
     let copy_into_run = path.as_os_str().as_encoded_bytes().ends_with(b" ");
-    Ok(Rom { path, media, copy_into_run })
+    // FS-UAE looks for rom.key beside the ROM it is given, so a copy takes the key along.
+    let key = path.parent().map(|folder| folder.join("rom.key")).filter(|key| key.is_file());
+    Ok(Rom { path, media, copy_into_run, key })
 }
 
 /// Resolves the optional guest timeout from the environment.
@@ -297,6 +309,41 @@ fn resolve_timeout_value(value: Option<OsString>) -> Result<Duration, Environmen
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A 524,299-byte encrypted Cloanto image in a fresh folder.
+    fn encrypted_rom(tag: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("clc-rom-key-{tag}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect("create the ROM folder");
+        let mut bytes = vec![0u8; ROM_KS31_A1200 as usize];
+        bytes[..11].copy_from_slice(b"AMIROMTYPE1");
+        let rom = dir.join("amiga-os-310-a1200.rom");
+        fs::write(&rom, bytes).expect("write the ROM");
+        rom
+    }
+
+    #[test]
+    fn windows_refuses_an_encrypted_rom_without_its_key() {
+        let rom = encrypted_rom("missing");
+        let result = resolve_rom_for(HostOs::Windows, rom.to_str());
+        let _ = fs::remove_dir_all(rom.parent().expect("folder"));
+        let error = result.err().expect("an encrypted ROM without rom.key is refused");
+        assert_eq!(error.code, 2);
+        assert!(error.message.contains("rom.key"), "{}", error.message);
+    }
+
+    #[test]
+    fn an_encrypted_rom_with_its_key_is_accepted_and_carries_the_key() {
+        let rom = encrypted_rom("present");
+        let key = rom.with_file_name("rom.key");
+        fs::write(&key, b"key").expect("write the key");
+        let result = resolve_rom_for(HostOs::Windows, rom.to_str());
+        let linux = resolve_rom_for(HostOs::Unix, rom.to_str()).is_ok();
+        let _ = fs::remove_dir_all(rom.parent().expect("folder"));
+        let accepted = result.unwrap_or_else(|error| panic!("{}", error.message));
+        assert_eq!(accepted.key.as_deref(), Some(key.as_path()));
+        assert!(linux, "Linux accepts the ROM as before");
+    }
 
     #[test]
     fn the_default_timeout_is_ninety_seconds() {

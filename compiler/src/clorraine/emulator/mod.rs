@@ -83,6 +83,8 @@ struct Rom {
     media: File,
     /// True when the path ends in a space and needs a private copy.
     copy_into_run: bool,
+    /// The `rom.key` beside the image, copied along with a private copy.
+    key: Option<PathBuf>,
 }
 
 /// The staged files and path options of one private run.
@@ -262,6 +264,10 @@ impl Emulator {
                 .map_err(|error| format!("cannot copy the Kickstart image: {error}"))?;
             io::copy(&mut source, &mut destination)
                 .map_err(|error| format!("cannot copy the Kickstart image: {error}"))?;
+            if let Some(key) = &self.rom.key {
+                fs::copy(key, media.join("rom.key"))
+                    .map_err(|error| format!("cannot copy the Kickstart key: {error}"))?;
+            }
             copy
         } else {
             self.rom.path.clone()
