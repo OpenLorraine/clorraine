@@ -1,6 +1,6 @@
 ## Ambiguity Register: VS Code Marketplace extension and the v1.3.0 release
 
-> **Status**: ✅ GATE PASSED — all 46 items resolved (40 user decisions, 6 delegated under --auto-design)
+> **Status**: ✅ GATE PASSED — all 47 items resolved (40 user decisions, 7 delegated under --auto-design)
 > **Last Updated**: 2026-11-27 14:47
 > **Source**: GitHub issue #38 (Publish the VS Code extension), revised by the decisions below
 
@@ -52,6 +52,7 @@
 | 44 | Data & state | What `acceptance-check` does with a record that still carries the old `vsix` key | Reject as an unknown key / ignore it | Authority: AI — delegated by --auto-design (see AR-44 note) | ✅ Resolved |
 | 45 | Technical | Small mechanisms surfaced while writing the specs: `virtualWorkspaces`, the guide action on an invalid explicit setting, the Linux manual-confirmation key and rerun flag, stale-VSIX rejection in `dist-verify`, the uninstall-failure message | As recorded in 03-01, 03-03, 03-04 / alternatives in the note | Authority: AI — delegated by --auto-design (see AR-45 note) | ✅ Resolved |
 | 46 | UX & presentation (runtime) | How the Windows install command is documented | Today: `curl.exe -fsSLo … ; powershell -ExecutionPolicy Bypass -File …` / a one-liner like Codex's `powershell -ExecutionPolicy ByPass -c "irm <url> \| iex"` | User: "we should do something like what codex does … the URL would be from our repo". Primary command everywhere (README, docs/windows-cli.md, site quick start, release notes): `powershell -ExecutionPolicy ByPass -c "irm https://github.com/OpenLorraine/clorraine/releases/download/v1.3.0/install.ps1 \| iex"`. Delegated details (see AR-46 note): the versioned release URL (v1.3.0 is a pre-release, so `releases/latest` would not reach it); options and scripted installs keep the download-verify-`-File` form, which is unchanged | ✅ Resolved |
+| 47 | UX & presentation (runtime) | 03-3 §5 summary texts and ST-23 did not say whether they include the existing `VS Code    ` row label, and ST-23 mixed the run-time hint with the summary row | Keep the existing row layout and hints / rewrite the summary layout | Authority: AI — delegated by --auto-design (see AR-47 note) | ✅ Resolved |
 
 ## Coverage Map
 
@@ -192,4 +193,18 @@ Confidence: High
 Policy version: 1
 Root invocation ID: ad-20261127-vsmkt
 Reopen triggers: a stable release becomes Latest and the docs should track it; the user wants options in the one-liner
+```
+
+**AR-47 (runtime, delegated):**
+
+```text
+Authority: AI — delegated by --auto-design
+Eligibility: presentation detail inside AR-27 (states and summary); no behaviour change
+Decision: keep the summary row layout `  VS Code    <text>`; the 03-3 §5 texts are the <text> part: installed → `extension installed`, updated → `extension updated from the Marketplace`, available → `detected; rerun with --vscode to install the extension` (`-VSCode` on Windows), failed → `extension not installed; run: code --install-extension openlorraine.clorraine`, skipped → `skipped`, unavailable → `not found`. The run-time hint for a non-interactive run without the flag stays `VS Code detected; run with --vscode to install the extension` (Windows: `rerun with -VSCode`, unchanged). ST-23 is reworded accordingly before its test is written
+Evidence: tools/setup/install.sh:707,1130-1137; tools/setup/install.ps1:1531,1626-1633
+Rejected alternatives: a new summary layout (churn across both installers and their existing tests for no user benefit)
+Confidence: High
+Policy version: 1
+Root invocation ID: ad-20261127-vsmkt
+Reopen triggers: the user wants different summary wording
 ```

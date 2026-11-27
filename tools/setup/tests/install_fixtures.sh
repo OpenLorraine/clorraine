@@ -85,6 +85,16 @@ check_contains() {
     fi
 }
 
+# Asserts that a file holds exactly the given lines, in order.
+check_lines() {
+    local path="$1" expected="$2" label="$3"
+    if [ -f "$path" ] && [ "$(cat "$path")" = "$expected" ]; then
+        pass
+    else
+        fail "$label: expected lines [$expected], got [$(cat "$path" 2>/dev/null)]"
+    fi
+}
+
 # Asserts that a file does not contain a literal string.
 check_not_contains() {
     local path="$1" text="$2" label="$3"
@@ -316,7 +326,12 @@ case "${1:-}" in
     --list-extensions) [ "${FAKE_EXTENSION_INSTALLED:-0}" = 1 ] && printf 'openlorraine.clorraine\n' ;;
     --install-extension)
         [ -n "${FAKE_EDITOR_LOG:-}" ] && printf '%s\n' "$*" >>"$FAKE_EDITOR_LOG"
+        [ -n "${FAKE_EDITOR_SLEEP:-}" ] && exec sleep "$FAKE_EDITOR_SLEEP"
         [ "${FAKE_EDITOR_FAIL:-0}" = 1 ] && exit 1
+        ;;
+    --uninstall-extension)
+        [ -n "${FAKE_EDITOR_LOG:-}" ] && printf '%s\n' "$*" >>"$FAKE_EDITOR_LOG"
+        [ "${FAKE_UNINSTALL_FAIL:-0}" = 1 ] && exit 1
         ;;
     *) [ -n "${FAKE_EDITOR_LOG:-}" ] && printf 'open %s\n' "$*" >>"$FAKE_EDITOR_LOG" ;;
 esac

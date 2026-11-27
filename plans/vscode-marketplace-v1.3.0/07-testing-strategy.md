@@ -79,10 +79,10 @@ the shared `dev` image lacks the Windows target.
 | # | Input / Scenario | Expected Output / Behavior | Source |
 |---|------------------|----------------------------|--------|
 | ST-22 | Only `codium` on PATH, `--vscode` | No editor command runs; state `unavailable`; warning names `code --install-extension openlorraine.clorraine` | AR-14 |
-| ST-23 | `code` present, extension absent, non-interactive, no flag | No install call; summary `VS Code detected; rerun with --vscode to install the extension` | AR-27 |
-| ST-24 | Extension absent, `--vscode` | Exactly one editor call `--install-extension openlorraine.clorraine` (an ID, not a file); summary `extension installed` | AR-7, AR-27 |
-| ST-25 | Extension present, non-interactive, no flag | Calls `--uninstall-extension openlorraine.clorraine` then `--install-extension openlorraine.clorraine`; summary `extension updated from the Marketplace` | AR-7, AR-26, AR-27 |
-| ST-26 | Extension present, `--no-vscode` | No editor call; summary `skipped` | AR-7 |
+| ST-23 | `code` present, extension absent, non-interactive, no flag | No editor install or uninstall call; the run prints `VS Code detected; run with --vscode to install the extension` (Windows: `… rerun with -VSCode …`) and the summary row reads `VS Code    detected; rerun with --vscode to install the extension` (Windows: `-VSCode`) | AR-27, AR-47 |
+| ST-24 | Extension absent, `--vscode` | Exactly one editor call `--install-extension openlorraine.clorraine` (an ID, not a file); summary row `VS Code    extension installed` | AR-7, AR-27 |
+| ST-25 | Extension present, non-interactive, no flag | Calls `--uninstall-extension openlorraine.clorraine` then `--install-extension openlorraine.clorraine`; summary row `VS Code    extension updated from the Marketplace` | AR-7, AR-26, AR-27 |
+| ST-26 | Extension present, `--no-vscode` | No editor call; summary row `VS Code    skipped` | AR-7 |
 | ST-27 | Extension present; uninstall succeeds, install exits 1 | Warning `the Clorraine extension was removed but could not be reinstalled from the Marketplace; run: code --install-extension openlorraine.clorraine`; summary failed; installer exit status 0 | AR-15, AR-26 |
 | ST-28 | `CLORRAINE_EDITOR_TIMEOUT=1`, fake editor sleeps 30 s on install | Editor killed within a few seconds; state failed with the manual command; installer completes with exit 0 | AR-33, AR-43 |
 | ST-29 | Assembled installers from `make dist` / fixtures | No `VSIX_`/`Vsix` pin, no `.vsix` URL, no VSIX download | AR-6 |

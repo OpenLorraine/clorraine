@@ -471,45 +471,119 @@ hello_examples_stay_available() {
     check_contains "$root/stdout" "hello.clo" "hello path"
 }
 
-# --vscode downloads, verifies, and installs the pinned extension.
-vscode_extension_is_installed_when_requested() {
+# Only code and code-insiders are VS Code; another editor is not detected.
+vscode_detection_ignores_codium() {
+    fixture
+    local status
+    cat >"$root/fake/codium" <<'EOF'
+#!/bin/sh
+printf '%s\n' "$*" >>"$FAKE_EDITOR_LOG"
+[ "${1:-}" = --version ] && printf '1.90.0\n'
+exit 0
+EOF
+    chmod +x "$root/fake/codium"
+    status="$(FAKE_EDITOR_LOG="$root/editor.log" \
+        run_installer "$root" "$installer" --prefix "$prefix" --vscode \
+        --toolchain "$root/fake-toolchain" --no-emulator \
+        --archive "$archive" --checksums "$checksums")"
+    check_status 0 "$status" "codium only"
+    check_absent "$root/editor.log" "codium is never run"
+    check_contains "$root/stderr" "VS Code was not found; install VS Code, then run: code --install-extension openlorraine.clorraine" \
+        "missing-editor message names the Marketplace ID"
+    check_contains "$root/stdout" "VS Code    not found" "not-found summary"
+}
+
+# A non-interactive run without --vscode only points at the flag.
+vscode_without_the_flag_is_only_suggested() {
     fixture
     local status
     status="$(FAKE_EDITOR_READY=1 FAKE_EDITOR_LOG="$root/editor.log" \
-        FAKE_CURL_SOURCE_VSIX="$root/clorraine-1.2.0.vsix" \
+        run_installer "$root" "$installer" --prefix "$prefix" \
+        --toolchain "$root/fake-toolchain" --no-emulator \
+        --archive "$archive" --checksums "$checksums")"
+    check_status 0 "$status" "VS Code available"
+    check_absent "$root/editor.log" "no install or uninstall"
+    check_contains "$root/stdout" "VS Code detected; run with --vscode to install the extension" "run-time hint"
+    check_contains "$root/stdout" "VS Code    detected; rerun with --vscode to install the extension" "summary row"
+}
+
+# --vscode installs the extension from the Marketplace by its ID.
+vscode_extension_is_installed_from_the_marketplace() {
+    fixture
+    local status
+    status="$(FAKE_EDITOR_READY=1 FAKE_EDITOR_LOG="$root/editor.log" FAKE_CURL_LOG="$root/curl.log" \
         run_installer "$root" "$installer" --prefix "$prefix" --vscode \
         --toolchain "$root/fake-toolchain" --no-emulator \
         --archive "$archive" --checksums "$checksums")"
     check_status 0 "$status" "VS Code install"
-    check_contains "$root/editor.log" "--install-extension" "extension command"
-    check_contains "$root/editor.log" "clorraine-1.2.0.vsix" "extension asset"
-    check_contains "$root/stdout" "VS Code" "VS Code summary"
-    check_contains "$root/stdout" "installed" "VS Code installed"
+    check_lines "$root/editor.log" "--install-extension openlorraine.clorraine" "one install by ID"
+    check_not_contains "$root/curl.log" ".vsix" "no extension download"
+    check_contains "$root/stdout" "VS Code    extension installed" "installed summary"
 }
 
-# An installed extension is not downloaded or installed again.
-vscode_extension_is_not_reinstalled() {
+# An installed extension is reinstalled from the Marketplace, even without
+# --vscode, so it leaves the pinned file install and updates automatically.
+vscode_extension_is_updated_from_the_marketplace() {
     fixture
     local status
-    status="$(FAKE_EDITOR_READY=1 FAKE_EXTENSION_INSTALLED=1 \
+    status="$(FAKE_EDITOR_READY=1 FAKE_EXTENSION_INSTALLED=1 FAKE_EDITOR_LOG="$root/editor.log" \
+        run_installer "$root" "$installer" --prefix "$prefix" \
+        --toolchain "$root/fake-toolchain" --no-emulator \
+        --archive "$archive" --checksums "$checksums")"
+    check_status 0 "$status" "VS Code update"
+    check_lines "$root/editor.log" "--uninstall-extension openlorraine.clorraine
+--install-extension openlorraine.clorraine" "uninstall, then install by ID"
+    check_contains "$root/stdout" "VS Code    extension updated from the Marketplace" "updated summary"
+}
+
+# --no-vscode leaves an installed extension alone.
+vscode_is_left_alone_with_no_vscode() {
+    fixture
+    local status
+    status="$(FAKE_EDITOR_READY=1 FAKE_EXTENSION_INSTALLED=1 FAKE_EDITOR_LOG="$root/editor.log" \
+        run_installer "$root" "$installer" --prefix "$prefix" --no-vscode \
+        --toolchain "$root/fake-toolchain" --no-emulator \
+        --archive "$archive" --checksums "$checksums")"
+    check_status 0 "$status" "--no-vscode"
+    check_absent "$root/editor.log" "no editor call"
+    check_contains "$root/stdout" "VS Code    skipped" "skipped summary"
+}
+
+# A failed reinstall says the extension was removed and how to get it back.
+vscode_failed_update_is_explained() {
+    fixture
+    local status
+    status="$(FAKE_EDITOR_READY=1 FAKE_EXTENSION_INSTALLED=1 FAKE_EDITOR_FAIL=1 FAKE_EDITOR_LOG="$root/editor.log" \
         run_installer "$root" "$installer" --prefix "$prefix" --vscode \
         --toolchain "$root/fake-toolchain" --no-emulator \
         --archive "$archive" --checksums "$checksums")"
-    check_status 0 "$status" "VS Code already installed"
-    check_absent "$root/editor.log" "no second extension install"
-    check_contains "$root/stdout" "already installed" "already-installed summary"
+    check_status 0 "$status" "failed update is not fatal"
+    check_contains "$root/stderr" "the Clorraine extension was removed but could not be reinstalled from the Marketplace; run: code --install-extension openlorraine.clorraine" \
+        "removed warning"
+    check_contains "$root/stdout" "VS Code    extension not installed; run: code --install-extension openlorraine.clorraine" "failed summary"
 }
 
-# --vscode without an editor warns but leaves a working CLI.
-vscode_without_an_editor_is_not_fatal() {
+# A hanging editor is stopped at the bound and the install carries on.
+vscode_install_is_bounded() {
     fixture
-    local status
-    status="$(run_installer "$root" "$installer" --prefix "$prefix" --vscode \
+    local status start elapsed
+    start=$(date +%s)
+    status="$(CLORRAINE_EDITOR_TIMEOUT=1 FAKE_EDITOR_SLEEP=30 FAKE_EDITOR_READY=1 FAKE_EDITOR_LOG="$root/editor.log" \
+        run_installer "$root" "$installer" --prefix "$prefix" --vscode \
         --toolchain "$root/fake-toolchain" --no-emulator \
         --archive "$archive" --checksums "$checksums")"
-    check_status 0 "$status" "VS Code missing"
-    check_contains "$root/stderr" "VS Code was not found" "missing-editor message"
-    check_not_contains "$root/stdout" "installed the Clorraine extension" "no false install"
+    elapsed=$(( $(date +%s) - start ))
+    check_status 0 "$status" "timeout is not fatal"
+    if [ "$elapsed" -lt 20 ]; then pass; else fail "editor bound: the install took ${elapsed}s"; fi
+    check_contains "$root/stderr" "could not install the VS Code extension from the Marketplace; run: code --install-extension openlorraine.clorraine" \
+        "timeout warning"
+}
+
+# The assembled installer carries no extension pins.
+installer_has_no_extension_pins() {
+    fixture
+    check_not_contains "$installer" "VSIX" "no VSIX pins"
+    check_not_contains "$installer" ".vsix" "no VSIX file name"
 }
 
 # A supplied FS-UAE and ROM run the persistent guest hello.
@@ -556,15 +630,13 @@ interactive_detects_fs_uae_and_vscode() {
     local status
     export FAKE_EDITOR_READY=1 FAKE_FS_UAE_READY=1
     export FAKE_EDITOR_LOG="$root/editor.log" FAKE_CLI_LOG="$root/cli.log"
-    export FAKE_CURL_SOURCE_VSIX="$root/clorraine-1.2.0.vsix"
     status="$(run_interactive "$root" "\ny\ny\n$root/fake-toolchain\n\n\ny\ny\ny\n" 0)"
     unset FAKE_EDITOR_READY FAKE_FS_UAE_READY FAKE_EDITOR_LOG FAKE_CLI_LOG
-    unset FAKE_CURL_SOURCE_VSIX
     check_status 0 "$status" "interactive detection"
     check_contains "$root/stdout" "FS-UAE detected" "FS-UAE prompt"
     check_contains "$root/stdout" "Kickstart" "ROM prompt"
     check_contains "$root/cli.log" "--emulator" "interactive guest run"
-    check_contains "$root/editor.log" "--install-extension" "interactive VSIX"
+    check_contains "$root/editor.log" "--install-extension openlorraine.clorraine" "interactive Marketplace install"
     check_contains "$root/stdout" "Step 1 of 5" "numbered steps"
     check_contains "$root/stdout" "Safe, modern programming for the Amiga" "banner"
     check_contains "$root/stdout" "Run the hello program now?" "hello prompt"
@@ -632,9 +704,14 @@ toolchain_root_is_configured_and_hello_runs
 interactive_toolchain_path_is_used
 no_toolchain_skips_the_first_run
 hello_examples_stay_available
-vscode_extension_is_installed_when_requested
-vscode_extension_is_not_reinstalled
-vscode_without_an_editor_is_not_fatal
+vscode_detection_ignores_codium
+vscode_without_the_flag_is_only_suggested
+vscode_extension_is_installed_from_the_marketplace
+vscode_extension_is_updated_from_the_marketplace
+vscode_is_left_alone_with_no_vscode
+vscode_failed_update_is_explained
+vscode_install_is_bounded
+installer_has_no_extension_pins
 fs_uae_guest_hello_runs
 guest_hello_falls_back_without_fs_uae
 interactive_detects_fs_uae_and_vscode
