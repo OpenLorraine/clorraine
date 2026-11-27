@@ -301,21 +301,3 @@ pub fn shell_word(os: HostOs, word: &str) -> String {
         HostOs::Windows => format!("\"{shown}\""),
     }
 }
-
-/// `path` made absolute against the current directory, without resolving
-/// links, so an installed launcher link keeps its own spelling.
-///
-/// A Windows path is absolute when it has a drive and a separator or is a
-/// UNC path; the check is textual so it also holds on a Unix test host.
-pub(crate) fn absolute_for(os: HostOs, path: &Path) -> PathBuf {
-    let absolute = match os {
-        HostOs::Windows => path.to_str().is_some_and(is_windows_absolute),
-        HostOs::Unix => path.is_absolute(),
-    };
-    if absolute {
-        return path.to_owned();
-    }
-    std::env::current_dir()
-        .map(|dir| dir.join(path))
-        .unwrap_or_else(|_| path.to_owned())
-}

@@ -611,19 +611,6 @@ fn should_quote_words_for_the_host_shell() {
     assert_eq!(shell_word(HostOs::Unix, "it's"), "'it'\\''s'");
 }
 
-#[test]
-fn should_keep_an_invoked_launcher_path_or_find_the_exe_on_path_on_windows() {
-    use clc::clorraine::launcher_for;
-    let invoked = r"C:\P\current\bin\clorraine.exe";
-    assert_eq!(launcher_for(HostOs::Windows, OsStr::new(invoked), OsStr::new("")), invoked);
-
-    let scratch = ScratchDir::new("launcher");
-    let dir = scratch.path().join("bin");
-    executable_file(&dir.join("clorraine.exe"));
-    let found = launcher_for(HostOs::Windows, OsStr::new("clorraine"), dir.as_os_str());
-    assert_eq!(found, format!("{}/clorraine.exe", dir.display()));
-}
-
 // --- Language server paths -------------------------------------------------
 
 /// The file path a Windows document URI parses to.

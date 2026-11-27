@@ -179,7 +179,6 @@ fn should_build_freestanding_offsetof_without_narrowing_a_pointer_when_compiled_
 
 use std::ffi::{OsStr, OsString};
 
-use clc::clorraine::launcher_for;
 use clc::clorraine::platform::{
     config_file, display_path, executable_name, pe_file_version, shell_word, HostOs,
 };
@@ -280,40 +279,6 @@ fn should_quote_an_empty_word_and_make_control_characters_visible() {
     assert_eq!(shell_word(HostOs::Windows, ""), "\"\"");
     let shown = shell_word(HostOs::Windows, "a\u{1b}b");
     assert!(!shown.contains('\u{1b}'), "{shown:?}");
-}
-
-#[test]
-fn should_fall_back_to_the_bare_launcher_name_when_path_has_no_clorraine() {
-    let scratch = ScratchDir::new("launcher-miss");
-    assert_eq!(
-        launcher_for(HostOs::Windows, OsStr::new("clorraine"), scratch.path().as_os_str()),
-        "clorraine"
-    );
-    // A Unix file without the .exe suffix does not satisfy the Windows lookup.
-    let plain = scratch.path().join("clorraine");
-    std::fs::write(&plain, "").expect("write the file");
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&plain, std::fs::Permissions::from_mode(0o755)).expect("chmod");
-    }
-    assert_eq!(
-        launcher_for(HostOs::Windows, OsStr::new("clorraine"), scratch.path().as_os_str()),
-        "clorraine"
-    );
-    assert_eq!(
-        launcher_for(HostOs::Unix, OsStr::new("clorraine"), scratch.path().as_os_str()),
-        plain.to_str().expect("UTF-8")
-    );
-}
-
-#[test]
-fn should_make_a_relative_launcher_path_absolute_without_resolving_it() {
-    let launcher = launcher_for(HostOs::Unix, OsStr::new("./bin/clorraine"), OsStr::new(""));
-    let cwd = std::env::current_dir().expect("cwd");
-    assert_eq!(launcher, cwd.join("./bin/clorraine").to_str().expect("UTF-8"));
-    let windows = launcher_for(HostOs::Windows, OsStr::new(r"bin\clorraine.exe"), OsStr::new(""));
-    assert!(windows.ends_with(r"bin\clorraine.exe") && windows.len() > r"bin\clorraine.exe".len());
 }
 
 // --- Language server paths -------------------------------------------------

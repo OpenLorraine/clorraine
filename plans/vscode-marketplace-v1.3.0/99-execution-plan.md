@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-11-27 15:32
-> **Progress**: 21/55 tasks (38%)
+> **Progress**: 22/55 tasks (40%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -124,7 +124,7 @@ branch; only Phase 1 reaches `main` before the release (AR-40).
 ### Step 3.2: Implementation
 
 - [x] 3.2.1 Template and writer — `compiler/templates/starter/tasks.json`, `compiler/src/clorraine/new.rs`; starter README if it names the launcher ✅ (completed: 2026-11-27 15:32)
-- [~] 3.2.2 Remove `launcher_for`, its re-export, its unit tests, and its Windows spec/impl tests — `compiler/src/clorraine/{new.rs,mod.rs}`, `compiler/tests/windows_cli_{spec,impl}_test.rs` (AR-25) ⏳ (implemented: 2026-11-27 15:31)
+- [x] 3.2.2 Remove `launcher_for`, its re-export, its unit tests, and its Windows spec/impl tests — `compiler/src/clorraine/{new.rs,mod.rs}`, `compiler/tests/windows_cli_{spec,impl}_test.rs` (AR-25) ✅ (completed: 2026-11-27 15:32)
 - [ ] 3.2.3 Green phase: ST-21 passes on host; `cargo check --target x86_64-pc-windows-gnu` passes
 
 ### Step 3.3: Gate
