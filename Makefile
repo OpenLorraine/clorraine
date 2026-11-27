@@ -13,8 +13,9 @@
 # captured output; it depends on `corpus-amiga` for the binaries and runs on the
 # host, because FS-UAE needs the X display and the local SDK settings.
 #
-# `make run-fault-amiga` runs the six runtime-fault programs under `vamos` and
-# asserts the exact fault line and a nonzero exit.
+# `make run-fault-amiga` runs the runtime-fault programs under `vamos` on both
+# hosted Amiga profiles and asserts the exact fault line, a nonzero exit, and
+# that the run leaves no memory or library open behind.
 #
 # `make verify` is the full acceptance run: the fast check plus the
 # host/hosted-amiga differential, every hosted-amiga cross-toolchain leg, and
@@ -283,6 +284,7 @@ verify:
 	$(MAKE) sdk-a500-assets
 	$(MAKE) sdk-a500-gui
 	$(MAKE) sdk-a500-exec
+	$(MAKE) sdk-a500-fault-cleanup
 	$(MAKE) sdk-a600-services
 	$(MAKE) sdk-a1200-workbench
 	$(MAKE) sdk-a500-diskfont

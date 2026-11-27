@@ -269,3 +269,41 @@ and a starter project; see [Linux CLI](linux-cli.md).
   is not in a marketplace yet.
 - **Platforms.** Windows and macOS are on the way; WSL, Remote-WSL, and ARM
   hosts are not claimed.
+
+## 16. Hosted-Amiga exit cleanup and Ctrl-C limits
+
+On `hosted-amiga` and `hosted-amiga-13`, the runtime releases every OS resource it handed to the
+program on every exit: a normal return, a runtime fault, a panic, a worker fault, or Ctrl-C.
+Drops are still skipped on a fault, panic, or break. The limits are:
+
+- **Breakable waits only.** Ctrl-C ends window, GadTools, AppMessage, and AmigaGuide waits, the
+  timer wait, generic device I/O, task joins, and `waitSignals`. Every other blocking call is not
+  routed through the runtime's break handling, including audio waits, the clipboard, serial,
+  parallel, and printer device calls, `delayTicks`, the Intuition and ASL requesters, and socket
+  calls. libnix notices a break only at its next stdio read or write; a program that does none
+  exits normally and leaves the break pending for the Shell.
+- **Aborting device I/O.** A break during device I/O aborts the request and waits for it to come
+  back. A device that cannot abort the command finishes it first, so the break is delayed.
+- **Where Ctrl-C comes from.** From the keyboard, a program started from a Shell receives Ctrl-C
+  only through the console window that started it; a key pressed in the program's own Intuition
+  window or console unit is not a break. The `Break` command sends the same signal.
+- **Chip state.** The runtime restores two pieces of chip state it changes: the sprite collision
+  register and the screen sprite flag. It leaves `DMACON`, including the raster DMA the native
+  display turns on, and writes a program makes through `std.amiga.custom` as they are.
+- **Faults in interrupt context.** A runtime fault or panic inside an interrupt handler is not
+  supported and its behaviour is undefined (issue #95). Handlers are still removed at exit.
+- **Messages held by another program.** A message the program sent that another task still holds
+  at exit, and the reply port it names, stay allocated so the late reply lands in valid memory.
+  The kept port is made private and silent first. Foreign messages still queued on a program port
+  are replied before the port is deleted; ARexx commands are replied as failed (`RC_FATAL`).
+- **Target evidence.** The A500/Kickstart 1.3 gate (`make sdk-a500-fault-cleanup`) observes the
+  interrupt-server, display, window, font, device, and worker-fault paths, and Ctrl-C in the
+  timer wait and in `waitSignals`. The exec and DOS kinds (locks, ports, messages, library opens)
+  and the 2.0+ utility kinds are checked under `vamos`. The optional-suffix kinds, Ctrl-C in the
+  other waits, the foreign-message drain, and the kept-port path have source-shape tests only. On
+  Kickstart 1.3 the diskfont.library open count did not move after a leaked open (graphics and
+  intuition were not measured), so the release of library bases the runtime opened is checked
+  under `vamos`.
+- **Nested exits.** When a release itself faults during the exit, libnix runs its exit list again
+  and the runtime finishes the remaining releases. This relies on libnix `exit`; the vbcc leg is
+  build-only and makes no runtime claim.

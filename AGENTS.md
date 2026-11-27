@@ -46,10 +46,10 @@ acceptance gate. `make check` and `make verify` remain authoritative.
 | `make fuzz-smoke-host` | Host-only fuzzer fallback; no m68k leg |
 | `make fuzz` | Longer local fuzzer run (generated 0–255, full host/sanitizer matrix) |
 | `make differential` | Compare host and hosted-amiga stdout for `buffer-container`, `file-copier`, and `string-parser`; `DIFF_ONLY=1` re-diffs an existing `OUTDIR` |
-| `make verify` | Full acceptance: `check`, `bench-shape`, `sdk-a500-smoke`, `sdk-a500-boing`, `sdk-a500-sprites`, `sdk-a500-paddle`, `sdk-a500-text`, `sdk-a500-assets`, `sdk-a500-gui`, `sdk-a500-exec`, `sdk-a600-services`, `sdk-a1200-workbench`, `sdk-a500-diskfont`, `sdk-a600-addons`, `sdk-a600-ks31-addons`, `sdk-a1200-ks30-addons`, `sdk-a1200-addons`, `sdk-a1200-rtg`, `sdk-a4000-rtg-piv`, `differential`, `corpus-fs-uae`, and `run-fault-amiga`; the FS-UAE legs need the SDK X display and the licensed media under `~/amiga` |
+| `make verify` | Full acceptance: `check`, `bench-shape`, `sdk-a500-smoke`, `sdk-a500-boing`, `sdk-a500-sprites`, `sdk-a500-paddle`, `sdk-a500-text`, `sdk-a500-assets`, `sdk-a500-gui`, `sdk-a500-exec`, `sdk-a500-fault-cleanup`, `sdk-a600-services`, `sdk-a1200-workbench`, `sdk-a500-diskfont`, `sdk-a600-addons`, `sdk-a600-ks31-addons`, `sdk-a1200-ks30-addons`, `sdk-a1200-addons`, `sdk-a1200-rtg`, `sdk-a4000-rtg-piv`, `differential`, `corpus-fs-uae`, and `run-fault-amiga`; the FS-UAE legs need the SDK X display and the licensed media under `~/amiga` |
 | `make corpus-amiga` | Build/run the portable corpus on hosted-amiga (`m68k-amigaos-gcc` + `vamos`); vbcc build-only; build FS-UAE-only programs |
 | `make corpus-fs-uae` | Boot the FS-UAE-only programs and diff captured output |
-| `make run-fault-amiga` | Run the six runtime-fault programs under `vamos` |
+| `make run-fault-amiga` | Run the runtime-fault programs under `vamos` on `hosted-amiga` and `hosted-amiga-13` (sixteen and fifteen); fail on any leaked memory or library open |
 | `make run FILE=…` / `make build FILE=…` | Build (and run) one program in the container; set `PROFILE=hosted-amiga\|hosted-amiga-13\|freestanding`, `EMULATOR=1`, `CAPTURE=1` |
 | `make toolchain-check TOOLCHAIN=…` | Build hello, the portable corpus, and freestanding with an extracted upstream rc24 toolchain; local product check, not part of `make check` |
 | `make fs-uae-check KICKSTART=… [TOOLCHAIN=…]` | Run hello, the four hosted-amiga corpus programs, one hosted-amiga-13 corpus program, and an rc-1 negative in a real A1200/KS3.1 FS-UAE; compare output and reject a surviving emulator/Xvfb process |
@@ -68,6 +68,7 @@ acceptance gate. `make check` and `make verify` remain authoritative.
 | `make sdk-a500-assets` | Build the ILBM viewer for `hosted-amiga-13` in release mode, see the held image frame on the A500/KS1.3 run, and compare the DOS/asset report line |
 | `make sdk-a500-gui` | Build the Intuition GUI demo for `hosted-amiga-13`, drive it headlessly on Xvfb with the Amiga-key shortcuts, and compare its native screen capture and report line |
 | `make sdk-a500-exec` | Build the Exec demo for `hosted-amiga-13`, boot it on the A500/KS1.3, and compare the report line and the 620x22 line golden |
+| `make sdk-a500-fault-cleanup` | Build the fault-cleanup probes and the test-only walker for `hosted-amiga-13`, boot A500/KS1.3 with the Workbench 1.3.5 HDF and a per-run capture ADF in DF1, send Ctrl-C with `xdotool` to the two break probes, and assert that each probe leaves the walker's system state unchanged |
 | `make sdk-advanced-build` | Build the Workbench and services demos plus the two test-only Workbench fixtures |
 | `make sdk-a600-services` | Build the advanced demos/fixtures, boot A600/KS2.05, start the ROM Workbench, and assert the Workbench and services report lines |
 | `make sdk-a1200-workbench` | Build the advanced demos/fixtures, boot A1200/KS3.1, assert the report lines, and compare the native Workbench capture and AppIcon crop goldens |

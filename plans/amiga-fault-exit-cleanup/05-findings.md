@@ -37,3 +37,12 @@
 | SR-002 (P5) | 5 | MINOR | a500-fault-cleanup-smoke.sh header | fixed |
 | SR-Q1/Q2 (P5) | 5 | MINOR | Ctrl-C limits (2.0+ waits untested on target; console-only delivery) | fixed in 6.1.3 known-limitations |
 | SR-PRE (P5) | 5 | MINOR | cl_gt_next_event filtered message in wait mode | deferred (pre-existing) |
+| RV-001 (P6) | 6 | MINOR | known-limitations target-evidence claims | fixed (gate scope narrowed; only diskfont measured) |
+| RV-002 (P6) | 6 | MINOR | site verification row named a panic probe | fixed |
+| RV-003 (P6) | 6 | MINOR | 07 checklist split, plan timestamp, "no shim change" wording | fixed |
+| RV-PRE (P6) | 6 | MINOR | AGENTS.md verify row omits `ubsan` | deferred (pre-existing) |
+| SR-001 (P6) | 6 | MINOR | vamos/Ctrl-C target-evidence overclaim | fixed |
+| SR-002 (P6) | 6 | MINOR | libnix break noticed "at exit" | fixed (stdio read or write only; break stays pending) |
+| SR-003 (P6) | 6 | MINOR | unbreakable list incomplete (requesters, sockets) | fixed ("every other blocking call") |
+| SR-004 (P6) | 6 | MINOR | AbortIO assumed honoured; Break command; DMACON raster DMA | fixed |
+| SR-Q (P6) | 6 | OBSERVATION | bsdsocket EINTR on Ctrl-C; gate leaves copied HDF/ADF under build/ | deferred (unverified; build/ is gitignored like the other gates) |

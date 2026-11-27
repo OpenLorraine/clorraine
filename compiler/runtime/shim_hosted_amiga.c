@@ -126,6 +126,10 @@ ULONG cl_dos_ticks(void)
  *   never in a close that can defer;
  * - assume no release order other than reverse acquisition.
  *
+ * A new handle kind always joins this registry. The hook's fixed phases
+ * (interrupt servers, worker tasks, chip state, and library bases) take no new
+ * kinds.
+ *
  * The hook is installed on the first registration, so a program that never
  * acquires an OS resource links none of this in a release build. The fault and
  * panic paths never name the hook for the same reason. */

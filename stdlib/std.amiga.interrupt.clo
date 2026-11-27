@@ -16,6 +16,11 @@
 //! kind replaces the current one. Both kinds share one token counter, and
 //! `removeHandler` removes whichever slot owns the token. Removing a token is
 //! idempotent: removing it twice is safe.
+//!
+//! A handler that is still registered when the program exits, normally or
+//! through a fault, panic, or Ctrl-C, is removed by the runtime before the
+//! program's code is unloaded. A fault or panic inside a handler is not
+//! supported: it runs in interrupt context and cannot be reported.
 
 module std.amiga.interrupt;
 

@@ -12,7 +12,9 @@
 //! File positioning uses the libc stream behind the `File` handle; locks,
 //! path information, directory mutation, and volume information use
 //! `dos.library`. A `PathInfo`, `VolumeInfo`, or `Lock` is owned by the caller
-//! and released by its `take` wrapper or its drop.
+//! and released by its `take` wrapper or its drop. One that is still held when
+//! the program exits, including through a fault, panic, or Ctrl-C, is released
+//! by the runtime.
 
 module std.amiga.dos;
 

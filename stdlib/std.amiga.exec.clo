@@ -19,11 +19,21 @@
 //! until any bit in the mask arrives and returns the bits that did. The caller
 //! must loop when several sources share one wait.
 //!
+//! A pending Ctrl-C ends the blocking waits here: `waitSignals` (unless its mask
+//! asks for the Ctrl-C bit), `joinTask`, `deviceDoIO`, and `deviceWaitIO`. The
+//! program prints `***Break` and exits with code 20; drops are skipped, as for a
+//! fault, but the runtime still releases every OS resource it handed out.
+//!
 //! A `Task` is a plain Exec worker at priority -1. Its entry is a capture-less
 //! `func(): void` that must use only arithmetic, module-level scalars, and
 //! `reportTaskResult`; it must not call DOS, Intuition, `std.io`, allocate,
 //! drop an owning value, or block. `joinTask` waits for the worker, removes it,
 //! and returns its result. The generated drop joins an unjoined task.
+//!
+//! A runtime fault or panic inside a worker does not print or exit from the
+//! worker. The worker records it and stops; the parent prints the same line the
+//! main program would and exits with code 20 when it joins the worker, or at
+//! exit when it never does. Workers still alive at exit are removed.
 
 module std.amiga.exec;
 
@@ -175,6 +185,9 @@ export func signals(borrow port: MsgPort): u32 {
 ///
 /// A caller that waits on more than one source checks the returned mask before
 /// draining a port; an unrelated signal can wake the wait.
+///
+/// When `mask` includes the Ctrl-C bit (`0x1000`), a Ctrl-C is returned like
+/// any other bit. Otherwise a pending Ctrl-C ends the program with `***Break`.
 export func waitSignals(mask: u32): u32 {
     return cl_wait_signals(mask);
 }
@@ -237,6 +250,9 @@ export func reportTaskResult(value: i32): void {
 /// The handle is consumed. The worker must terminate; there is no
 /// cancellation. A task the caller never joins is joined and removed by its
 /// generated drop.
+///
+/// A fault the worker recorded is reported here: the parent prints its line
+/// and exits with code 20. A pending Ctrl-C ends the wait with `***Break`.
 export func joinTask(take task: Task): i32 {
     return cl_join_task(task);
 }
@@ -325,7 +341,9 @@ export func deviceSetOffset(borrow device: Device, offset: u32): bool {
 ///
 /// The buffer is borrowed for the call, so it stays alive until the device
 /// finishes; a synchronous read writes into it directly. A pending request
-/// returns -1 without sending.
+/// returns -1 without sending. A pending Ctrl-C aborts and collects the request,
+/// then ends the program with `***Break`; a device that cannot abort the
+/// command finishes it first.
 export func deviceDoIO(borrow device: Device, borrow data: u8[]): i32 {
     unsafe {
         return cl_device_do_io(device, raw u8(data.ptr), u32(len(data)));
@@ -343,7 +361,9 @@ export func deviceSendIO(borrow device: Device): bool {
 /// When the request was pending, up to `len(data)` bytes of the result are
 /// copied from the device-owned buffer into `data`; the copy is bounded by
 /// `io_Actual`. On an idle handle it returns the last error without copying; a
-/// null handle returns -1.
+/// null handle returns -1. A pending Ctrl-C aborts and collects the request,
+/// then ends the program with `***Break`; a device that cannot abort the
+/// command finishes it first.
 export func deviceWaitIO(borrow device: Device, borrow data: u8[]): i32 {
     unsafe {
         return cl_device_wait_io(device, raw u8(data.ptr), u32(len(data)));

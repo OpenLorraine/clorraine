@@ -29,6 +29,9 @@ export func freeTimer(take timer: Timer): void {
 ///
 /// One tick is one PAL 50 Hz vertical blank (20 ms). NTSC waits are
 /// approximate because the conversion is fixed at 50 Hz.
+///
+/// A pending Ctrl-C aborts the wait and ends the program with `***Break`; the
+/// timer is still closed at exit.
 export func timerWait(borrow timer: Timer, ticks: u32): bool {
     return cl_timer_wait(timer, ticks);
 }

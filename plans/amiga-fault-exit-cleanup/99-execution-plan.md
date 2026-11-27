@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-27 00:34
-> **Progress**: 50/55 tasks (91%)
+> **Last Updated**: 2026-11-27 02:20
+> **Progress**: 55/55 tasks (100%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -268,22 +268,37 @@ Rules for every task:
 
 ## Phase 6: Closeout
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill)_
+> **Phase baseline tree**: 56bbffeaee0f7ea3d154e76f4ce16e67976721cf (HEAD `4a874d09`)
 > **Reasoning**: medium — wiring, docs, and measurement.
 
 ### Step 6.1: Gate wiring, docs, and evidence
 
 **Reference**: [03-05 §A500 gate, §Docs, §Bench evidence](03-05-gates-and-docs.md) · AR-6, AR-18, AR-19
 
-- [ ] 6.1.1 Add `sdk-a500-fault-cleanup` to `make verify` and `.PHONY`; update the `AGENTS.md` command table and verify row; correct the run-fault count — `Makefile`, `AGENTS.md`, `site/project/verification.md`
-- [ ] 6.1.2 Update the doc comments and add the registry contract comment block per 03-05 §Docs — `stdlib/std.amiga.exec.clo`, `std.amiga.interrupt.clo`, `std.amiga.dos.clo`, `std.amiga.timer.clo`, `compiler/runtime/shim_hosted_amiga.c`
-- [ ] 6.1.3 Add the known-limitations entries per 03-05 §Docs — `docs/known-limitations.md`
-- [ ] 6.1.4 Bench evidence: `make bench-base COMMIT=<the commit before task 1.1.1>`, `make bench`, `make bench-compare` (empty `REQUIRE`), `make bench-flags`; record the results here and in `07` (AR-18)
-- [ ] 6.1.5 Plan gate: `make verify` (full, including `sdk-a500-fault-cleanup` and `run-fault-amiga`)
+- [x] 6.1.1 Add `sdk-a500-fault-cleanup` to `make verify` and `.PHONY`; update the `AGENTS.md` command table and verify row; correct the run-fault count — `Makefile`, `AGENTS.md`, `site/project/verification.md` ✅ (completed: 2026-11-27; `sdk-a500-fault-cleanup` in `verify` after `sdk-a500-exec` (already in `.PHONY` since 2.1.1); AGENTS.md verify row, command row, and run-fault row; `site/project/verification.md` rows; Makefile header comment; `make check` 4442, `make site-check` green)
+- [x] 6.1.2 Update the doc comments and add the registry contract comment block per 03-05 §Docs — `stdlib/std.amiga.exec.clo`, `std.amiga.interrupt.clo`, `std.amiga.dos.clo`, `std.amiga.timer.clo`, `compiler/runtime/shim_hosted_amiga.c` ✅ (completed: 2026-11-27; exec (Ctrl-C waits, worker faults, `waitSignals` mask), interrupt, dos, timer doc comments; the shim registry block gains the closed-phases rule; `make check` 4442, `make site-check` green)
+- [x] 6.1.3 Add the known-limitations entries per 03-05 §Docs — `docs/known-limitations.md` ✅ (completed: 2026-11-27; entry 16 covers unbreakable waits, Ctrl-C source, chip state, interrupt faults (#95), foreign-held messages, target evidence, and the libnix-only nested-exit claim; `make check` 4442, `make site-check` green)
+- [x] 6.1.4 Bench evidence: `make bench-base COMMIT=<the commit before task 1.1.1>`, `make bench`, `make bench-compare` (empty `REQUIRE`), `make bench-flags`; record the results here and in `07` (AR-18) ✅ (completed: 2026-11-27; base `5a815590`; see §Bench evidence below)
+- [x] 6.1.5 Plan gate: `make verify` (full, including `sdk-a500-fault-cleanup` and `run-fault-amiga`) ✅ (completed: 2026-11-27; `make verify` printed `verify: all legs passed`, rc 0, including `sdk-a500-fault-cleanup` and `run-fault-amiga`)
+
+### Bench evidence (task 6.1.4)
+
+Base `5a815590` (the preflight commit; same code as the commit before task 1.1.1), head `4a874d09`
+plus the Phase 6 doc edits (no shim code or compiler change after `4a874d09`; Phase 6 adds one shim comment).
+
+- `make bench-compare` (empty `REQUIRE`): **passed**. Guest instruction counts are unchanged on all
+  eight benchmarks. hosted-amiga release `.text` grows by 56 bytes on each (+0.1% to +0.2%),
+  inside the 1% guard. Emitted C grows by about 43 KB (+12% to +14%) because the embedded shim is
+  larger; that column is advisory.
+- `make bench-flags`: the size and runtime floors pass on every row except `host/lookup`
+  (`host binary 30912 > 34880 * 85%`). The base compiler (`build/perf/base-clc`) fails the same
+  floor with the same byte counts, and this plan changes no host code. It is the known finding
+  ASM-WS0-001, not a regression.
+- Release images that acquire no OS resource still link no exit hook (ST-9).
 
 **Deliverables**:
-- [ ] `make verify` green; bench comparison within the 1% guard
-- [ ] Docs updated
+- [x] `make verify` green; bench comparison within the 1% guard
+- [x] Docs updated
 
 **Verify (gate)**: `make verify`
 

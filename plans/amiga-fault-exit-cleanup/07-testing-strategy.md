@@ -144,11 +144,13 @@ Exec safety is the boundary (01 §Security):
   surface changes.
 
 ## Verification Checklist
-- [ ] All ST-cases defined with concrete input/output pairs
-- [ ] Every ST case traces to a requirement, spec doc, or AR entry
-- [ ] Specification tests written BEFORE implementation
-- [ ] Specification tests verified to FAIL before implementation (red phase), with the listed guards justified
-- [ ] All specification tests pass after implementation (green phase)
-- [ ] Implementation tests written for edge cases and internals
-- [ ] `make verify` passes; bench evidence recorded
-- [ ] No regressions in existing tests
+- [x] All ST-cases defined with concrete input/output pairs
+- [x] Every ST case traces to a requirement, spec doc, or AR entry
+- [x] Specification tests written BEFORE implementation
+- [x] Specification tests verified to FAIL before implementation (red phase), with the listed guards justified
+- [x] All specification tests pass after implementation (green phase)
+- [x] Implementation tests written for edge cases and internals
+- [x] `make verify` passes; bench evidence recorded
+- [x] No regressions in existing tests
+
+**Bench evidence (closing phase):** `make bench-compare` passed (instruction counts unchanged; hosted-amiga `.text` +56 bytes, +0.1% to +0.2%). `make bench-flags` fails only the `host/lookup` floor, identically on the base compiler; that is the pre-existing finding ASM-WS0-001. Details in the execution plan's §Bench evidence.

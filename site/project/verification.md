@@ -24,7 +24,8 @@ or complete AmigaOS coverage.
 | `make differential` | Compares host and `hosted-amiga` stdout for the portable corpus programs |
 | `make corpus-amiga` | Builds and runs the portable corpus on `hosted-amiga` with m68k GCC and `vamos`; builds the FS-UAE-only programs; vbcc build-only leg |
 | `make corpus-fs-uae` | Boots the FS-UAE-only programs and diffs their captured output |
-| `make run-fault-amiga` | Runs the six runtime-fault programs under `vamos` and asserts the fault line and a nonzero exit |
+| `make run-fault-amiga` | Runs the runtime-fault programs under `vamos` on both hosted Amiga profiles and asserts the fault line, a nonzero exit, and that no memory or library open is left behind |
+| `make sdk-a500-fault-cleanup` | Boots an A500 with Kickstart 1.3, runs programs that fault (in the main program or a worker task), return without releasing, or are stopped with Ctrl-C while they hold OS resources, and checks that each leaves the system state as it found it |
 | `make bench-shape` | Builds the generated-C shape fixture with m68k GCC, vbcc, and the freestanding profile |
 | `make bench-compare` | Enforces the benchmark invariants and the 1% no-regression guard |
 | `make verify` | The full acceptance run: the fast gate plus UBSan, benchmark shape, the Amiga SDK gates, differential, FS-UAE corpus, and runtime faults |

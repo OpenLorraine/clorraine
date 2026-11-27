@@ -1,7 +1,7 @@
 # Amiga Fault-Exit Cleanup Implementation Plan
 
 > **Feature**: Release every AmigaOS resource on every hosted-amiga exit; handle worker-task faults; Ctrl-C in the shim waits
-> **Status**: Planning Complete
+> **Status**: Complete (2026-11-27; 55/55 tasks, `make verify` green)
 > **Created**: 2026-11-26
 > **Implements**: none (standalone plan; no RD) — closes DEF-582, DEF-586, DEF-604 and theme issue #40 (findings #54, #58, #76, and ASM-WS5-020 in #92)
 > **CodeOps Artifact Schema**: 1
