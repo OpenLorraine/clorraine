@@ -11,6 +11,8 @@ import * as vscode from "vscode";
 
 import { registerActions } from "./actions";
 import { resolveTool } from "./discovery";
+import { serverOlderThan } from "./guide";
+import { showMissingTool, showUpdateNotice } from "./missing-tool";
 import {
   CompletionItem,
   Diagnostic as LspDiagnostic,
@@ -21,6 +23,8 @@ import {
 } from "./client";
 
 let session: Session | undefined;
+/** Whether the "tools are older than the extension" notice was shown in this activation. */
+let updateNoticeShown = false;
 
 /** Everything one running server owns. */
 class Session implements vscode.Disposable {
@@ -244,9 +248,22 @@ class Session implements vscode.Disposable {
 export async function activate(
   context: vscode.ExtensionContext,
 ): Promise<void> {
+  updateNoticeShown = false;
   registerActions(context, () => session);
   context.subscriptions.push(
     vscode.workspace.onDidGrantWorkspaceTrust(() => { void restart(context); }),
+    // Starter tasks call this through `${command:clorraine.driverPath}`, so a
+    // project's tasks work on any machine with Clorraine installed. When no
+    // driver is usable the error offers the install guide and the command
+    // returns undefined, which cancels the task without a second error.
+    vscode.commands.registerCommand("clorraine.driverPath", () => {
+      try {
+        return resolveTool("clorraine");
+      } catch (error) {
+        void showMissingTool(`Clorraine: ${error instanceof Error ? error.message : String(error)}`);
+        return undefined;
+      }
+    }),
   );
   await start(context);
 }
@@ -268,9 +285,7 @@ async function start(context: vscode.ExtensionContext): Promise<void> {
   try {
     command = resolveTool("clorraine-lsp");
   } catch (error) {
-    void vscode.window.showErrorMessage(
-      `Clorraine: ${error instanceof Error ? error.message : String(error)}`,
-    );
+    void showMissingTool(`Clorraine: ${error instanceof Error ? error.message : String(error)}`);
     return;
   }
   const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
@@ -302,6 +317,7 @@ async function start(context: vscode.ExtensionContext): Promise<void> {
         ? experimental.clorraineSourceFilesVersion : undefined;
     starting = false;
     created.register();
+    noteServerVersion(initialization.serverInfo?.version, context);
   } catch (error) {
     starting = false;
     created.beginStop();
@@ -316,6 +332,21 @@ async function start(context: vscode.ExtensionContext): Promise<void> {
     return;
   }
   context.subscriptions.push(created);
+}
+
+/**
+ * Suggests updating the CLI when the language server is older than the
+ * extension, at most once per activation: restarts after a settings change
+ * reconnect to the same tools and would only repeat the notice.
+ */
+function noteServerVersion(server: string | undefined, context: vscode.ExtensionContext): void {
+  const extension: unknown = context.extension?.packageJSON?.version;
+  if (updateNoticeShown || typeof extension !== "string" || server === undefined ||
+      !serverOlderThan(server, extension)) {
+    return;
+  }
+  updateNoticeShown = true;
+  void showUpdateNotice(server, extension);
 }
 
 /** Stops the current session. */

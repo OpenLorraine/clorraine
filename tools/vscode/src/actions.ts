@@ -9,6 +9,7 @@ import * as vscode from "vscode";
 
 import type { LspClient } from "./client";
 import { machinePath, resolveTool } from "./discovery";
+import { MissingToolError, showMissingTool } from "./missing-tool";
 import { comparablePath, realPath, samePath } from "./paths";
 
 /** The initialized server state needed by an action, never a second client. */
@@ -205,7 +206,12 @@ export function registerActions(
             path.extname(document.uri.fsPath) !== ".clo") {
           throw new Error("Open and save a file-backed .clo entry, then retry.");
         }
-        const driver = resolveTool("clorraine");
+        let driver: string;
+        try {
+          driver = resolveTool("clorraine");
+        } catch (error) {
+          throw new MissingToolError(error instanceof Error ? error.message : String(error));
+        }
         if (document.isDirty && !await document.save()) {
           throw new Error("Entry save was cancelled; save the .clo file and retry.");
         }
@@ -302,9 +308,12 @@ export function registerActions(
         }
       } catch (error) {
         if (!disposed) {
-          void vscode.window.showErrorMessage(
-            `${title}: ${error instanceof Error ? error.message : String(error)} Check settings/saved sources and retry.`,
-          );
+          const text = `${title}: ${error instanceof Error ? error.message : String(error)} Check settings/saved sources and retry.`;
+          if (error instanceof MissingToolError) {
+            void showMissingTool(text);
+          } else {
+            void vscode.window.showErrorMessage(text);
+          }
         }
       } finally {
         for (const listener of selectionListeners) {
