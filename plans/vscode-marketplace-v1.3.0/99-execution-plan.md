@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-27 18:55
-> **Progress**: 51/55 tasks (92%)
+> **Last Updated**: 2026-11-27 18:56
+> **Progress**: 52/55 tasks (94%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -217,7 +217,7 @@ branch; only Phase 1 reaches `main` before the release (AR-40).
 - [x] 7.1.4 `make dist` and `make dist-verify`; record the four asset hashes in `RELEASE-NOTES.md` (checksums section) ✅ (completed: 2026-11-27 18:16; four assets + SHA256SUMS, dist-verify ok; Linux archive ae398e15…, Windows zip f712d9c8…, install.sh fd50b736…, install.ps1 bcc56ec5…; table in the uncommitted notes working copy per RELEASE.md step 7)
 - [x] 7.1.5 Linux acceptance with `PUBLISH_RUN`/`PUBLISH_SHA256`; user confirms the editor; rerun with `EDITOR_CONFIRMED=1`; `make acceptance-check` ✅ (completed: 2026-11-27 18:30; build/acceptance/20261127T172930Z; full FS-UAE matrix ok; extension openlorraine.clorraine 1.3.0 from the Marketplace; user confirmed LSP, Build/Run and auto-update after the v1.2.0 VSIX install; acceptance-check ok)
 - [x] 7.1.6 **approval** Windows acceptance: create the standard test account over `ssh winbox`, push the candidate, run `acceptance.ps1` in the desktop session, user confirms UAC and the editor, `make acceptance-check`, remove the account and files ✅ (completed: 2026-11-27 18:55; as `Clorraine Test` on build 26100: UAC and editor confirmed, extension 1.3.0 from the Marketplace, corpus 5/5, `acceptance-check: ok`, record build/acceptance/windows-1.3.0/evidence.json sha256 91ca7448…; user ruling: keep the account, its profile and the C:\ClorraineAcceptance toolkit for future releases; rc24, C:\ProgramData\Clorraine, the candidate and the evidence removed)
-- [ ] 7.1.7 **approval** `gh release create v1.3.0 --prerelease` with the four assets, `SHA256SUMS`, and `RELEASE-NOTES.md` as the body
+- [x] 7.1.7 **approval** `gh release create v1.3.0 --prerelease` with the four assets, `SHA256SUMS`, and `RELEASE-NOTES.md` as the body ✅ (completed: 2026-11-27 18:56; https://github.com/OpenLorraine/clorraine/releases/tag/v1.3.0, prerelease, v1.1.2 stays Latest; downloaded assets match the accepted SHA256SUMS)
 - [ ] 7.1.8 **approval** Push the release commit to `main` (fast-forward); delete `origin/release-1.3.0`; confirm the site shows v1.3.0; fresh installs from the published release on Linux and Windows
 - [ ] 7.1.9 **approval** Close #38, #57, #59, #60, #65 with notes; open the Open VSX follow-up issue (AR-39)
 - [ ] 7.1.10 Draft the AmigaDev announcement for the user; update roadmap row T-05 and this plan; remove the worktree
