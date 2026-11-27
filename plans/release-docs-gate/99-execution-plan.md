@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-27 20:13
-> **Progress**: 10/23 tasks (43%)
+> **Last Updated**: 2026-11-27 20:14
+> **Progress**: 11/23 tasks (48%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -50,7 +50,7 @@ review record (AR-10).
 - [x] 2.2.2 Green phase: ST-1..ST-30 pass ✅ (completed: 2026-11-27 20:13; 54 tests pass)
 
 ### Session 2.3: Implementation tests and hardening
-- [ ] 2.3.1 Impl tests: HTML extraction, `Retry-After`, cross-page dedup, redirect host checks
+- [x] 2.3.1 Impl tests: HTML extraction, `Retry-After`, cross-page dedup, redirect host checks ✅ (completed: 2026-11-27 20:14; 11 live impl tests; 65 total pass)
 - [ ] 2.3.2 Phase gate and review (correctness reviewer + security auditor)
 
 **Verify (gate)**: `make release-docs-test`
