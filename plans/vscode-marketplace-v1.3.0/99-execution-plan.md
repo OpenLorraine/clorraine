@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-27 15:13
-> **Progress**: 9/55 tasks (16%)
+> **Last Updated**: 2026-11-27 15:16
+> **Progress**: 10/55 tasks (18%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -89,7 +89,7 @@ branch; only Phase 1 reaches `main` before the release (AR-40).
 
 **Reference**: 03-01 · AR-9, AR-16, AR-18, AR-32, AR-35, AR-36, AR-38
 
-- [ ] 2.1.1 [spec-author] Write spec tests from ST-11..ST-20 — `tools/vscode/test/marketplace.spec.test.ts`, `guide.spec.test.ts`, `driver-command.spec.test.ts` (extend the fake-host fixtures as needed)
+- [x] 2.1.1 [spec-author] Write spec tests from ST-11..ST-20 — `tools/vscode/test/marketplace.spec.test.ts`, `guide.spec.test.ts`, `driver-command.spec.test.ts` (extend the fake-host fixtures as needed) ✅ (completed: 2026-11-27 15:16)
 - [ ] 2.1.2 Red phase: run the three spec files; they fail
 
 ### Step 2.2: Implementation
