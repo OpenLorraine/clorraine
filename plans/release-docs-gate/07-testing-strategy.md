@@ -3,8 +3,8 @@
 > **Document**: 07-testing-strategy.md
 > **Parent**: [Index](00-index.md)
 
-Specification tests live in `tools/release/tests/docs_check_spec.py` and implementation tests in
-`docs_check_impl.py`. Both are hermetic:
+Specification tests live in `tools/release/tests/docs_check_spec.py` (static) and `docs_live_spec.py`
+(live), implementation tests in `docs_check_impl.py`. Both are hermetic:
 - **Fixture repository:** each case builds a small git repository in a temporary directory, with a
   manifest, the release-facing files and a review record. A clean fixture passes; each case then
   changes one thing.

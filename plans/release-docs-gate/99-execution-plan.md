@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-27 20:10
-> **Progress**: 6/23 tasks (26%)
+> **Last Updated**: 2026-11-27 20:13
+> **Progress**: 10/23 tasks (43%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -42,12 +42,12 @@ review record (AR-10).
 > **Reference**: 03-02 · ST-23..ST-30 · AR-6, AR-13, AR-16, AR-17, AR-21..AR-24, AR-38
 
 ### Session 2.1: Specification tests
-- [ ] 2.1.1 Add ST-24..ST-30 with an injected fetcher and `gh` runner and local HTML/sitemap/API fixtures
-- [ ] 2.1.2 Red phase
+- [x] 2.1.1 Add ST-24..ST-30 with an injected fetcher and `gh` runner and local HTML/sitemap/API fixtures ✅ (completed: 2026-11-27 20:13; ST-23 live half..ST-30 in docs_live_spec.py with docs_live_fixture.py)
+- [x] 2.1.2 Red phase ✅ (completed: 2026-11-27 20:13; NOT run before the implementation (written in the same step); replaced by mutation evidence: 10 single-behaviour mutants of docs_live.py, all fail the suite after one test fix)
 
 ### Session 2.2: Implementation
-- [ ] 2.2.1 `tools/release/docs_live.py`: freshness, page extraction, link collection, probes, published release, network policy
-- [ ] 2.2.2 Green phase: ST-1..ST-30 pass
+- [x] 2.2.1 `tools/release/docs_live.py`: freshness, page extraction, link collection, probes, published release, network policy ✅ (completed: 2026-11-27 20:13)
+- [x] 2.2.2 Green phase: ST-1..ST-30 pass ✅ (completed: 2026-11-27 20:13; 54 tests pass)
 
 ### Session 2.3: Implementation tests and hardening
 - [ ] 2.3.1 Impl tests: HTML extraction, `Retry-After`, cross-page dedup, redirect host checks
