@@ -53,6 +53,15 @@
   branch, and the unchanged gate passes on a private Xvfb display. `make verify` passed with
   `DISPLAY` set to a private Xvfb server.
 
+## Follow-up: the VS Code extension for a local candidate
+
+Both installers download the VSIX from the pinned release URL, also with `--archive`/`-Archive`.
+For an unpublished candidate that URL serves the previous release's VSIX, whose size and SHA-256
+differ from the pins, so the installer correctly refuses it and the extension is not installed.
+The Windows acceptance run installed the candidate VSIX by hand with the installer's own launcher
+logic. A follow-up could use a pinned-matching VSIX found next to a local archive, on both
+platforms.
+
 ## Decision for the user: encrypted ROMs on Linux
 
 On Windows `clorraine` now refuses an encrypted Cloanto ROM (header `AMIROMTYPE1`) that has no
