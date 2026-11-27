@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-27 19:07
-> **Progress**: 53/55 tasks (96%)
+> **Last Updated**: 2026-11-27 19:09
+> **Progress**: 55/55 tasks (100%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -219,8 +219,8 @@ branch; only Phase 1 reaches `main` before the release (AR-40).
 - [x] 7.1.6 **approval** Windows acceptance: create the standard test account over `ssh winbox`, push the candidate, run `acceptance.ps1` in the desktop session, user confirms UAC and the editor, `make acceptance-check`, remove the account and files ✅ (completed: 2026-11-27 18:55; as `Clorraine Test` on build 26100: UAC and editor confirmed, extension 1.3.0 from the Marketplace, corpus 5/5, `acceptance-check: ok`, record build/acceptance/windows-1.3.0/evidence.json sha256 91ca7448…; user ruling: keep the account, its profile and the C:\ClorraineAcceptance toolkit for future releases; rc24, C:\ProgramData\Clorraine, the candidate and the evidence removed)
 - [x] 7.1.7 **approval** `gh release create v1.3.0 --prerelease` with the four assets, `SHA256SUMS`, and `RELEASE-NOTES.md` as the body ✅ (completed: 2026-11-27 18:56; https://github.com/OpenLorraine/clorraine/releases/tag/v1.3.0, prerelease, v1.1.2 stays Latest; downloaded assets match the accepted SHA256SUMS)
 - [x] 7.1.8 **approval** Push the release commit to `main` (fast-forward); delete `origin/release-1.3.0`; confirm the site shows v1.3.0; fresh installs from the published release on Linux and Windows ✅ (completed: 2026-11-27 19:07; main at a8b5c262 after two site follow-ups (home-page Windows one-liner, Install on Linux/Windows sidebar items); release branch deleted; live site swept (33 pages, links 200); fresh Linux install of the published install.sh into a scratch prefix: 1.3.0; fresh Windows install with the `irm … | iex` one-liner as Clorraine Test: First run complete, 1.3.0, extension installed (toolchain declined))
-- [ ] 7.1.9 **approval** Close #38, #57, #59, #60, #65 with notes; open the Open VSX follow-up issue (AR-39)
-- [ ] 7.1.10 Draft the AmigaDev announcement for the user; update roadmap row T-05 and this plan; remove the worktree
+- [x] 7.1.9 **approval** Close #38, #57, #59, #60, #65 with notes; open the Open VSX follow-up issue (AR-39) ✅ (completed: 2026-11-27 19:09; closed #38, #57, #59, #60, #65 as completed with notes; opened #97 (Open VSX) and #98 (installer skip message))
+- [x] 7.1.10 Draft the AmigaDev announcement for the user; update roadmap row T-05 and this plan; remove the worktree ✅ (completed: 2026-11-27 19:09; announcement drafted for the user; roadmap T-05 Done; release worktree removed after copying the evidence and candidate to the main checkout's build/release-1.3.0)
 
 **Verify (gate)**: `make verify`; both acceptance records pass `make acceptance-check`
 

@@ -1,7 +1,7 @@
 # VS Code Marketplace Extension and the v1.3.0 Release — Implementation Plan
 
 > **Feature**: Publish `openlorraine.clorraine` to the VS Code Marketplace, install it from there, and release Clorraine v1.3.0
-> **Status**: Planning Complete
+> **Status**: Done (v1.3.0 released 2026-11-27)
 > **Created**: 2026-11-27 14:47
 > **Implements**: — (task plan T-05; source: GitHub issue #38, revised by the Ambiguity Register)
 > **Mode**: `--auto-design` (root invocation `ad-20261127-vsmkt`); execution with `--auto-commit`
