@@ -38,11 +38,15 @@ xvfb_display=":${xvfb_num}"
 xvfb_container="clorraine-$(basename "${BASH_SOURCE[0]}" .sh)-xvfb-$$"
 peer_pid=""
 
-# The crash-safety probes, in run order. Each entry is
+# The crash-safety probes, in run order. clip-raw reads the clipboard while
+# unit 0 still holds no clip: that empty read is the one that used to hold off
+# every later write. Each entry is
 # `<probe>|<result file>|<expected line>`; the Makefile recipe builds every
 # probe from examples/robustness/crash-safety/ before this script runs.
 PROBES=(
     "pubscreen-wb|pub.txt|pub: ok unknown false wb true"
+    "clip-raw|clipraw.txt|clipraw: ok w2 true"
+    "clip-iff|clipiff.txt|clip: ok r1 8 r2 24 r3 24 c 109"
 )
 
 probe_bin() {

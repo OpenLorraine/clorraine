@@ -87,6 +87,91 @@ fn the_public_screen_capture_opens_intuition_v36_before_locking_the_screen() {
     );
 }
 
+/// The clipboard handle opens its unit for one operation at a time: the open
+/// proves the unit exists and closes it again, each write and read opens the
+/// unit before its first request and closes it on every path after its last,
+/// and closing the handle frees it without a device close.
+#[test]
+fn the_clipboard_opens_its_unit_only_for_each_operation() {
+    let source = shim("shim_hosted_amiga_optional_services.c");
+    let open = body(&source, "void *cl_clipboard_open(LONG unit)");
+    assert_order(
+        "open",
+        open,
+        &[
+            "clipboard->unit = unit;",
+            "mn_ReplyPort = clipboard->port;",
+            "if (!cl_clipboard_attach(clipboard)) {",
+            "cl_clipboard_detach(clipboard);",
+            "cl_res_add(&clipboard->res, cl_clipboard_close, clipboard)",
+        ],
+    );
+    let close = body(&source, "void cl_clipboard_close(void *handle)");
+    assert!(
+        !close.contains("CloseDevice") && !close.contains("cl_clipboard_detach"),
+        "close: the unit is not open between operations:\n{close}"
+    );
+    for (signature, first, last) in [
+        (
+            "BOOL cl_clipboard_write(void *handle, APTR data, ULONG length)",
+            "io_Command = CMD_WRITE;",
+            "io_Command = CMD_UPDATE;",
+        ),
+        (
+            "LONG cl_clipboard_read(void *handle, APTR data, ULONG length)",
+            "io_Command = CBD_CURRENTREADID;",
+            "io_Command = CMD_READ;",
+        ),
+    ] {
+        let operation = body(&source, signature);
+        assert_order(
+            signature,
+            operation,
+            &["if (!cl_clipboard_attach(clipboard))", first, last, "cl_clipboard_detach(clipboard);"],
+        );
+        // Every exit after a successful attach leaves through the single
+        // detach: the retry loop breaks instead of returning.
+        let from_loop = &operation[operation.find("for (attempts = 0;").unwrap()..];
+        let loop_part = &from_loop[..from_loop.find("cl_clipboard_detach(clipboard);").unwrap()];
+        assert!(
+            !loop_part.contains("return"),
+            "{signature}: a return between attach and detach leaves the unit open:\n{operation}"
+        );
+        assert_eq!(operation.matches("cl_clipboard_detach").count(), 1, "{signature}: one detach");
+    }
+}
+
+/// A read is one bounded request from the start of the current clip. It never
+/// reads on toward the end of the clip, never reads without a buffer, and
+/// never asks for zero bytes: on the 2.0 to 3.1 devices a read that returns
+/// no data holds off every later write on the unit.
+#[test]
+fn the_clipboard_read_is_one_bounded_request_from_the_start() {
+    let source = shim("shim_hosted_amiga_optional_services.c");
+    let read = body(&source, "LONG cl_clipboard_read(void *handle, APTR data, ULONG length)");
+    assert_eq!(read.matches("io_Command = CMD_READ;").count(), 1, "one read request");
+    assert_order(
+        "read",
+        read,
+        &[
+            "io_Data = (STRPTR)data;",
+            "io_Length = length;",
+            "io_Offset = 0;",
+            "got = (LONG)clipboard->request->io_Actual;",
+            "io_Error != CBERR_OBSOLETEID",
+        ],
+    );
+    assert!(!read.contains("io_Data = NULL"), "no read without a buffer:\n{read}");
+    // An empty buffer returns 0 before the unit is opened: a request for no
+    // bytes is itself a read that returns no data.
+    assert_order(
+        "read",
+        read,
+        &["if (length == 0) {\n        return 0;\n    }", "if (!cl_clipboard_attach(clipboard))"],
+    );
+    assert!(!source.contains("0x7FFFFFFF"), "no skip read to the end of the clip");
+}
+
 /// Only the two screen and window constructors and the two entries that can
 /// run first open Intuition; every other Intuition user receives a screen or
 /// window handle, so the library is already open when it runs.

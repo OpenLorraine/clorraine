@@ -24,8 +24,9 @@ upstream; this document is the owning requirements document. Scope per AR-1.
       as today; text that is partly outside is clipped at the pixel edge; text that is fully
       outside, out of range, or a partly visible colour-font string draws nothing (AR-3..AR-5).
       Spec: [03-02](03-02-text-clipping.md).
-- [ ] **FR-3** `clipboardRead` finishes the device read before it returns, so a later write on any
-      handle of that unit is not held off. It still returns the caller-buffer count or -1 and
+- [ ] **FR-3** `clipboardRead` leaves the unit in no read state when it returns, so a later write
+      on any handle of that unit in the program is not held off (AR-18: the handle opens the unit
+      per operation). It still returns the caller-buffer count or -1 and
       writes at most `len(buf)` bytes (AR-10, AR-11). Spec: [03-01 §Clipboard](03-01-intuition-and-clipboard.md#clipboard-read).
 - [ ] **FR-4** Freeing a region uninstalls it from every layer that holds it before disposing it;
       freeing a layer (by the program or at exit) ends an open update, then uninstalls its clip
@@ -86,8 +87,8 @@ upstream; this document is the owning requirements document. Scope per AR-1.
 
 ## Acceptance Criteria
 
-1. [ ] ST-1..ST-9 fail before and pass after their fix, except the guards AR-13 names (ST-5 on
-       the A600, ST-7's layer-free half); ST-10 passes after the fix (AR-13).
+1. [ ] ST-1..ST-9 fail before and pass after their fix, except the guards AR-13 and AR-17 name (ST-5
+       on both machines, ST-7's layer-free half); ST-10 passes after the fix (AR-13).
 2. [ ] The existing legs of `sdk-a1200-addons`, `sdk-a600-addons`, and `sdk-a500-fault-cleanup`,
        and every other gate in `make verify`, still pass (ST-11).
 3. [ ] `make verify` passes; `make bench-compare` passes with an empty `REQUIRE`; deltas recorded.

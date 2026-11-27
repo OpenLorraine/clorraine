@@ -1,0 +1,70 @@
+// Crash-safety probe for the clipboard read. On the clipboard.device of
+// Kickstart 2.0 to 3.1, a read that returns no data or reaches the end of a
+// clip holds off every later write on the unit until the unit is closed, so a
+// read must not leave the unit in that state. Each write here follows a read
+// that stopped a different way: a buffer smaller than the clip, a buffer
+// exactly the clip's size, and a buffer larger than the clip. The result line
+// is printed only after all four writes returned.
+//
+// Every clip is a 24-byte IFF FTXT form holding one CHRS chunk of four text
+// bytes, which the 2.04 and 3.1 devices both read back.
+module robustness.crash_safety.clip_iff;
+
+import { Clipboard, openClipboard, closeClipboard, clipboardWrite,
+         clipboardRead } from std.amiga.clipboard;
+import { slice } from std.mem;
+import { println } from std.io;
+
+/// Sets the four text bytes of the FTXT form in `clip`.
+func setText(borrow clip: u8[], a: u8, b: u8, c: u8, d: u8): void {
+    clip[20] = a;
+    clip[21] = b;
+    clip[22] = c;
+    clip[23] = d;
+}
+
+func main(): i32 {
+    let opened: Clipboard? = openClipboard(0);
+    if (opened == null) {
+        println("clip: err open");
+        return 1;
+    }
+    let clipboard: Clipboard = opened;
+    // "FORM", size 16, "FTXT", "CHRS", size 4, then the four text bytes.
+    let clip: u8[24] = [70, 79, 82, 77, 0, 0, 0, 16, 70, 84, 88, 84,
+                        67, 72, 82, 83, 0, 0, 0, 4, 0, 0, 0, 0];
+    let part: u8[8] = [0; 8];
+    let exact: u8[24] = [0; 24];
+    let large: u8[64] = [0; 64];
+
+    setText(slice(clip, 0, 24), 97, 98, 99, 100);
+    if (!clipboardWrite(clipboard, slice(clip, 0, 24))) {
+        println("clip: err w1");
+        return 1;
+    }
+    let r1: i32 = clipboardRead(clipboard, slice(part, 0, 8));
+
+    setText(slice(clip, 0, 24), 119, 120, 121, 122);
+    if (!clipboardWrite(clipboard, slice(clip, 0, 24))) {
+        println("clip: err w2");
+        return 1;
+    }
+    let r2: i32 = clipboardRead(clipboard, slice(exact, 0, 24));
+
+    setText(slice(clip, 0, 24), 109, 110, 111, 112);
+    if (!clipboardWrite(clipboard, slice(clip, 0, 24))) {
+        println("clip: err w3");
+        return 1;
+    }
+    let r3: i32 = clipboardRead(clipboard, slice(large, 0, 64));
+
+    setText(slice(clip, 0, 24), 113, 114, 115, 116);
+    if (!clipboardWrite(clipboard, slice(clip, 0, 24))) {
+        println("clip: err w4");
+        return 1;
+    }
+    closeClipboard(clipboard);
+    let c: i32 = i32(large[20]);
+    println($"clip: ok r1 {r1} r2 {r2} r3 {r3} c {c}");
+    return 0;
+}

@@ -1,0 +1,36 @@
+// Crash-safety probe for the clipboard read with raw clips: write, read, write,
+// read on one handle, while unit 0 still holds no clip. The 2.0 to 3.1 devices
+// discard a clip that is not an IFF form, so the first read returns no data,
+// and on those devices such a read holds off every later write on the unit
+// until it is closed: the second write must still return. Only the second
+// write's result is printed; what a read returns for a raw clip is not part of
+// this check.
+module robustness.crash_safety.clip_raw;
+
+import { Clipboard, openClipboard, closeClipboard, clipboardWrite,
+         clipboardRead } from std.amiga.clipboard;
+import { slice } from std.mem;
+import { println } from std.io;
+
+func main(): i32 {
+    let opened: Clipboard? = openClipboard(0);
+    if (opened == null) {
+        println("clipraw: err open");
+        return 1;
+    }
+    let clipboard: Clipboard = opened;
+    let first: u8[4] = [97, 98, 99, 100];
+    let second: u8[4] = [101, 102, 103, 104];
+    let buffer: u8[16] = [0; 16];
+
+    if (!clipboardWrite(clipboard, slice(first, 0, 4))) {
+        println("clipraw: err w1");
+        return 1;
+    }
+    clipboardRead(clipboard, slice(buffer, 0, 16));
+    let w2: bool = clipboardWrite(clipboard, slice(second, 0, 4));
+    clipboardRead(clipboard, slice(buffer, 0, 16));
+    closeClipboard(clipboard);
+    println($"clipraw: ok w2 {w2}");
+    return 0;
+}

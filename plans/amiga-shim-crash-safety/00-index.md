@@ -91,7 +91,7 @@ closeAmigaGuide(guide);      // held messages are replied; their getters now rea
 | Region freed while installed | uninstalled from every layer, then disposed (AR-6, AR-7) |
 | Open update | ended only when its layer is freed (AR-8) |
 | Guide closed with held messages | replied at close; handles orphaned (AR-9) |
-| Clipboard read | skip read plus one read past the end (AR-10) |
+| Clipboard read | the unit is opened per operation; no read past the end (AR-18, superseding AR-10) |
 | Spec | unchanged (AR-12) |
 
 ## Specialist Agents

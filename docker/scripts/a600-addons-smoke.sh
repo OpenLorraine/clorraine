@@ -4,7 +4,8 @@
 # Boots a clean directory HD with the licensed Workbench 2.04/2.1 libraries,
 # runs the Exec/args/services demos with typed serial/parallel/printer
 # open/close, then runs the gadtools/ASL demo under a private Xvfb. No host
-# window is shown.
+# window is shown. The IFF clipboard crash-safety probe runs last, so the
+# clipboard read is also proven on the 2.04 clipboard.device.
 set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -28,6 +29,8 @@ expected_par="par: ok open 1"
 expected_prt="prt: ok open 1"
 expected_gt="gt: ok gad 4"
 expected_asl="asl: ok path 1"
+expected_clipiff="clip: ok r1 8 r2 24 r3 24 c 109"
+clip_iff_bin=build/clorraine/clip-iff/hosted-amiga/clip-iff
 
 work="${repo_dir}/build/amiga-sdk/a600-addons"
 hd="${work}/hd"
@@ -45,7 +48,8 @@ for bin in \
     build/clorraine/optional-exec20/hosted-amiga/optional-exec20 \
     build/clorraine/optional-args/hosted-amiga/optional-args \
     build/clorraine/optional-services/hosted-amiga/optional-services \
-    build/clorraine/optional-intuition/hosted-amiga/optional-intuition; do
+    build/clorraine/optional-intuition/hosted-amiga/optional-intuition \
+    "${clip_iff_bin}"; do
     if [ ! -f "${bin}" ]; then
         echo "a600-addons-smoke: missing binary: ${bin}" >&2
         echo "a600-addons-smoke: build it with make sdk-advanced-build" >&2
@@ -96,6 +100,7 @@ cp build/clorraine/optional-exec20/hosted-amiga/optional-exec20 "${hd}/optional-
 cp build/clorraine/optional-args/hosted-amiga/optional-args "${hd}/optional-args"
 cp build/clorraine/optional-services/hosted-amiga/optional-services "${hd}/optional-services"
 cp build/clorraine/optional-intuition/hosted-amiga/optional-intuition "${hd}/optional-intuition"
+cp "${clip_iff_bin}" "${hd}/clip-iff"
 
 {
     wb_assigns "${hd}"
@@ -105,6 +110,8 @@ CNEXT:optional-exec20 >CNEXT:exec.txt
 CNEXT:optional-args >CNEXT:args.txt
 CNEXT:optional-services >CNEXT:services.txt
 CNEXT:optional-intuition >CNEXT:intuition.txt
+CNEXT:clip-iff >CNEXT:clipiff.txt
+Echo >CNEXT:done.txt "done"
 EOF
 } > "${hd}/s/startup-sequence"
 
@@ -180,12 +187,36 @@ if [ -f "${hd}/asl-ready.txt" ]; then
     done
 fi
 
-sleep 2
+# The clipboard probe starts after the ASL leg and done.txt follows it. A
+# redirect creates its file when the command starts, so wait for done.txt and
+# then for the HD tree to stay unchanged for three seconds.
+for _ in $(seq 1 60); do
+    [ -f "${hd}/done.txt" ] && break
+    sleep 1
+done
+# A file can vanish while find walks the live HD; that only changes the sum.
+tree_sum() {
+    { find "${hd}" -type f -printf '%P %s %T@\n' 2>/dev/null || true; } | sort | sha1sum
+}
+last_sum=""
+stable=0
+for _ in $(seq 1 30); do
+    sum="$(tree_sum)"
+    if [ "${sum}" = "${last_sum}" ]; then
+        stable=$((stable + 1))
+        [ "${stable}" -ge 3 ] && break
+    else
+        stable=0
+        last_sum="${sum}"
+    fi
+    sleep 1
+done
 docker stop -t 8 "${container}" >/dev/null 2>&1 || true
 wait "${runner}" 2>/dev/null || true
 
 for file in exec.txt args.txt svc-cmd.txt svc-locale.txt svc-rexx.txt \
-    svc-clip.txt svc-ser.txt svc-par.txt svc-prt.txt intuition.txt asl-done.txt; do
+    svc-clip.txt svc-ser.txt svc-par.txt svc-prt.txt intuition.txt asl-done.txt \
+    clipiff.txt done.txt; do
     if [ ! -f "${hd}/${file}" ]; then
         echo "a600-addons-smoke: missing ${file}" >&2
         tail -20 "${work}/fs-uae.log" >&2 || true
@@ -214,6 +245,7 @@ check svc-ser.txt "${expected_ser}"
 check svc-par.txt "${expected_par}"
 check svc-prt.txt "${expected_prt}"
 check asl-done.txt "ready"
+check clipiff.txt "${expected_clipiff}"
 if ! grep -q "${expected_args}" "${hd}/args.txt" ||
    ! grep -q "${expected_regions}" "${hd}/args.txt" ||
    ! grep -q "${expected_eclock}" "${hd}/args.txt"; then
@@ -239,4 +271,4 @@ if [ "${colors}" -lt 2 ] 2>/dev/null; then
     exit 1
 fi
 
-echo "a600-addons-smoke: OK (${expected_exec}; ${expected_cmd}; ${expected_locale}; ${expected_rexx}; ${expected_ser}; ${expected_par}; ${expected_gt}; ${expected_asl})"
+echo "a600-addons-smoke: OK (${expected_exec}; ${expected_cmd}; ${expected_locale}; ${expected_rexx}; ${expected_ser}; ${expected_par}; ${expected_gt}; ${expected_asl}; ${expected_clipiff})"

@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-27 09:09
-> **Progress**: 9/39 tasks (23%)
+> **Last Updated**: 2026-11-27 10:17
+> **Progress**: 15/39 tasks (38%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -112,30 +112,36 @@ fail as specified); `make check` cannot pass until the green phase.
 
 ## Phase 2: Clipboard read
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill)_
+> **Phase baseline tree**: 336d76e96a13f81a6a695d47a0aa8d0b265ef143 (scope mode strict)
 > **Reasoning**: medium — a device-protocol fix with an autodoc-derived sequence; target-proven.
 
 ### Step 2.1: Specification tests
 
 **Reference**: [07](07-testing-strategy.md) ST-5, ST-6 · AR-10, AR-11, AR-13
 
-- [ ] 2.1.1 [spec-author] Write the ST-5 and ST-6 probes and their A1200 gate checks (they run after `pubscreen-wb`; Phase 3 inserts its probes before them and Phase 4 appends `text-offscreen` last), and the ST-5 run in the A600 gate (build, install, one startup line after the existing legs, the `clipiff.txt` wait and check) — `examples/robustness/crash-safety/clip-{iff,raw}.clo`, `docker/scripts/a1200-addons-smoke.sh`, `docker/scripts/a600-addons-smoke.sh`, `Makefile`
-- [ ] 2.1.2 Red phase: `make sdk-a1200-addons` and `make sdk-a600-addons`; record ST-5/ST-6 failing on the A1200 (a write after a read never returns; `done.txt` missing) with the other checks reporting as before, and record ST-5's base outcome on the A600 (a guard, red not required)
+- [x] 2.1.1 [spec-author] Write the ST-5 and ST-6 probes and their A1200 gate checks (they run after `pubscreen-wb`, `clip-raw` before `clip-iff` per AR-17; Phase 3 inserts its probes before them and Phase 4 appends `text-offscreen` last), and the ST-5 run in the A600 gate (build, install, one startup line after the existing legs, the `clipiff.txt` wait and check) — `examples/robustness/crash-safety/clip-{iff,raw}.clo`, `docker/scripts/a1200-addons-smoke.sh`, `docker/scripts/a600-addons-smoke.sh`, `Makefile` ✅ (completed: 2026-11-27 09:31)
+- [x] 2.1.2 Red phase: `make sdk-a1200-addons` and `make sdk-a600-addons`; record ST-6 failing on the A1200 (a write after a read of the empty unit never returns; `done.txt` missing) with the other checks reporting as before, and record ST-5's base outcome on both machines (a guard, AR-17) ✅ (completed: 2026-11-27 09:31)
+
+**Red-phase evidence (2026-11-27 09:31)**: in the first order (`clip-iff` before `clip-raw`) every probe passed on the
+unfixed shim, so AR-17 reordered them after a bare WB3.1 reproduction. Reordered A1200 run:
+`clip-raw: clipraw.txt mismatch` (empty; the second write never returned), `missing clipiff.txt`,
+`missing done.txt`; dt, net, guide, Workbench start, and `pub` pass. A600 (guard): `clip: ok r1 8
+r2 24 r3 24 c 109` on the unfixed shim; the 2.04 device reads the IFF clips exactly as 3.1 does.
 
 ### Step 2.2: Implementation
 
 **Reference**: [03-01 §Clipboard read](03-01-intuition-and-clipboard.md#clipboard-read) · AR-10, AR-11
 
-- [ ] 2.2.1 Finish the read after the caller's `CMD_READ` (saved count, skip read, one past-the-end read) — `compiler/runtime/shim_hosted_amiga_optional_services.c`
-- [ ] 2.2.2 Green phase: ST-5 (A1200 and A600) and ST-6 pass; if any write still hangs or the A600 reads differ from the A1200 reads, mark `[!]` and follow the AR-10 reopen triggers before any other change
+- [x] 2.2.1 Open the clipboard unit per operation (open checks and closes; write and read open, run today's sequence, close; no read past the end; AR-18 supersedes the finishing reads) — `compiler/runtime/shim_hosted_amiga_optional_services.c` ✅ (completed: 2026-11-27 10:00)
+- [x] 2.2.2 Green phase: ST-5 (A1200 and A600) and ST-6 pass; if any write still hangs or the A600 reads differ from the A1200 reads, mark `[!]` and follow the AR-18 reopen triggers before any other change ✅ (completed: 2026-11-27 10:00; A1200 3 probes OK, A600 `clip: ok r1 8 r2 24 r3 24 c 109`)
 
 ### Step 2.3: Implementation tests and hardening
 
-- [ ] 2.3.1 Write the clipboard impl tests; update any pin whose text intentionally changed — `compiler/tests/amiga_crash_safety_impl_test.rs`
-- [ ] 2.3.2 Phase gate: `make check`, `make sdk-a1200-addons`, `make sdk-a600-addons`
+- [x] 2.3.1 Write the clipboard impl tests; update any pin whose text intentionally changed — `compiler/tests/amiga_crash_safety_impl_test.rs` ✅ (completed: 2026-11-27 10:05; `make check` 4524 tests)
+- [x] 2.3.2 Phase gate: `make check`, `make sdk-a1200-addons`, `make sdk-a600-addons` ✅ (completed: 2026-11-27 10:05; `make check IMAGE=clorraine-sdk:windows-cli` 4524 tests; `sdk-a1200-addons` and `sdk-a600-addons` OK on this shim)
 
 **Deliverables**:
-- [ ] ST-5, ST-6 green on A1200/KS3.1; ST-5 green on A600/KS2.05
+- [x] ST-5, ST-6 green on A1200/KS3.1; ST-5 green on A600/KS2.05
 
 **Verify (gate)**: `make check && make sdk-a1200-addons && make sdk-a600-addons`
 
@@ -220,7 +226,7 @@ fail as specified); `make check` cannot pass until the green phase.
 **Reference**: [03-04 §Docs, §Bench evidence](03-04-gates-and-docs.md#docs) · AR-15, AR-16
 
 - [ ] 5.1.1 Update the doc comments per 03-04 §Docs — `stdlib/std.amiga.{text,intuition,workbench,regions,amigaguide,clipboard}.clo`
-- [ ] 5.1.2 Update `docs/known-limitations.md` §4 and §5 (clipboard proof on A1200/KS3.1 and A600/KS2.05) and add the colour-font clip limit — `docs/known-limitations.md`
+- [ ] 5.1.2 Update `docs/known-limitations.md` §4 and §5 (clipboard proof on A1200/KS3.1 and A600/KS2.05, the other-opener limit and the per-operation reload) and add the colour-font clip limit; update the SDK-WBK-006 registry row and regenerate coverage (`make sdk-registry`) — `docs/known-limitations.md`, `docs/amiga-sdk/registry.tsv`, `docs/amiga-sdk/coverage.md`
 - [ ] 5.1.3 Update the `sdk-a1200-addons`, `sdk-a600-addons`, and `sdk-a500-fault-cleanup` rows and the Makefile comments — `AGENTS.md`, `Makefile`, `site/project/verification.md` if it names the probes
 - [ ] 5.1.4 Bench evidence: `make bench-base COMMIT=<the commit before task 1.1.1>`, `make bench`, `make bench-compare` (empty `REQUIRE`), and the release `.text` of `gui` and `scroller` (`hosted-amiga-13`) at base and head; record them here and in 07
 - [ ] 5.1.5 Plan gate: `make verify`

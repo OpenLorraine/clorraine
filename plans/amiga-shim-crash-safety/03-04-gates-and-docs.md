@@ -45,7 +45,8 @@ It skips without the SDK toolchain, like the R1 suite.
   after the three existing legs, one line per probe redirected to its own file
   (`pub.txt`, `clipiff.txt`, `clipraw.txt`, `region.txt`, `guidelate.txt`, `text.txt`), then
   `echo done >CNEXT:done.txt` (AR-14). The clipboard probes run after the region and guide probes,
-  and `text-offscreen` runs last, because a red-phase hang there stops the rest.
+  `clip-raw` before `clip-iff` so it reads the empty unit (AR-17), and `text-offscreen` runs last,
+  because a red-phase hang there stops the rest.
 - **Completion:** wait for `done.txt` (bounded at 240 s), then for the HD tree to stay unchanged
   for 3 s (bounded at 30 s), then stop FS-UAE (AR-14). The existing three checks and the
   Workbench-start check stay; each new file is checked against its expected line; a missing file
@@ -103,8 +104,9 @@ No new target. `sdk-a1200-addons`, `sdk-a600-addons`, and `sdk-a500-fault-cleanu
 | `stdlib/std.amiga.workbench.clo` (`savePublicScreen`) | works with no screen; false when Intuition V36 is not available | AR-16 |
 | `stdlib/std.amiga.regions.clo` | freeing an installed region unclips its layers first; freeing a layer unclips it first | AR-16 |
 | `stdlib/std.amiga.amigaguide.clo` | closing replies held messages; their getters then read 0 and their reply frees only the handle | AR-16 |
-| `stdlib/std.amiga.clipboard.clo` (`clipboardRead`) | the read is finished, so later writes are not held off | AR-16 |
-| `docs/known-limitations.md` | §4 Clipboard runtime proof becomes IFF write/read pairs on A1200/KS3.1 and A600/KS2.05; §5 clipboard bullet updated; a colour-font clip limit line | AR-16 |
+| `stdlib/std.amiga.clipboard.clo` (module header, `Clipboard`, `clipboardRead`) | the handle keeps its request and port and opens the unit only during each write or read; a read never goes past the end of the clip and an empty buffer reads nothing, so later writes are not held off; while another program keeps the unit open, a read that returns no data holds off writes until that program closes it (AR-18) | AR-16, AR-18 |
+| `docs/known-limitations.md` | §4 Clipboard runtime proof becomes IFF write/read pairs on A1200/KS3.1 and A600/KS2.05; §5 clipboard bullet updated, with the other-opener limit and that each operation may reload `clipboard.device` from `DEVS:` (a volume requester on a floppy system after an expunge); a colour-font clip limit line | AR-16, AR-18 |
+| `docs/amiga-sdk/registry.tsv` (SDK-WBK-006) and `coverage.md` | write/update and read proven; evidence `sdk-a600-addons` and `sdk-a1200-addons` with `clip: ok r1 8 r2 24 r3 24 c 109`; regenerate with `make sdk-registry` | AR-18 |
 | `AGENTS.md` | the three gate rows name the new probes | AR-13 |
 
 No `spec/` file changes (AR-12).

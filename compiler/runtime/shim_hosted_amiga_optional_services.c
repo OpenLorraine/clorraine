@@ -697,13 +697,35 @@ LONG cl_rexx_arg(void *handle_void, LONG index, APTR buffer, ULONG length)
 /* Clipboard.                                                                */
 /* ------------------------------------------------------------------------- */
 
+/* A clipboard handle keeps its request and reply port, but holds the device
+ * open only for the length of one write or read. On the clipboard.device of
+ * Kickstart 2.0 to 3.1, a read that returns no data (an empty unit, a clip the
+ * device could not keep, or any read at or past the end of a clip) holds off
+ * every later write on the unit until all of its openers have closed it. Each
+ * operation therefore opens the unit, does its requests, and closes it again,
+ * so that state ends with the call that caused it, and no read is ever issued
+ * past the end of a clip. */
 typedef struct cl_clipboard {
     struct IOClipReq *request;
     struct MsgPort *port;
+    LONG unit;
     cl_res res;
 } cl_clipboard;
 
 void cl_clipboard_close(void *handle);
+
+/* Open the handle's unit for one operation; FALSE when it cannot be opened. */
+static BOOL cl_clipboard_attach(cl_clipboard *clipboard)
+{
+    return OpenDevice((STRPTR)"clipboard.device", (ULONG)clipboard->unit,
+                      (struct IORequest *)clipboard->request, 0) == 0;
+}
+
+/* Close the unit at the end of one operation. */
+static void cl_clipboard_detach(cl_clipboard *clipboard)
+{
+    CloseDevice((struct IORequest *)clipboard->request);
+}
 
 void *cl_clipboard_open(LONG unit)
 {
@@ -717,6 +739,7 @@ void *cl_clipboard_open(LONG unit)
     if (clipboard == NULL) {
         return NULL;
     }
+    clipboard->unit = unit;
     clipboard->port = cl_device_port();
     if (clipboard->port == NULL) {
         FreeMem(clipboard, (ULONG)sizeof *clipboard);
@@ -732,13 +755,14 @@ void *cl_clipboard_open(LONG unit)
     clipboard->request->io_Message.mn_ReplyPort = clipboard->port;
     clipboard->request->io_Message.mn_Length =
         (UWORD)sizeof(struct IOClipReq);
-    if (OpenDevice((STRPTR)"clipboard.device", unit,
-                   (struct IORequest *)clipboard->request, 0) != 0) {
+    /* Opening the unit once proves it exists; each operation reopens it. */
+    if (!cl_clipboard_attach(clipboard)) {
         FreeMem(clipboard->request, (ULONG)sizeof(struct IOClipReq));
         DeletePort(clipboard->port);
         FreeMem(clipboard, (ULONG)sizeof *clipboard);
         return NULL;
     }
+    cl_clipboard_detach(clipboard);
     if (!cl_res_add(&clipboard->res, cl_clipboard_close, clipboard)) {
         cl_clipboard_close(clipboard);
         return NULL;
@@ -746,6 +770,8 @@ void *cl_clipboard_open(LONG unit)
     return clipboard;
 }
 
+/* Free the handle. The unit is not open between operations, so there is no
+ * device to close here. */
 void cl_clipboard_close(void *handle)
 {
     cl_clipboard *clipboard = (cl_clipboard *)handle;
@@ -755,7 +781,6 @@ void cl_clipboard_close(void *handle)
     }
     cl_res_remove(&clipboard->res);
     if (clipboard->request != NULL) {
-        CloseDevice((struct IORequest *)clipboard->request);
         FreeMem(clipboard->request, (ULONG)sizeof(struct IOClipReq));
     }
     if (clipboard->port != NULL) {
@@ -768,8 +793,12 @@ BOOL cl_clipboard_write(void *handle, APTR data, ULONG length)
 {
     cl_clipboard *clipboard = (cl_clipboard *)handle;
     LONG attempts;
+    BOOL ok = FALSE;
 
     if (clipboard == NULL || data == NULL) {
+        return FALSE;
+    }
+    if (!cl_clipboard_attach(clipboard)) {
         return FALSE;
     }
     for (attempts = 0; attempts < 3; attempts++) {
@@ -780,44 +809,60 @@ BOOL cl_clipboard_write(void *handle, APTR data, ULONG length)
         clipboard->request->io_Length = length;
         clipboard->request->io_Offset = 0;
         if (DoIO((struct IORequest *)clipboard->request) != 0) {
-            return FALSE;
+            break;
         }
         clipboard->request->io_Command = CMD_UPDATE;
         if (DoIO((struct IORequest *)clipboard->request) == 0) {
-            return TRUE;
+            ok = TRUE;
+            break;
         }
         if (clipboard->request->io_Error != CBERR_OBSOLETEID) {
-            return FALSE;
+            break;
         }
     }
-    return FALSE;
+    cl_clipboard_detach(clipboard);
+    return ok;
 }
 
+/* One bounded read from the start of the current clip. The read is never
+ * continued to the end of the clip: closing the unit afterwards ends it. */
 LONG cl_clipboard_read(void *handle, APTR data, ULONG length)
 {
     cl_clipboard *clipboard = (cl_clipboard *)handle;
     LONG attempts;
+    LONG got = -1;
 
     if (clipboard == NULL || data == NULL) {
+        return -1;
+    }
+    /* An empty buffer reads nothing; asking the device would be a read that
+     * returns no data, which holds off writes while another opener keeps
+     * the unit open. */
+    if (length == 0) {
+        return 0;
+    }
+    if (!cl_clipboard_attach(clipboard)) {
         return -1;
     }
     for (attempts = 0; attempts < 3; attempts++) {
         clipboard->request->io_Command = CBD_CURRENTREADID;
         if (DoIO((struct IORequest *)clipboard->request) != 0) {
-            return -1;
+            break;
         }
         clipboard->request->io_Command = CMD_READ;
         clipboard->request->io_Data = (STRPTR)data;
         clipboard->request->io_Length = length;
         clipboard->request->io_Offset = 0;
         if (DoIO((struct IORequest *)clipboard->request) == 0) {
-            return (LONG)clipboard->request->io_Actual;
+            got = (LONG)clipboard->request->io_Actual;
+            break;
         }
         if (clipboard->request->io_Error != CBERR_OBSOLETEID) {
-            return -1;
+            break;
         }
     }
-    return -1;
+    cl_clipboard_detach(clipboard);
+    return got;
 }
 
 BOOL cl_clipboard_clear(void *handle)

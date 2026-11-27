@@ -46,35 +46,36 @@ issues one `CMD_READ` of `length` bytes at offset 0, and returns `io_Actual`, re
 
 ### Proposed Changes
 
-After the caller's `CMD_READ` succeeds (AR-10, AR-11):
-1. Save `got = io_Actual`.
-2. Unless `got != length` (the offset is then already past the end): issue a skip read —
-   `CMD_READ`, `io_Data = NULL`, `io_Length = 0x7FFFFFFF`, offset and clip ID untouched.
-3. Issue exactly one finishing read — `CMD_READ`, `io_Data = NULL`, `io_Length = 1`, offset and
-   clip ID untouched. The device sees `io_Offset` past the end and ends the read session. This
-   holds after a skip read that returned 0 bytes too (a caller buffer exactly the clip size):
-   the skip read always returns less than its `io_Length`, so it leaves `io_Offset` "beyond EOF"
-   (clipboard.doc CMD_READ RESULTS), and only the read after it is past the end.
-4. Return `got`. Errors of steps 2–3 do not change the result.
+*(Runtime AR-18 replaced the planned finishing reads: on the 2.04 and 3.1 devices every read at or
+past the end of a clip, and every read that returns 0 bytes, holds off later writes on the unit
+until all of its openers close it.)*
 
-The `CBD_CURRENTREADID` step and the bounded retry of the caller's read stay as they are
-(spec §14.18). A failed caller read returns -1 as today, with no finishing reads, and is retried
-only for `CBERR_OBSOLETEID`. A small static helper (`cl_clipboard_finish_read`) holds steps 2–3.
+A `Clipboard` keeps its `IOClipReq` and reply port and stores its unit, but holds the unit open only
+for one operation (AR-18, AR-11):
+1. `cl_clipboard_open`: allocate the port and request as today, `OpenDevice` once to prove the unit
+   opens (null otherwise), then `CloseDevice`; register the handle.
+2. `cl_clipboard_write`: `OpenDevice` (false on failure), the unchanged write/update loop with its
+   bounded `CBERR_OBSOLETEID` retry, `CloseDevice`, return the result.
+3. `cl_clipboard_read`: `OpenDevice` (-1 on failure), the unchanged `CBD_CURRENTREADID` and one
+   `CMD_READ` of `length` bytes at offset 0 with the bounded retry, `CloseDevice`, return
+   `io_Actual` or -1. No read is issued past the end of the clip.
+4. `cl_clipboard_close`: free the request, port, and handle; no `CloseDevice`.
+
+Two static helpers (`cl_clipboard_attach`, `cl_clipboard_detach`) open and close the unit.
 
 ### Error Handling
 
 | Error Case | Handling Strategy | AR Ref |
 | ---------- | ----------------- | ------ |
-| Caller read fails (not obsolete ID) | -1, no finishing reads | AR-11 |
+| Per-call `OpenDevice` fails | write false, read -1 | AR-18 |
+| Caller read fails (not obsolete ID) | -1 | AR-11 |
 | Obsolete ID | bounded retry of the caller read, as today | AR-11 |
-| Skip or finishing read fails | ignored; return the caller count | AR-11 |
-| Zero-length caller buffer (`got == length == 0`) | skip read + finishing read | AR-10 |
-| Caller buffer exactly the clip size (the skip read returns 0) | skip read + finishing read | AR-10 |
-| The fix does not end the hold-off on the 3.1 or 2.04 device | reopen AR-10 (zero `io_ClipID` first read; after an exact fit, stop after the zero-count skip read; spec ruling if needed) | AR-10 |
+| A read returns 0 bytes (empty unit, discarded raw clip) | the call's `CloseDevice` ends the device's hold-off when no other program holds the unit open | AR-18 |
+| Another program holds the unit open during a zero read | writes stay held off until it closes the unit (device behaviour; documented limit) | AR-18 |
 
 ## Testing Requirements
 
 - Spec: ST-1, ST-2 (`vamos`), ST-4 (A1200), ST-5 (A1200 and A600), ST-6 (A1200) in
   [07](07-testing-strategy.md).
 - Impl: the Intuition open precedes the first Intuition call in both entries; the version check;
-  the finishing sequence (saved count, skip read, one NULL read, no offset reset).
+  the per-operation open and close around each write and read; no read past the end.

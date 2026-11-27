@@ -52,7 +52,7 @@
 |---|---|---|---|
 | ST-4 | `pubscreen-wb.clo`, run after Workbench started: `savePublicScreen("ClNoSuchScreen", "CNEXT:none.cscr")` then `savePublicScreen("Workbench", "CNEXT:pub.cscr")` as the program's first Intuition calls | `pub.txt` = `pub: ok unknown false wb true`; `CNEXT:pub.cscr` starts with `CSCR` | FR-1, AR-2 |
 | ST-5 | `clip-iff.clo`: `openClipboard(0)`; each clip is the 24-byte IFF `FORM` (size 16) `FTXT` `CHRS` (size 4) with four text bytes. Write clip A (`abcd`); read into an 8-byte buffer (part of the clip); write clip B (`wxyz`); read into a 24-byte buffer (exactly the clip); write clip C (`mnop`); read into a 64-byte buffer (larger than the clip); write clip D (`qrst`); `closeClipboard`. A write that returns false prints `clip: err w<n>` and returns 1. Runs on A1200/KS3.1 (`sdk-a1200-addons`) and A600/KS2.05 (`sdk-a600-addons`) | `clipiff.txt` = `clip: ok r1 8 r2 24 r3 24 c 109` (`c` = byte 20 of the third read, `m`), printed only after all four writes returned true; the program finishes | FR-3, AR-10, AR-11, AR-13 |
-| ST-6 | `clip-raw.clo`: the verifier's trace — write raw `abcd`, read into 16 bytes, write raw `efgh`, read into 16 bytes | `clipraw.txt` = `clipraw: ok w2 true` (the read counts are not asserted: raw clips belong to another plan) | FR-3, AR-10 |
+| ST-6 | `clip-raw.clo`: the verifier's trace — write raw `abcd`, read into 16 bytes, write raw `efgh`, read into 16 bytes; runs before `clip-iff`, on the fresh empty unit 0 (the raw write is discarded, so the read returns 0; AR-17) | `clipraw.txt` = `clipraw: ok w2 true` (the read counts are not asserted: raw clips belong to another plan) | FR-3, AR-10 |
 | ST-7 | `region-free.clo`: bitmaps A, B, C 64×32×1 and a scratch bitmap S 16×16×1; layers LA, LB, LC covering A, B, C; region R1 = rect (0,0)-(3,3) installed in LA; `freeRegion(R1)`; `layerFill` LA and LB (0,0)-(63,31) pen 1; `bitmapFill(S, 0, 0, 0, 0, 1)`, which waits for the blitter (layer drawing returns without `WaitBlit`); compare `bitmapChecksum` A vs B. Then region R2 = same rect installed in LA and LC; `freeLayer(LC)`; `freeRegion(R2)`; `layerClear` LA and LB pen 0; fill both again; `bitmapFill` S again; compare | `region.txt` = `region: ok same 2` (both comparisons equal) | FR-4, AR-6, AR-7 |
 | ST-8 | `guide-late.clo`: `openAmigaGuide("CNEXT:hello.guide", "Workbench")`, `waitAmigaGuideMessage`, `closeAmigaGuide(guide)`, then `guideMessageType(message)`, then `replyGuideMessage(message)` | `guidelate.txt` = `guidelate: ok type 0`; the program finishes | FR-5, AR-9 |
 | ST-9 | `text-offscreen.clo` (`hosted-amiga`): `openScreen(320, 200, 2)`, `defaultFont()`, 200 × `drawText(s, f, 0, -4000 + i*40, 1, "WWWWWWWW")`, then `drawText` at (100000, 50), (50, -100000), (-100000, 50), then `println("text: ok after")` | `text.txt` = `text: ok after`; the gate's `done.txt` appears | FR-2, AR-3, AR-5 |
@@ -71,12 +71,13 @@
 
 **Red-phase expectations** (AR-13):
 - Fail before implementation: ST-1, ST-2 (crash through A6=0, verified in planning); ST-4 (crash,
-  reproduced by the verifier); ST-5 on the A1200 and ST-6 (a write after a read never returns;
-  `done.txt` missing); ST-7 (the dangling clip still clips LA, so the checksums differ, or the
+  reproduced by the verifier); ST-6 (a write after a read of the empty unit never returns;
+  `done.txt` missing; AR-17); ST-7 (the dangling clip still clips LA, so the checksums differ, or the
   layer crashes); ST-8 (a stale non-zero type or a crash); ST-9 (hang, reproduced by the
   verifier); ST-3 (the symbols do not exist yet).
-- May pass before implementation, justified: ST-5 on the A600 (it guards the NULL-data reads on
-  the 2.04 device; the A1200 run carries the red); ST-7's layer-free half (nothing observable
+- May pass before implementation, justified: ST-5 on both machines (an IFF read, partial or
+  whole, does not hold writes off on the unfixed 3.1 shim, AR-17; ST-5 guards the finishing reads
+  on the IFF paths and, on the A600, the NULL-data reads on the 2.04 device; ST-6 carries the red); ST-7's layer-free half (nothing observable
   through the public API shows a layer deleted with a clip installed; the impl tests pin the
   unclip and the update ending in `cl_layer_free`); ST-10's capture comparison (the base also
   draws the visible pixels; it guards the new clip path), and its walker line (the base's damage
@@ -99,7 +100,7 @@
 | Test File | Description | Priority |
 | --------- | ----------- | -------- |
 | `compiler/tests/amiga_crash_safety_impl_test.rs` | Intuition opened before `DisplayAlert`/`LockPubScreen`; the V36 check | High |
-| same | clipboard: saved count, skip read with NULL data, then always one NULL past-the-end read (also after a skip read that returned 0), no offset reset, retry only on the caller read | High |
+| same | clipboard (AR-18): `OpenDevice` once in open and closed again; each write and read opens and closes the unit on every path; one bounded read at offset 0, no read past the end and no NULL-data read; close frees without `CloseDevice` | High |
 | same | text: `SetFont` before the box walk; range and empty-text checks first; visible rectangle from `min` of screen and bitmap sizes; default-glyph index; the box edges (`p + k + w` and `p + d` right, `min(p, p + k, p + d)` left); `LONG` arithmetic; colour-font rule; `WaitBlit` before the frees; the fully inside path is the old call sequence | High |
 | same | layers: `cl_layer_free` ends an open update, then unclips, before `DeleteLayer`; the update flag set on every begin and cleared by end, which still calls `EndUpdate(layer, TRUE)`; `cl_free_region` walks (unclip only, no `EndUpdate`) before `DisposeRegion`; set/clear clip unchanged | High |
 | same | guide: message → guide link; close replies and orphans before `CloseAmigaGuide` | High |

@@ -1,7 +1,7 @@
 ## Ambiguity Register: amiga-shim-crash-safety
 
-> **Status**: ✅ GATE PASSED — all 16 items resolved (AR-1 by the user's invocation; AR-2..AR-16 delegated by `--auto-design`, provenance below; no reserved or complexity row)
-> **Last Updated**: 2026-11-27 08:36 (preflight refinements of AR-5, AR-8, AR-10, AR-13, AR-16; see §Preflight refinements)
+> **Status**: ✅ GATE PASSED — all 18 items resolved (AR-17 and AR-18 added during execution) (AR-1 by the user's invocation; AR-2..AR-16 delegated by `--auto-design`, provenance below; no reserved or complexity row)
+> **Last Updated**: 2026-11-27 09:50 (AR-17 runtime; earlier: preflight refinements of AR-5, AR-8, AR-10, AR-13, AR-16)
 
 Planning target: theme issue #44 (remediation roadmap R5) — findings ASM-WS5-002 (#59, DEF-587),
 ASM-WS5-004 (#57, DEF-585), ASM-WS5-016 (#60, DEF-588), ASM-WS5-006 (#65, DEF-593).
@@ -33,6 +33,8 @@ sequencing. Reserved: product scope, public API changes, spec changes, complexit
 | 14 | Technical | How the extended A1200 gate knows its probes finished | file exists + 1 s / end marker + settle / tree unchanged | AI — delegated: an end-marker file written last, then the bounded settle | ✅ Resolved |
 | 15 | Non-functional | Size acceptance | bench-compare only / bench-compare plus a recorded delta for API users / none | AI — delegated: bench-compare with empty `REQUIRE` plus recorded `.text` deltas for `gui` and `scroller` | ✅ Resolved |
 | 16 | Feature gaps | Which user-facing docs change | doc comments and known-limitations / none | AI — delegated: the six stdlib doc comments and `docs/known-limitations.md` | ✅ Resolved |
+| 17 | Technical (runtime) | ST-5 and ST-6 pass on the unfixed shim in the A1200 gate: which probe carries the clipboard red | reorder so `clip-raw` runs first on the empty unit / add a new probe / accept no red | AI — delegated: `clip-raw` runs before `clip-iff`, on the fresh empty unit 0, and carries the A1200 red; ST-5 is a guard on both machines | ✅ Resolved |
+| 18 | Technical (runtime) | AR-10's finishing reads hang the next write on the 2.04 and 3.1 devices: how `clipboardRead` must end its read | finishing reads / reopen after a zero read / per-operation opens / document only | AI — delegated: the handle opens the unit only for each write or read, issues no read past the end, and closes it after the call (supersedes AR-10; AR-11 kept) | ✅ Resolved |
 
 ## Coverage Map
 
@@ -189,7 +191,7 @@ the last reply (the guide window stays after close; weak red test); replying on 
 would reply nothing). Challenger: Agree on behaviour, mechanism B adopted. Confidence: Medium-high.
 Reopen trigger: AmigaGuide rejects a reply at close.
 
-**AR-10:** *(Kept, with an added reopen trigger, by §Preflight refinements AR-10.)* Eligibility: algorithm following the device protocol. Decision: after the caller's
+**AR-10:** *(Superseded at runtime by AR-18: the finishing reads are what holds writes off.)* Eligibility: algorithm following the device protocol. Decision: after the caller's
 `CMD_READ` succeeds, save `io_Actual`; if it differs from `io_Length`, `io_Offset` is already past
 the end, so issue one `CMD_READ` with `io_Data` NULL and `io_Length` 1; otherwise issue one skip
 `CMD_READ` with `io_Data` NULL and `io_Length` 0x7FFFFFFF (which leaves the offset past the end),
@@ -321,3 +323,64 @@ device reads an IFF clip differently from 3.1 (then stop for a ruling per AR-10)
 
 **AR-16 (PF-002).** `docs/known-limitations.md` §4 and §5 name both clipboard baselines:
 A1200/KS3.1 and A600/KS2.05.
+
+### Runtime decisions (exec-plan)
+
+**AR-17 (runtime, 2026-11-27).** Authority: AI — delegated by --auto-design · Eligibility: testing
+strategy inside FR-3/FR-6 (which probe and order carry the red; no behaviour or scope change) ·
+Objective: the A1200 gate fails on the unfixed shim for the clipboard defect and passes after it ·
+Decision: in the A1200 gate the clipboard probes run `clip-raw` first, then `clip-iff`. On a
+freshly booted HD, unit 0 holds no clip; the 3.1 device discards `clip-raw`'s raw write, its read
+returns 0, and the next write is held off (the verifier's trace). ST-5 becomes a guard on both
+machines: it proves the finishing reads leave the IFF paths (part, exact fit, larger buffer)
+working and the program finishing. · Evidence: red run of the gate in the planned order — all
+three probes passed on the unfixed shim (`clipiff.txt` and `clipraw.txt` matched, `done.txt`
+written); a bare WB3.1 reproduction on the unfixed shim (the verifier's runner) — the verifier's
+`clipm` hangs with `CLIPS:` on `RAM:` and on the HD (read returned 0, no `m4-w2-done`); `clip-raw`
+alone hangs; `clip-iff` alone passes (`clip: ok r1 8 r2 24 r3 24 c 109`). So the hold-off follows
+a read that returns 0 from a unit with no clip, not a partial IFF read; in the gate order
+`clip-iff` had left clip D current, so `clip-raw` read data and its write returned. · Rejected
+alternatives: a new probe that reads an empty unit (the reordered `clip-raw` is that probe);
+accepting no A1200 red (FR-6 requires a red where one is reachable) · Strongest
+counterargument: the red depends on the unit being empty when `clip-raw` runs; the gate boots a
+fresh HD with an empty `clips` directory each run, and no earlier leg or probe touches the
+clipboard · Confidence: High — direct reproduction · Hardening: no challenger (testing order only,
+reversible) · Policy version: 1 · Root invocation ID: ad-ex-r5-20261127 · Reopen triggers: the
+reordered `clip-raw` passes on the unfixed shim; `clip-raw` still hangs after the fix (then the
+AR-10 triggers apply to the empty-unit path).
+
+**AR-18 (runtime, 2026-11-27).** Authority: AI — delegated by --auto-design · Eligibility:
+algorithm and internal interface inside FR-3 (how the shim drives clipboard.device; no stdlib
+signature or spec change) · Objective: no sequence of safe clipboard calls in one program hangs
+a later write · Decision: a `Clipboard` keeps its `IOClipReq` and reply port but holds the unit
+open only for one operation. `openClipboard` opens the unit once to prove it exists and closes it
+(null when it cannot); `clipboardWrite` and `clipboardRead` each `OpenDevice`, run today's request
+sequence unchanged (write: `io_ClipID` 0, `CMD_WRITE`, `CMD_UPDATE`; read: `CBD_CURRENTREADID`, one
+`CMD_READ` of `len(buf)` at offset 0; bounded `CBERR_OBSOLETEID` retry), and `CloseDevice`;
+`closeClipboard` frees without a device close. A failed per-call open returns false / -1. No read
+is issued past the end of a clip. · Evidence (FS-UAE, bare Workbench boots, identical on A600 with
+the 2.04 V37 device and A1200 with the 3.1 V40 device): a read that returns 0 bytes (empty unit,
+a raw clip the device discarded, an IFF clip read at its end) sets `io_ClipID` -1 and holds off
+every later write on any request of the unit; every documented end signal (a read at or beyond
+the end, with the clip ID valid, after a NULL skip read) does the same; `CMD_UPDATE` and
+`CBD_CURRENTWRITEID` do not release it; closing and reopening the reading request releases it
+only when no other request on the unit is open. Reads that stop short of the end (partial, exact,
+or a larger buffer returning the clip size) hold nothing off, for the same request, a second
+request, or a second task. The per-operation handle passes the ST-5 IFF sequence (clip contents
+correct and kept across closes) and the raw trace on an empty unit, also with ConClip started.
+AR-10's sequence made the A600 hang at the exact-fit write and left `clip-raw` hanging on the
+A1200. The 3.1.4 release notes (45.1) record that the old device was Forbid-locked and could lock
+a clip up. · Rejected alternatives: finishing reads (they arm the hold-off); keep the unit open
+and reopen after a zero read (releases only as sole opener, so a second handle on the unit defeats
+it, its trigger must match every arming case, and a failed reopen leaves a dead handle);
+document only (three safe calls hang the program) · Strongest counterargument: a read that
+returns 0 while another program holds the unit open still leaves writes held off until that
+program closes it, and each operation pays an `OpenDevice`/`CloseDevice`; the first is the
+device's own state and is documented, the second is small next to the device I/O · Confidence:
+High on 2.04 and 3.1 (direct reproduction); unverified on the 45.x device (no 3.1.4/3.2 ROM in the
+media set) · Hardening: blind challenger converged on per-operation opens, judged it conforming to
+§14.18 (`openClipboard` still performs `OpenDevice`; "close/free" reads as free, the close having
+happened per call), and asked for the ConClip check, which passed · Policy version: 1 · Root
+invocation ID: ad-ex-r5-20261127 · Reopen triggers: ST-5 or ST-6 hangs with the per-operation
+handle; a reviewer or the user reads §14.18 as requiring the device to stay open (then stop for a
+spec ruling, reserved); a 45.x device behaves differently.
