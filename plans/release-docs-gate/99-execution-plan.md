@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-27 20:06
-> **Progress**: 2/23 tasks (9%)
+> **Last Updated**: 2026-11-27 20:08
+> **Progress**: 5/23 tasks (22%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -26,9 +26,9 @@ review record (AR-10).
 - [x] 1.1.2 Red phase: run the suite; every case fails because the checker does not exist ✅ (completed: 2026-11-27 20:06; suite fails to import: no docs_check module)
 
 ### Session 1.2: Implementation
-- [ ] 1.2.1 `tools/release/docs_rules.py`: manifest loader, `normalize()`, tokens, allowlist matching, dates, changelog sections, review-record parsing
-- [ ] 1.2.2 `tools/release/docs_check.py`: CLI, static rules, reporting, exit codes
-- [ ] 1.2.3 Green phase: ST-1..ST-23 pass
+- [x] 1.2.1 `tools/release/docs_rules.py`: manifest loader, `normalize()`, tokens, allowlist matching, dates, changelog sections, review-record parsing ✅ (completed: 2026-11-27 20:08)
+- [x] 1.2.2 `tools/release/docs_check.py`: CLI, static rules, reporting, exit codes ✅ (completed: 2026-11-27 20:08)
+- [x] 1.2.3 Green phase: ST-1..ST-23 pass ✅ (completed: 2026-11-27 20:08; ST-1..ST-23 pass; outputs spot-checked)
 
 ### Session 1.3: Implementation tests and hardening
 - [ ] 1.3.1 `tools/release/tests/docs_check_impl.py`: normalization, offsets, loader errors, month table, CLI usage
