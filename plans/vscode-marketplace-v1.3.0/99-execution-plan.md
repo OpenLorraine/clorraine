@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-27 18:16
-> **Progress**: 49/55 tasks (89%)
+> **Last Updated**: 2026-11-27 18:30
+> **Progress**: 50/55 tasks (90%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -215,7 +215,7 @@ branch; only Phase 1 reaches `main` before the release (AR-40).
 - [x] 7.1.2 **approval** Push tag `v1.3.0`; dispatch `publish-vscode` from the tag with `dry_run=true` and check the summary ✅ (completed: 2026-11-27 17:52; tag v1.3.0 at d3f5cf84; dry run 46037087599: build success, publish skipped, VSIX 1.3.0 audited, 41,948 bytes)
 - [x] 7.1.3 **approval** Dispatch from the tag with `dry_run=false`; record run ID and SHA-256; confirm the gallery lists 1.3.0 ✅ (completed: 2026-11-27 18:14; run 46040096710; VSIX 41,948 bytes, SHA-256 68c8785de819e7ce48bb400d1a72add1b906f15d9a760b72cc65cf68a0b4e377; the gallery lists 1.3.0 public/preview and serves the same bytes)
 - [x] 7.1.4 `make dist` and `make dist-verify`; record the four asset hashes in `RELEASE-NOTES.md` (checksums section) ✅ (completed: 2026-11-27 18:16; four assets + SHA256SUMS, dist-verify ok; Linux archive ae398e15…, Windows zip f712d9c8…, install.sh fd50b736…, install.ps1 bcc56ec5…; table in the uncommitted notes working copy per RELEASE.md step 7)
-- [ ] 7.1.5 Linux acceptance with `PUBLISH_RUN`/`PUBLISH_SHA256`; user confirms the editor; rerun with `EDITOR_CONFIRMED=1`; `make acceptance-check`
+- [x] 7.1.5 Linux acceptance with `PUBLISH_RUN`/`PUBLISH_SHA256`; user confirms the editor; rerun with `EDITOR_CONFIRMED=1`; `make acceptance-check` ✅ (completed: 2026-11-27 18:30; build/acceptance/20261127T172930Z; full FS-UAE matrix ok; extension openlorraine.clorraine 1.3.0 from the Marketplace; user confirmed LSP, Build/Run and auto-update after the v1.2.0 VSIX install; acceptance-check ok)
 - [ ] 7.1.6 **approval** Windows acceptance: create the standard test account over `ssh winbox`, push the candidate, run `acceptance.ps1` in the desktop session, user confirms UAC and the editor, `make acceptance-check`, remove the account and files
 - [ ] 7.1.7 **approval** `gh release create v1.3.0 --prerelease` with the four assets, `SHA256SUMS`, and `RELEASE-NOTES.md` as the body
 - [ ] 7.1.8 **approval** Push the release commit to `main` (fast-forward); delete `origin/release-1.3.0`; confirm the site shows v1.3.0; fresh installs from the published release on Linux and Windows
