@@ -1,0 +1,131 @@
+# Build the VS Code extension from the dispatched ref and, only from a release
+# tag with dry_run unticked, publish it to the Visual Studio Marketplace.
+#
+# Publishing uses Marketplace Trusted Publishing: the publish job exchanges a
+# GitHub OIDC token for a short-lived Marketplace credential, so no secret is
+# stored. The policy on the `openlorraine` publisher names this file and the
+# `marketplace` environment, which only accepts `v*` tags.
+#
+# The build job installs the npm dependencies and packages the extension
+# without any token. The publish job re-checks the built archive's SHA-256,
+# installs dependencies with lifecycle scripts disabled, and publishes that
+# exact archive. Versions are permanent on the Marketplace, so both jobs
+# refuse a tag that differs from the compiler and manifest versions.
+
+name: publish-vscode
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Build and audit only; untick to publish (release tag dispatch only)"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-vscode
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    outputs:
+      sha256: ${{ steps.hash.outputs.sha256 }}
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+      - name: Check versions
+        id: version
+        env:
+          REF: ${{ github.ref }}
+        run: >-
+          node tools/vscode/scripts/release-version.mjs --ref "$REF"
+          --cargo compiler/Cargo.toml --manifest tools/vscode/package.json
+      - name: Package
+        run: make vscode-package
+      - name: Check the staged manifest
+        env:
+          REF: ${{ github.ref }}
+        run: >-
+          node tools/vscode/scripts/release-version.mjs --ref "$REF"
+          --cargo compiler/Cargo.toml --manifest build/vscode/extension/package.json
+      - name: Audit
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: python3 tools/vscode/scripts/audit_vsix.py "build/vscode/clorraine-$VERSION.vsix"
+      - name: Hash
+        id: hash
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          REF: ${{ github.ref }}
+        run: |
+          sha=$(sha256sum "build/vscode/clorraine-$VERSION.vsix" | cut -d' ' -f1)
+          echo "sha256=$sha" >>"$GITHUB_OUTPUT"
+          {
+            echo "### openlorraine.clorraine $VERSION"
+            echo
+            echo "- Ref: \`$REF\`"
+            echo "- Run: \`$GITHUB_RUN_ID\`"
+            echo "- VSIX SHA-256: \`$sha\`"
+          } >>"$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: vsix
+          path: build/vscode/clorraine-${{ steps.version.outputs.version }}.vsix
+          if-no-files-found: error
+          retention-days: 90
+
+  publish:
+    needs: build
+    if: ${{ !inputs.dry_run && startsWith(github.ref, 'refs/tags/v') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: marketplace
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: vsix
+          path: dist
+      - name: Verify the archive
+        env:
+          EXPECTED: ${{ needs.build.outputs.sha256 }}
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          actual=$(sha256sum "dist/clorraine-$VERSION.vsix" | cut -d' ' -f1)
+          if [ "$actual" != "$EXPECTED" ]; then
+            echo "publish: archive SHA-256 $actual does not match the build ($EXPECTED)" >&2
+            exit 1
+          fi
+      - name: Check versions
+        env:
+          REF: ${{ github.ref }}
+        run: >-
+          node tools/vscode/scripts/release-version.mjs --ref "$REF" --publish
+          --cargo compiler/Cargo.toml --manifest tools/vscode/package.json
+      - name: Install vsce
+        working-directory: tools/vscode
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Publish
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          tools/vscode/node_modules/.bin/vsce publish --packagePath "dist/clorraine-$VERSION.vsix" --oidc
+          echo "Published openlorraine.clorraine $VERSION" >>"$GITHUB_STEP_SUMMARY"
