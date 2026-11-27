@@ -31,7 +31,7 @@ use super::run::RunResult;
 use crate::diag::DiagnosticFormat;
 
 use observe::Outcome;
-pub use select::fs_uae_version_for;
+pub use select::{fs_uae_version_for, kickstart_key_missing_for};
 use storage::Storage;
 
 /// Guest wrapper source compiled into every private run.

@@ -53,6 +53,14 @@
   branch, and the unchanged gate passes on a private Xvfb display. `make verify` passed with
   `DISPLAY` set to a private Xvfb server.
 
+## Decision for the user: encrypted ROMs on Linux
+
+On Windows `clorraine` now refuses an encrypted Cloanto ROM (header `AMIROMTYPE1`) that has no
+`rom.key` beside it, and the installer's ROM search skips such a ROM; before, FS-UAE showed a
+black screen and the run timed out after 90 seconds. Linux behaves as before (AR-29 keeps
+Linux unchanged), but FS-UAE on Linux has the same need. Extending the check to Linux is a
+one-line change in `kickstart_key_missing_for` plus `install.sh`'s ROM search.
+
 ## Follow-up issue (draft): Clang cannot build debug programs from the emitted C
 
 **Title:** Emitted C is not warning-free under Clang's `-Werror` (debug builds)

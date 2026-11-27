@@ -586,6 +586,24 @@ fn should_put_a_windows_tool_folder_first_on_path_and_leave_linux_alone() {
     );
 }
 
+/// FS-UAE decrypts a Cloanto ROM (header `AMIROMTYPE1`) with the `rom.key`
+/// beside it; without the key the Amiga never boots and the run only times
+/// out. On Windows that ROM is refused up front; a plain ROM, a ROM with its
+/// key, and every Linux ROM are accepted as before.
+#[test]
+fn should_refuse_an_encrypted_rom_without_its_key_on_windows_only() {
+    use clc::clorraine::kickstart_key_missing_for;
+    let scratch = ScratchDir::new("rom-key");
+    let rom = scratch.path().join("amiga-os-310-a1200.rom");
+    let header = b"AMIROMTYPE1";
+    std::fs::write(&rom, header).expect("write the ROM header");
+    assert!(kickstart_key_missing_for(HostOs::Windows, &rom, header));
+    assert!(!kickstart_key_missing_for(HostOs::Unix, &rom, header));
+    assert!(!kickstart_key_missing_for(HostOs::Windows, &rom, &[0x11, 0x14, 0x4E, 0xF9]));
+    std::fs::write(scratch.path().join("rom.key"), b"key").expect("write the key");
+    assert!(!kickstart_key_missing_for(HostOs::Windows, &rom, header));
+}
+
 #[test]
 fn should_quote_words_for_the_host_shell() {
     assert_eq!(shell_word(HostOs::Windows, "my app"), "\"my app\"");

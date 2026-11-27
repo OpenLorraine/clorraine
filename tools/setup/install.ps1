@@ -1221,6 +1221,21 @@ function Find-FsUae([string]$Explicit, [string]$Root) {
 # %USERPROFILE%\Documents.
 function Get-DocumentsFolder { return [Environment]::GetFolderPath('MyDocuments') }
 
+# True for a 512 KB Kickstart image FS-UAE can boot: a plain one, or an
+# encrypted Cloanto one (header AMIROMTYPE1) with its rom.key beside it.
+function Test-UsableRom($File) {
+    if (@(524288, 524299) -notcontains $File.Length) { return $false }
+    $stream = [IO.File]::OpenRead($File.FullName)
+    try {
+        $header = New-Object byte[] 11
+        $read = $stream.Read($header, 0, 11)
+    } finally { $stream.Dispose() }
+    if ($read -eq 11 -and [Text.Encoding]::ASCII.GetString($header) -ceq 'AMIROMTYPE1') {
+        return Test-Path -LiteralPath (Join-Path $File.DirectoryName 'rom.key') -PathType Leaf
+    }
+    return $true
+}
+
 # Finds a Kickstart 3.1 A1200 ROM: -Kickstart, CLORRAINE_KICKSTART, the CLI
 # config, then the usual folders, by the usual names first and then by name
 # pattern. A found ROM must have the size of a 512 KB image; a named one is
@@ -1235,19 +1250,18 @@ function Find-Kickstart([string]$Explicit) {
         (Join-Path (Get-DocumentsFolder) 'FS-UAE\Kickstarts')
     )
     if ($env:PUBLIC) { $folders += Join-Path $env:PUBLIC 'Documents\Amiga Files\Shared\rom' }
-    $sizes = 524288, 524299
     foreach ($folder in $folders) {
         if (-not (Test-Path -LiteralPath $folder -PathType Container)) { continue }
         foreach ($name in 'amiga-os-310-a1200.rom', 'kick31a1200.rom', 'kick31.rom') {
             $file = Get-Item -LiteralPath (Join-Path $folder $name) -ErrorAction SilentlyContinue
-            if ($null -ne $file -and -not $file.PSIsContainer -and $sizes -contains $file.Length) { return $file.FullName }
+            if ($null -ne $file -and -not $file.PSIsContainer -and (Test-UsableRom $file)) { return $file.FullName }
         }
     }
     foreach ($folder in $folders) {
         if (-not (Test-Path -LiteralPath $folder -PathType Container)) { continue }
         foreach ($pattern in '*a1200*.rom', 'kick31*.rom') {
             foreach ($file in @(Get-ChildItem -LiteralPath $folder -Filter $pattern -File -ErrorAction SilentlyContinue)) {
-                if ($sizes -contains $file.Length) { return $file.FullName }
+                if (Test-UsableRom $file) { return $file.FullName }
             }
         }
     }

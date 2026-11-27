@@ -91,7 +91,7 @@ Do not change the execution policy permanently; Clorraine never asks you to.
 | Windows PowerShell 5.1 (64-bit) | Yes | Part of Windows; PowerShell 7 is untested |
 | GCC | For the PC hello | [w64devkit](https://github.com/skeeto/w64devkit) or MSYS2 UCRT64 on `PATH`, or `CLORRAINE_CC`; Clang cannot build debug programs yet |
 | FS-UAE 3.2.0+ | For Amiga runs | The installer can download the pinned 3.2.35 zip into its own folder |
-| A licensed 512 KB Kickstart 3.1 A1200 ROM | For Amiga runs | Never bundled or downloaded; KS3.0 is untested |
+| A licensed 512 KB Kickstart 3.1 A1200 ROM | For Amiga runs | Never bundled or downloaded; an encrypted Cloanto ROM (Amiga Forever) needs its `rom.key` in the same folder; KS3.0 is untested |
 | VS Code | Optional | The extension is installed when VS Code is detected |
 
 The toolchain pin is AmigaPorts `m68k-amigaos-gcc` v16.2-rc24

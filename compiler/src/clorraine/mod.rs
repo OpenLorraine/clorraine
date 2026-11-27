@@ -24,7 +24,7 @@ mod run;
 mod setup;
 mod toolchain;
 
-pub use emulator::fs_uae_version_for;
+pub use emulator::{fs_uae_version_for, kickstart_key_missing_for};
 pub use new::launcher_for;
 pub use setup::{validate_for, SetupError, Toolchain, Validation};
 pub use toolchain::native_syscalls_for;

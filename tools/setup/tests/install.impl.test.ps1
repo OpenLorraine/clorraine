@@ -527,6 +527,32 @@ Test-Case 'should offer to reinstall a registered rc24 whose folder has a space'
     Assert-That ($result.Replaced -eq 'reinstalled') "with -ReplaceToolchain: $($result.Replaced)"
 }
 
+Test-Case 'should skip an encrypted ROM whose rom.key is missing' {
+    $docs = New-Dir 'rom-key-docs'
+    $kick = Join-Path $docs 'FS-UAE\Kickstarts'
+    New-Item -ItemType Directory -Force -Path $kick | Out-Null
+    $rom = Join-Path $kick 'amiga-os-310-a1200.rom'
+    $bytes = New-Object byte[] 524299
+    [Text.Encoding]::ASCII.GetBytes('AMIROMTYPE1').CopyTo($bytes, 0)
+    [IO.File]::WriteAllBytes($rom, $bytes)
+    $find = {
+        $env:CLORRAINE_KICKSTART = $null
+        $env:USERPROFILE = Join-Path $docs 'no-profile'
+        $env:PUBLIC = Join-Path $docs 'no-public'
+        function Get-DocumentsFolder { $docs }
+        function Get-ConfigValue([string]$Key) { $null }
+        Find-Kickstart ''
+    }
+    $saved = @($env:CLORRAINE_KICKSTART, $env:USERPROFILE, $env:PUBLIC)
+    try {
+        $without = & $find
+        [IO.File]::WriteAllText((Join-Path $kick 'rom.key'), 'key')
+        $with = & $find
+    } finally { $env:CLORRAINE_KICKSTART, $env:USERPROFILE, $env:PUBLIC = $saved }
+    Assert-That ($null -eq $without) "an encrypted ROM without its key was chosen: $without"
+    Assert-That ($with -eq $rom) "the ROM with its key was not chosen: $with"
+}
+
 Test-Case 'should refuse an admin folder that is a link, a file, foreign-owned, or changeable by others' {
     $dir = New-Dir 'elevate-untrusted'
     $setup = Join-Path $dir 'never.exe'
