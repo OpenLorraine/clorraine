@@ -197,7 +197,7 @@ fn new_creates_a_runnable_starter_project() {
     let tasks = fs::read_to_string(project.join(".vscode/tasks.json")).expect("tasks");
     assert!(tasks.contains("\"run\", \"-p\", \"hosted-amiga\", \"--emulator\", \"main.clo\""), "{tasks}");
     assert!(tasks.contains("\"isDefault\": true"), "the run task is the default build task: {tasks}");
-    assert!(!tasks.contains("@CLORRAINE@"), "the launcher placeholder is replaced: {tasks}");
+    assert!(!tasks.contains("@CLORRAINE@"), "no launcher placeholder: {tasks}");
     assert!(stdout.contains("cd my-app"), "next steps name the folder:\n{stdout}");
     assert!(stdout.contains("Run in FS-UAE"), "next steps name the editor action:\n{stdout}");
 }

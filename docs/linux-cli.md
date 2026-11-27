@@ -72,8 +72,9 @@ clorraine build -p hosted-amiga hello.clo          # build an Amiga executable
 
 `clorraine new [DIR]` writes `main.clo`, a `README.md`, a `.gitignore`, and a
 `.vscode` folder (the Amiga profile, the extension recommendation, and a
-**Run in FS-UAE** default build task). It never writes into a folder that is not
-empty; the default folder is `amiga-starter`.
+**Run in FS-UAE** default build task, which asks the Clorraine extension for the
+driver). It never writes into a folder that is not empty; the default folder is
+`amiga-starter`.
 
 ## Configuration
 

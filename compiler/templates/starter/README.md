@@ -7,6 +7,8 @@ A Clorraine program for the Amiga, made with `clorraine new`.
 In VS Code, open `main.clo` and press the **Run in FS-UAE** button in the
 editor title bar (or press **Ctrl+Shift+B**). An Amiga 1200 boots in FS-UAE
 and runs your program. Click the left mouse button in the Amiga window to quit.
+The button and the build task come from the Clorraine extension, which VS Code
+recommends when you open the folder.
 
 From a terminal:
 
