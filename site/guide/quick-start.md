@@ -5,16 +5,15 @@ description: "Install the Clorraine developer preview on Linux or Windows with o
 
 # Quick start
 
-> **Developer preview.** Clorraine v1.2.0 is a public developer preview for
-> **Linux x86_64**. Expect changes. **Windows 11** support ships with the next
-> release; macOS is on the way.
+> **Developer preview.** Clorraine v1.3.0 is a public developer preview for
+> **Linux x86_64** and **Windows 11 x64**. Expect changes. macOS is on the way.
 
 ## Install on Linux
 
 One command downloads and runs the installer:
 
 ```sh
-curl -fsSL https://github.com/OpenLorraine/clorraine/releases/download/v1.2.0/install.sh -o clorraine-install.sh && sh clorraine-install.sh
+curl -fsSL https://github.com/OpenLorraine/clorraine/releases/download/v1.3.0/install.sh -o clorraine-install.sh && sh clorraine-install.sh
 ```
 
 The installer walks you through five steps:
@@ -45,11 +44,11 @@ The installer walks you through five steps:
 ### Verify the download first
 
 To check the installer before running it, download it with the checksum file
-from the [v1.2.0 release](https://github.com/OpenLorraine/clorraine/releases/tag/v1.2.0):
+from the [v1.3.0 release](https://github.com/OpenLorraine/clorraine/releases/tag/v1.3.0):
 
 ```sh
-curl -fsSLO https://github.com/OpenLorraine/clorraine/releases/download/v1.2.0/install.sh
-curl -fsSLO https://github.com/OpenLorraine/clorraine/releases/download/v1.2.0/SHA256SUMS
+curl -fsSLO https://github.com/OpenLorraine/clorraine/releases/download/v1.3.0/install.sh
+curl -fsSLO https://github.com/OpenLorraine/clorraine/releases/download/v1.3.0/SHA256SUMS
 sha256sum -c SHA256SUMS --ignore-missing
 sh install.sh
 ```
@@ -134,20 +133,20 @@ Use `clorraine emit hello.clo` to read the generated C.
 
 ## Install on Windows
 
-Windows 11 x64 support ships with the first release after v1.2.0; `vX.Y.Z` below
-is that release. In Windows PowerShell (not as administrator):
+Windows 11 x64. In Windows PowerShell (not as administrator):
 
 ```powershell
-curl.exe -fsSLo clorraine-install.ps1 https://github.com/OpenLorraine/clorraine/releases/download/vX.Y.Z/install.ps1; powershell -ExecutionPolicy Bypass -File .\clorraine-install.ps1
+powershell -ExecutionPolicy ByPass -c "irm https://github.com/OpenLorraine/clorraine/releases/download/v1.3.0/install.ps1 | iex"
 ```
 
 The installer runs the same five steps for your Windows account. The
-`-ExecutionPolicy Bypass` applies to that one PowerShell process only; never
-change the policy permanently. Installing the rc24 toolchain asks for
+`-ExecutionPolicy ByPass` applies to that one PowerShell process only; never
+change the policy permanently. Keep the `powershell … -c` part: pasting only
+`irm … | iex` into an open window would close it when the installer ends. Installing the rc24 toolchain asks for
 administrator approval once, and declining keeps the CLI installed. PC builds
 need GCC ([w64devkit](https://github.com/skeeto/w64devkit) or MSYS2 UCRT64).
 The [Windows CLI guide](https://github.com/OpenLorraine/clorraine/blob/main/docs/windows-cli.md)
-covers verification, paths, and removal.
+covers verification, options, paths, and removal.
 
 ## macOS
 

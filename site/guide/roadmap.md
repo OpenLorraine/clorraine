@@ -18,17 +18,18 @@ Internal planning records are not published here.
 | Amiga SDK: 81 tracked capabilities across 11 bundles | Done |
 | v1.1 surfaces: `Box<T>`, ordinary `freedBy` deleters, C-hook trampolines | Done |
 | A500/Kickstart 1.3 baseline with OCS and 512 KB chip RAM | Done |
-| Linux x86_64 installer | v1.2.0 developer preview: one command installs the CLI, the toolchain, the VS Code extension, and a starter project |
-| VS Code extension with a Run in FS-UAE button | v1.2.0 developer preview, installed by the Linux installer |
-| Language server over stdio | v1.2.0 developer preview, installed by the Linux installer |
+| Linux x86_64 installer | Developer preview since v1.2.0: one command installs the CLI, the toolchain, the VS Code extension, and a starter project |
+| Windows 11 x64 installer | v1.3.0 developer preview: one PowerShell command, the same five steps |
+| VS Code extension with a Run in FS-UAE button | v1.3.0 developer preview, on the [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=openlorraine.clorraine) |
+| Language server over stdio | Developer preview since v1.2.0, installed by the Linux and Windows installers |
 | Apache 2.0 licensing with an output exception | Done |
 
 ## Next
 
 | Item | Why it matters |
 |---|---|
-| Windows and macOS installers | Windows 11 in the next release; macOS on the way; v1.2.0 is Linux x86_64 only |
-| VS Code extension in the marketplace | Install the editor support without the Linux installer |
+| macOS installer | Linux x86_64 and Windows 11 x64 are supported; macOS is on the way |
+| VS Code extension on Open VSX | Install the editor support in VSCodium and other Open VSX editors |
 | Clearer NDK setup and diagnostics | Make the Amiga boundary easier to understand |
 | Broader host-platform testing and CI | Catch platform-specific issues before release |
 | More AmigaOS API coverage | Grow the tracked surface beyond the current 81 capabilities |
@@ -54,6 +55,6 @@ See [Verification](/project/verification) for the full picture.
 ## Releases
 
 Release notes and artifacts are published on
-[GitHub Releases](https://github.com/OpenLorraine/clorraine/releases). **v1.2.0**
-is the current developer preview for Linux x86_64; **v1.1.2** remains the latest
-stable release.
+[GitHub Releases](https://github.com/OpenLorraine/clorraine/releases). **v1.3.0**
+is the current developer preview for Linux x86_64 and Windows 11 x64; **v1.1.2**
+remains the latest stable release.

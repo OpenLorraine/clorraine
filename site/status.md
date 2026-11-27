@@ -7,10 +7,10 @@ description: "What works in Clorraine today, what is still in progress, and how 
 
 <StatusBadge state="preview" />
 
-Clorraine is a **developer preview**. The v1.2.0 developer preview installs on
-**Linux x86_64** with [one command](/guide/quick-start). The compiler core is
-usable for the supported language and the tracked Amiga SDK surface. Windows 11
-support ships with the next release; macOS is on the way.
+Clorraine is a **developer preview**. The v1.3.0 developer preview installs on
+**Linux x86_64** and **Windows 11 x64** with [one command](/guide/quick-start).
+The compiler core is usable for the supported language and the tracked Amiga SDK
+surface. macOS is on the way.
 
 This page records the state of each area and the evidence behind it. If a
 statement here disagrees with a release note, the release note wins.
@@ -26,11 +26,11 @@ statement here disagrees with a release note, the release note wins.
 | `hosted-amiga` profile | <StatusBadge state="ready" label="Usable" /> | m68k GCC builds, `vamos` runs, FS-UAE gates |
 | `hosted-amiga-13` profile | <StatusBadge state="ready" label="Usable" /> | A500/Kickstart 1.3 builds and FS-UAE runs |
 | `freestanding` profile | <StatusBadge state="ready" label="Provisional" /> | Freestanding build and run legs |
-| Linux x86_64 installer | <StatusBadge state="preview" label="Developer preview" /> | [One-line install](/guide/quick-start): CLI, rc24 toolchain, FS-UAE run, and a starter project; `v1.2.0` prerelease |
+| Linux x86_64 installer | <StatusBadge state="preview" label="Developer preview" /> | [One-line install](/guide/quick-start): CLI, rc24 toolchain, FS-UAE run, and a starter project; `v1.3.0` prerelease |
 | Language server | <StatusBadge state="ready" label="Installed" /> | `clorraine-lsp`, installed by the Linux installer |
-| VS Code extension | <StatusBadge state="preview" label="Developer preview" /> | Installed by the Linux installer from the release; Run in FS-UAE button; not in a marketplace yet |
-| Windows 11 x64 installer | <StatusBadge state="preview" label="Next release" /> | [PowerShell install](/guide/quick-start#install-on-windows): CLI, rc24 toolchain, FS-UAE, and a starter project; not in v1.2.0 |
-| macOS | <StatusBadge state="planned" label="On the way" /> | Linux x86_64 is the only supported platform in v1.2.0 |
+| VS Code extension | <StatusBadge state="preview" label="Developer preview" /> | On the [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=openlorraine.clorraine), installed by both installers; Run in FS-UAE button; not on Open VSX |
+| Windows 11 x64 installer | <StatusBadge state="preview" label="Developer preview" /> | [PowerShell install](/guide/quick-start#install-on-windows): CLI, rc24 toolchain, FS-UAE, and a starter project; `v1.3.0` prerelease |
+| macOS | <StatusBadge state="planned" label="On the way" /> | v1.3.0 supports Linux x86_64 and Windows 11 x64 |
 | Documentation site | <StatusBadge state="ready" label="Published" /> | [openlorraine.github.io/clorraine](https://openlorraine.github.io/clorraine/) |
 | First Light demo | <StatusBadge state="ready" label="Live" /> | [Runs in Copperline](/examples/first-light) |
 | Prism demo | <StatusBadge state="ready" label="Live" /> | [Runs in Copperline](/examples/prism) |
@@ -67,10 +67,10 @@ The detailed list is on the [verification page](/project/verification).
 
 ## What is not ready
 
-- **Platform scope.** v1.2.0 supports Linux x86_64 only. Windows 11 support ships
-  with the next release; macOS is on the way; WSL2 and Remote-WSL are not claimed.
-- **A marketplace editor extension.** The Linux installer installs the VS Code
-  extension from the release; it is not in a marketplace yet.
+- **Platform scope.** v1.3.0 supports Linux x86_64 and Windows 11 x64; macOS is
+  on the way; WSL2 and Remote-WSL are not claimed.
+- **Other editors.** The VS Code extension is on the Visual Studio Marketplace
+  only; VSCodium and other Open VSX editors cannot install it yet.
 - **Broad platform testing.** The host CI runner is Linux. Amiga legs need the
   pinned SDK image, the emulators, and the licensed media described below.
 - **The full AmigaOS API.** The SDK covers 81 tracked capabilities. That is a
@@ -91,8 +91,8 @@ NDK policy.
 
 ## Release and license state
 
-**v1.2.0** is published as a **developer preview** (a GitHub prerelease) for
-Linux x86_64, under the **Apache License 2.0** with the
+**v1.3.0** is published as a **developer preview** (a GitHub prerelease) for
+Linux x86_64 and Windows 11 x64, under the **Apache License 2.0** with the
 [Clorraine Output Exception](/project/licensing). The latest stable release
 remains **v1.1.2**, published under the MIT License; its artifacts are
 unchanged.
