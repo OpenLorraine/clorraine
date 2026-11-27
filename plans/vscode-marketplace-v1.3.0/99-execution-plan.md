@@ -83,6 +83,7 @@ branch; only Phase 1 reaches `main` before the release (AR-40).
 
 ## Phase 2: Extension listing, driver command, guide action, drift notice
 
+> **Phase baseline tree**: f0ddd83060361f2ce33a07015c1cb6254819b645
 > **Reasoning**: high — user-visible listing and new extension behaviour
 
 ### Step 2.1: Spec tests

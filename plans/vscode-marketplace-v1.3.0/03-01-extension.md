@@ -22,9 +22,9 @@ See 02 §What Exists (Extension, Missing-tool errors).
    - `"icon": "images/icon.png"`, `"homepage": "https://openlorraine.github.io/clorraine/"`,
      `"bugs": {"url": "https://github.com/OpenLorraine/clorraine/issues"}`,
      `"keywords"` (at most 30; e.g. `amiga`, `m68k`, `clorraine`, `retro`, `compiler`,
-     `language server`), `"galleryBanner": {"color": "#1b2a4a", "theme": "dark"}`,
+     `language server`), `"galleryBanner": {"color": "#0c1219", "theme": "dark"}` (the logo and site background)`,
      `"preview": true`, `"extensionKind": ["workspace"]`,
-     `"capabilities": {"untrustedWorkspaces": {"supported": "limited", "description": "In Restricted Mode Clorraine does not start the language server, discover tools, save files, or run tasks."}, "virtualWorkspaces": false}`.
+     `"capabilities": {"untrustedWorkspaces": {"supported": "limited", "description": "In Restricted Mode Clorraine does not start the language server, look for tools, save files, or run tasks."}, "virtualWorkspaces": false}`.
      `virtualWorkspaces: false` states the existing file-only behaviour (`actions.ts:204` requires
      `file` URIs) and is not a new capability.
    - `contributes.commands` gains `{ "command": "clorraine.driverPath", "title": "Clorraine: Driver Path" }`;
