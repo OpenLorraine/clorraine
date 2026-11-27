@@ -55,6 +55,7 @@ CURRENT_DOCS = [
     "site/reference/cli.md",
     "site/status.md",
     "RELEASE-NOTES.md",
+    "RELEASE.md",
     "AGENTS.md",
 ]
 FORBIDDEN = [
@@ -128,10 +129,12 @@ class RetainedInputTests(unittest.TestCase):
             for forbidden in FORBIDDEN:
                 self.assertNotIn(forbidden, text, f"{relative} mentions {forbidden}")
 
-    def test_release_runbook_is_marked_historical(self) -> None:
+    def test_release_runbook_uses_the_current_pipeline(self) -> None:
+        # The runbook describes the current release; the removed pipeline's
+        # commands are kept out of it by the current-docs check above.
         text = (REPO / "RELEASE.md").read_text(encoding="utf-8")
-        self.assertIn("Superseded", text)
         self.assertIn("make dist", text)
+        self.assertIn("publish-vscode", text)
 
 
 if __name__ == "__main__":

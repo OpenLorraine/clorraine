@@ -1,6 +1,6 @@
 ## Ambiguity Register: VS Code Marketplace extension and the v1.3.0 release
 
-> **Status**: ✅ GATE PASSED — all 48 items resolved (40 user decisions, 8 delegated under --auto-design)
+> **Status**: ✅ GATE PASSED — all 49 items resolved (40 user decisions, 9 delegated under --auto-design)
 > **Last Updated**: 2026-11-27 14:47
 > **Source**: GitHub issue #38 (Publish the VS Code extension), revised by the decisions below
 
@@ -54,6 +54,7 @@
 | 46 | UX & presentation (runtime) | How the Windows install command is documented | Today: `curl.exe -fsSLo … ; powershell -ExecutionPolicy Bypass -File …` / a one-liner like Codex's `powershell -ExecutionPolicy ByPass -c "irm <url> \| iex"` | User: "we should do something like what codex does … the URL would be from our repo". Primary command everywhere (README, docs/windows-cli.md, site quick start, release notes): `powershell -ExecutionPolicy ByPass -c "irm https://github.com/OpenLorraine/clorraine/releases/download/v1.3.0/install.ps1 \| iex"`. Delegated details (see AR-46 note): the versioned release URL (v1.3.0 is a pre-release, so `releases/latest` would not reach it); options and scripted installs keep the download-verify-`-File` form, which is unchanged | ✅ Resolved |
 | 47 | UX & presentation (runtime) | 03-3 §5 summary texts and ST-23 did not say whether they include the existing `VS Code    ` row label, and ST-23 mixed the run-time hint with the summary row | Keep the existing row layout and hints / rewrite the summary layout | Authority: AI — delegated by --auto-design (see AR-47 note) | ✅ Resolved |
 | 48 | Technical (runtime) | Phase 4 removes the installers' VSIX pins, but `package.sh --verify` and `dist.spec.test.sh` check them until Phase 5, so `make check` cannot pass between the two phases | Gate Phase 4 on the installer suites and run `make check` at the Phase 5 gate / pull the packaging change into Phase 4 | Authority: AI — delegated by --auto-design (see AR-48 note) | ✅ Resolved |
+| 49 | Technical (runtime) | `tools/setup/tests/test_retained_inputs.py` requires `RELEASE.md` to say "Superseded", which contradicts AR-37 (rewrite it as the current runbook) | Hold the new runbook to the test's intent (no removed pipeline commands; names `make dist`) / keep a superseded marker in a current runbook | Authority: AI — delegated by --auto-design (see AR-49 note) | ✅ Resolved |
 
 ## Coverage Map
 
@@ -222,4 +223,18 @@ Confidence: High
 Policy version: 1
 Root invocation ID: ad-20261127-vsmkt
 Reopen triggers: none
+```
+
+**AR-49 (runtime, delegated):**
+
+```text
+Authority: AI — delegated by --auto-design
+Eligibility: a necessary test correction that follows the user's AR-37 decision; not a specification-suite oracle (`test_retained_inputs.py` is a post-removal guard from an earlier plan)
+Decision: add RELEASE.md to the guard's CURRENT_DOCS (so it must not mention the removed pipeline's commands) and replace the "Superseded" assertion with one that the runbook names `make dist` and `publish-vscode`
+Evidence: tools/setup/tests/test_retained_inputs.py:57,131-134; AR-37
+Rejected alternatives: keeping "Superseded" in the current runbook (contradicts AR-37 and would mislead readers)
+Confidence: High
+Policy version: 1
+Root invocation ID: ad-20261127-vsmkt
+Reopen triggers: the user wants the historical v1.2.0 design kept in RELEASE.md
 ```

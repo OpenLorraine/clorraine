@@ -2,7 +2,50 @@
 
 ## [Unreleased]
 
-No changes since v1.2.0.
+No changes since v1.3.0.
+
+## [1.3.0] - 2026-11-27
+
+### Added
+
+- Windows 11 x64: the CLI (`clc.exe`, `clorraine.exe`, `clorraine-lsp.exe`)
+  and a PowerShell installer that runs the same five steps as on Linux:
+  `powershell -ExecutionPolicy ByPass -c "irm <release>/install.ps1 | iex"`.
+  The rc24 toolchain installs into `C:\ProgramData\Clorraine` after one UAC
+  prompt; FS-UAE can be downloaded and verified on request.
+- The VS Code extension `openlorraine.clorraine` is published on the Visual
+  Studio Marketplace by the `publish-vscode` workflow (Trusted Publishing, no
+  stored secret; a dry run by default; a release tag must match the compiler
+  and extension versions).
+- Extension: a `clorraine.driverPath` command for portable tasks, an "Open
+  install guide" action on missing-tool errors, and a notice when the installed
+  CLI is older than the extension.
+- Starter projects' tasks run `${command:clorraine.driverPath}`, so a project
+  works on any machine with Clorraine installed.
+
+### Changed
+
+- Both installers install the extension from the Marketplace by ID and
+  reinstall an existing one, which moves an extension installed by the v1.2.0
+  installer onto automatic updates. They look for `code` and `code-insiders`
+  only, stop a VS Code call after five minutes, and carry on after any editor
+  failure.
+- The release has four assets (the Linux archive, the Windows zip,
+  `install.sh`, `install.ps1`) and one `SHA256SUMS`; there is no VSIX asset.
+  `make dist` no longer packages the extension.
+- Acceptance records name the Marketplace extension (version, publish run,
+  published VSIX SHA-256) and the in-person editor check.
+
+### Fixed
+
+- `savePublicScreen` and `showAlert` no longer call Intuition through a NULL
+  library base before a screen or window is open (#59).
+- Reading the clipboard finishes the read protocol, so a later write on the
+  same handle no longer hangs (#60).
+- Installed clip regions and AmigaGuide messages can no longer outlive their
+  owner (#65).
+- `drawText` on a screen clips at the bitmap edge instead of writing past it
+  (#57).
 
 ## [1.2.0] - 2026-11-24
 
