@@ -362,6 +362,8 @@ interactive_install_uses_the_prompts() {
     check_contains "$root/stdout" "Install Clorraine" "confirm prompt"
     check_contains "$root/stdout" "installed Clorraine 1.2.0" "interactive success"
     check_contains "$root/stdout" "First run complete" "success summary"
+    check_contains "$root/stdout" "Skipping the emulator, the hello programs, and the starter project: they need the Amiga toolchain." "skip note"
+    check_contains "$root/stdout" "Rerun the installer to add it." "skip note rerun hint"
     check_exists "$root/home/.local/bin/clorraine" "default prefix"
     check_contains "$root/home/.profile" "# >>> clorraine >>>" "interactive PATH block"
 }
@@ -409,6 +411,7 @@ interactive_toolchain_path_is_used() {
     check_contains "$root/stdout" "Toolchain" "toolchain prompt"
     check_contains "$root/stdout" "configured toolchain" "interactive setup"
     check_contains "$root/stdout" "Hello, Amiga, from Clorraine!" "interactive hello"
+    check_not_contains "$root/stdout" "Skipping the emulator" "no skip note with a toolchain"
 }
 
 # --no-toolchain keeps the CLI-only behavior for scripts.

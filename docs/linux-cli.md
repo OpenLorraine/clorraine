@@ -28,6 +28,8 @@ The installer walks through five steps:
    Visual Studio Marketplace and offers a starter project in the current folder,
    which it can open in VS Code.
 
+Without a toolchain, the installer skips steps 3 and 4.
+
 To check the installer before running it, download `install.sh` and
 `SHA256SUMS` from the
 [v1.3.0 release](https://github.com/OpenLorraine/clorraine/releases/tag/v1.3.0)

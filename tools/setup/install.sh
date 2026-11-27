@@ -845,6 +845,17 @@ ok() {
     printf '  %s%s%s %s\n' "$GREEN" "$CHECK" "$RESET" "$*"
 }
 
+# Says why steps 3 and 4 were skipped: they need the Amiga toolchain. A
+# starter named with --starter is still created, so it is not mentioned then.
+skip_without_toolchain() {
+    if [ -n "$STARTER" ]; then
+        printf '  Skipping the emulator and the hello programs: they need the Amiga toolchain.\n'
+    else
+        printf '  Skipping the emulator, the hello programs, and the starter project: they need the Amiga toolchain.\n'
+    fi
+    printf '  Rerun the installer to add it.\n'
+}
+
 # Prints a warning line.
 warn() {
     printf '  %s%s%s %s\n' "$YELLOW" "$CROSS" "$RESET" "$*"
@@ -1476,6 +1487,9 @@ main() {
                 exit 1
             }
         fi
+    fi
+    if [ -z "${TOOLCHAIN_CONFIGURED:-}" ] && interactive; then
+        skip_without_toolchain
     fi
     interactive && step 5 "Your first Amiga project"
     install_vscode

@@ -143,6 +143,17 @@ function Write-Warn([string]$Text) {
     Write-Line ('  ' + $script:Style.Yellow + $script:Style.Cross + $script:Style.Reset + ' ' + $Text)
 }
 
+# Says why steps 3 and 4 were skipped: they need the Amiga toolchain. A
+# starter named with -Starter is still created, so it is not mentioned then.
+function Write-ToolchainSkip([bool]$StarterNamed) {
+    if ($StarterNamed) {
+        Write-Line '  Skipping the emulator and the hello programs: they need the Amiga toolchain.'
+    } else {
+        Write-Line '  Skipping the emulator, the hello programs, and the starter project: they need the Amiga toolchain.'
+    }
+    Write-Line '  Rerun the installer to add it.'
+}
+
 # Writes a numbered step heading.
 function Write-Step([int]$Number, [string]$Title) {
     Write-Line ''
@@ -1848,6 +1859,7 @@ function Invoke-Main([hashtable]$Options) {
                 }
             }
         }
+        if ($interactive -and -not $summary.Toolchain) { Write-ToolchainSkip ([bool](& $opt 'Starter')) }
         if ($interactive) { Write-Step 5 'Your first Amiga project' }
         # The editor step never stops the install: an unexpected error is
         # reported like any other failure.

@@ -914,6 +914,27 @@ function Invoke-VSCodeCase([string]$CaseRoot, [string]$Bin, [string]$Options, [h
     return [pscustomobject]@{ Result = $result; Log = $logged }
 }
 
+Test-Case 'should say why the emulator and hello steps are skipped without a toolchain' {
+    $root = New-CaseRoot
+    $installer = New-AssembledInstaller $root '9.1.0'
+    $body = @(
+        '$script:Style = New-OutputStyle -VirtualTerminal $false -CodePage 437 -NoColor $true',
+        'Write-ToolchainSkip $false',
+        '[Console]::Out.WriteLine("--")',
+        'Write-ToolchainSkip $true',
+        'exit 0'
+    ) -join "`r`n"
+    $result = Invoke-Case -Installer $installer -CaseRoot $root -Body $body
+    Assert-That ($result.Code -eq 0) $result.All
+    $parts = $result.Out -split '--'
+    Assert-That ($parts[0].Contains('Skipping the emulator, the hello programs, and the starter project: they need the Amiga toolchain.')) $result.All
+    Assert-That ($parts[1].Contains('Skipping the emulator and the hello programs: they need the Amiga toolchain.')) $result.All
+    Assert-That (-not $parts[1].Contains('starter project')) $result.All
+    Assert-That ($parts[0].Contains('Rerun the installer to add it.') -and $parts[1].Contains('Rerun the installer to add it.')) $result.All
+    $text = [IO.File]::ReadAllText($Template)
+    Assert-That ($text.Contains("if (`$interactive -and -not `$summary.Toolchain) { Write-ToolchainSkip")) 'the installer does not call Write-ToolchainSkip before step 5'
+}
+
 Test-Case 'should not treat codium as VS Code' {
     $root = New-CaseRoot
     $bin = New-FakeEditor $root 'codium.cmd'

@@ -33,6 +33,8 @@ The installer walks you through five steps:
    Visual Studio Marketplace and creates a starter Amiga project in the current
    folder that runs in FS-UAE with one click.
 
+Without a toolchain, the installer skips steps 3 and 4.
+
 Make another project at any time:
 
 ```sh

@@ -31,6 +31,8 @@ The installer walks you through five steps:
 5. **Your first Amiga project.** It installs the VS Code extension and offers to
    create a starter project in the current folder and open it in VS Code.
 
+Without a toolchain, the installer skips steps 3 and 4.
+
 ### What you need
 
 | | Required | Notes |
