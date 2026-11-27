@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-27 20:14
-> **Progress**: 11/23 tasks (48%)
+> **Last Updated**: 2026-11-27 20:16
+> **Progress**: 14/23 tasks (61%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -60,9 +60,9 @@ review record (AR-10).
 > **Reasoning**: medium — runbook, targets and template text
 > **Reference**: 03-03 · AR-8..AR-10, AR-15, AR-29..AR-31, AR-33
 
-- [ ] 3.1.1 `Makefile` targets `release-docs-check` and `release-docs-test` (in `check`); a `check.yml` step
-- [ ] 3.1.2 `docs/release-reviews/TEMPLATE.md`; `docs/README.md` links the folder; an impl test parses the real template
-- [ ] 3.1.3 `RELEASE.md` steps 2, 3, 11, 12 and the fix-forward rows; `AGENTS.md` rule and Commands rows
+- [x] 3.1.1 `Makefile` targets `release-docs-check` and `release-docs-test` (in `check`); a `check.yml` step ✅ (completed: 2026-11-27 20:15; targets in Makefile (release-docs-test in check) and a check.yml step)
+- [x] 3.1.2 `docs/release-reviews/TEMPLATE.md`; `docs/README.md` links the folder; an impl test parses the real template ✅ (completed: 2026-11-27 20:15; template with 12 Before-tag and 3 After-deploy items; docs/README links the folder; template impl test)
+- [x] 3.1.3 `RELEASE.md` steps 2, 3, 11, 12 and the fix-forward rows; `AGENTS.md` rule and Commands rows ✅ (completed: 2026-11-27 20:16; RELEASE.md steps 2, 3, 11, 12 + three fix-forward rows; AGENTS.md rule, Commands rows, Layout row)
 - [ ] 3.1.4 Phase gate and review (correctness reviewer)
 
 **Verify (gate)**: `make check`

@@ -56,13 +56,14 @@ export OUTDIR
 export ASAN_SUITE_TIMEOUT
 export UBSAN_SUITE_TIMEOUT
 
-.PHONY: check bench bench-fast bench-base bench-compare bench-flags bench-test bench-compile bench-shape asan ubsan fuzz fuzz-test fuzz-smoke fuzz-smoke-host differential corpus-amiga corpus-fs-uae run-fault-amiga verify run build toolchain-check fs-uae-check dist dist-verify dist-check acceptance acceptance-check setup setup-check vscode-check vscode-package site-dev site-check sdk-registry sdk-issues sdk-a500-smoke sdk-a500-boing sdk-a500-sprites sdk-a500-paddle sdk-a500-text sdk-a500-assets sdk-a500-gui sdk-a500-exec sdk-a500-fault-cleanup sdk-advanced-build sdk-a600-services sdk-a1200-workbench sdk-bundle9-build sdk-a500-diskfont sdk-a600-addons sdk-a600-ks31-addons sdk-a1200-ks30-addons sdk-a1200-addons sdk-rtg-build sdk-a1200-rtg sdk-a4000-rtg-piv demo demo-check channel-assets demo-youtube
+.PHONY: check bench bench-fast bench-base bench-compare bench-flags bench-test bench-compile bench-shape asan ubsan fuzz fuzz-test fuzz-smoke fuzz-smoke-host differential corpus-amiga corpus-fs-uae run-fault-amiga verify run build toolchain-check fs-uae-check dist dist-verify dist-check acceptance acceptance-check release-docs-check release-docs-test setup setup-check vscode-check vscode-package site-dev site-check sdk-registry sdk-issues sdk-a500-smoke sdk-a500-boing sdk-a500-sprites sdk-a500-paddle sdk-a500-text sdk-a500-assets sdk-a500-gui sdk-a500-exec sdk-a500-fault-cleanup sdk-advanced-build sdk-a600-services sdk-a1200-workbench sdk-bundle9-build sdk-a500-diskfont sdk-a600-addons sdk-a600-ks31-addons sdk-a1200-ks30-addons sdk-a1200-addons sdk-rtg-build sdk-a1200-rtg sdk-a4000-rtg-piv demo demo-check channel-assets demo-youtube
 
 check:
 	./spec/check.sh
 	tools/amiga-sdk/registry_test.sh
 	$(MAKE) setup-check
 	$(MAKE) dist-check
+	$(MAKE) release-docs-test
 	$(DOCKER_MAKE) exec CMD="cargo test --workspace"
 	$(DOCKER_MAKE) exec CMD="cargo check --workspace --target x86_64-pc-windows-gnu"
 	$(MAKE) bench-test
@@ -139,6 +140,18 @@ acceptance-check:
 	@test -n "$(EVIDENCE)" || { echo 'usage: make acceptance-check EVIDENCE=PATH CANDIDATE=DIR'; exit 2; }
 	@test -n "$(CANDIDATE)" || { echo 'usage: make acceptance-check EVIDENCE=PATH CANDIDATE=DIR'; exit 2; }
 	python3 tools/setup/acceptance.py --evidence "$(EVIDENCE)" --candidate "$(CANDIDATE)"
+
+# Check the release-facing docs for a release: statically on the release
+# commit before the tag, and with LIVE=1 after the site deploys (see
+# RELEASE.md). TODAY=YYYY-MM-DD overrides the date the "Updated" lines are
+# judged against. Not part of `check`: its date rule would fail two weeks
+# after every release.
+release-docs-check:
+	python3 tools/release/docs_check.py --version "$(VERSION)" $(if $(LIVE),--live) $(if $(TODAY),--today $(TODAY))
+
+# Hermetic tests for the release docs check (no network); part of `check`.
+release-docs-test:
+	cd tools/release && PYTHONPATH=tests python3 -m unittest docs_check_spec docs_check_impl docs_live_spec docs_live_impl
 
 # Run the verified FS-UAE guest path with a licensed KS3.1 A1200 ROM.
 # TOOLCHAIN is optional when the CLI already has a stored selection.

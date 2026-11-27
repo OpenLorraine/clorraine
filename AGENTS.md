@@ -60,6 +60,8 @@ acceptance gate. `make check` and `make verify` remain authoritative.
 | `make dist-verify` / `make dist-check` | Verify the candidate layout, pins, and hashes (`--verify` rebuilds `install.ps1` and checks every zip entry); run the hermetic installer/producer/acceptance/removal tests, including the Windows packaging and evidence suites |
 | `make acceptance CANDIDATE=… TOOLCHAIN_ARCHIVE=… KICKSTART=… PUBLISH_RUN=… PUBLISH_SHA256=… [EDITOR_CONFIRMED=1]` | Install the exact candidate (with the Marketplace extension) into an isolated HOME, run the rc24/FS-UAE matrix, and write local acceptance evidence naming the installed extension and its publish run |
 | `make acceptance-check EVIDENCE=… CANDIDATE=…` | Validate a recorded Linux or Windows acceptance record against the candidate bytes and corpus goldens; Windows records come from `tools/setup/acceptance.ps1` |
+| `make release-docs-check VERSION=X.Y.Z [LIVE=1] [TODAY=…]` | The release docs gate: statically, every release-facing page names the release, carries each platform's install command, has no banned wording, mentions older versions only in re-reviewed allowlisted phrases, and the review record's "Before tag" items are ticked; `LIVE=1` checks the deployed site, the published release body, the project links, and the "After deploy" items; exit 3 unreachable, 4 deploy not current |
+| `make release-docs-test` | Hermetic tests for the release docs gate; part of `make check` |
 | `make -C docker exec CMD="cargo build --workspace"` | Build `clc`, `clorraine`, and `clorraine-lsp` at `target/debug/` |
 | `make -C docker exec CMD="target/debug/clorraine run FILE.clo"` | Driver directly: `run`, `build`, or `emit` (`-p host\|hosted-amiga\|hosted-amiga-13\|freestanding`, `--release`, `--size`, `--capture`, `--emulator`, `--emit-c`, `--explain CODE`, `--doc [-o DIR] FILE...`, `--diagnostics=json`) |
 | `make sdk-registry` / `make sdk-issues` | Validate the Amiga SDK registry, regenerate `docs/amiga-sdk/coverage.md`, and write per-bundle issue bodies |
@@ -117,6 +119,7 @@ acceptance gate. `make check` and `make verify` remain authoritative.
 | `demo/` | Demo story (`story.ts`), per-file scaffold, Vim syntax file, recorder shim, and committed poster; rendered media is ignored |
 | `tools/demo/` | `@clorraine/demo`, the zero-build TypeScript render toolkit (headless Chrome, Shiki, VHS, ffmpeg) |
 | `tools/setup/` | Fetch/detect SDK installer and its Python unit tests; the Linux and Windows CLI installers (`install.sh`, `install.ps1`), the candidate producer (`package.sh`, `pe_check.py`), the acceptance producers and checker, and the Windows test-host helper (`windows-remote.sh`, `windows-desktop-run.ps1`) |
+| `tools/release/` | The release docs gate (`docs_check.py`, `docs_rules.py`, `docs_live.py`), its manifest `docs-manifest.json`, and its tests; review records live in `docs/release-reviews/` |
 | `tools/vscode/` | VS Code extension package (`openlorraine.clorraine` on the Visual Studio Marketplace), LSP client, headless tests, and the release version guard (`scripts/release-version.mjs`); maintainer notes in `DEVELOPMENT.md` |
 | `site/` | Public VitePress documentation site, custom theme, screenshots, and OG image; deployed by `.github/workflows/docs.yml` |
 | `editors/` | Canonical editor assets: `clorraine.tmLanguage.json`, consumed by the demo toolkit and enforced against the EBNF by `make check` |
@@ -227,6 +230,11 @@ acceptance gate. `make check` and `make verify` remain authoritative.
   .opencode/agents/semantics-reviewer.md`. The catalog's other project-scope
   files stay untracked; the project agents under `.opencode/agents/` are
   committed.
+- Every release passes `make release-docs-check VERSION=X.Y.Z` before the tag
+  and with `LIVE=1` before close-out (announcement, closing issues, any move to
+  Latest), per `RELEASE.md`; there is no override. Agents may prepare
+  `docs/release-reviews/vX.Y.Z.md` but tick its items and fill in `Reviewer`
+  only after the maintainer confirms them.
 - Keep `plans/*/99-...` and the roadmap in sync through the CodeOps skills, and
   follow the strict quality profile: independent review, stop on critical/major
   findings.

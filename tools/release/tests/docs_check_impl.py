@@ -116,6 +116,15 @@ class ManifestTests(unittest.TestCase):
         self.assertIn("{version}", self.load_error())
 
 
+class TemplateTests(unittest.TestCase):
+    def test_should_parse_the_committed_review_template(self) -> None:
+        template = (Path(__file__).resolve().parents[3] / "docs/release-reviews/TEMPLATE.md").read_text(encoding="utf-8")
+        sections = docs_rules.checklist(template)
+        for name in docs_rules.SECTIONS:
+            self.assertTrue(sections.get(name), f"no items under ## {name}")
+            self.assertFalse(any(ticked for ticked, _ in sections[name]), f"a template item under {name} is ticked")
+
+
 class CliTests(unittest.TestCase):
     def run_cli(self, *args: str) -> subprocess.CompletedProcess:
         return subprocess.run([sys.executable, str(CHECKER), *args], capture_output=True, text=True, timeout=60)
