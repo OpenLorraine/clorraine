@@ -172,6 +172,157 @@ fn the_clipboard_read_is_one_bounded_request_from_the_start() {
     assert!(!source.contains("0x7FFFFFFF"), "no skip read to the end of the clip");
 }
 
+/// The registry walk reads each record's successor before it visits the
+/// record, so a visitor may remove it, and it stays a real function so the
+/// release-image symbol check can see which programs link it.
+#[test]
+fn the_registry_walk_reads_the_successor_before_each_visit() {
+    let source = shim("shim_hosted_amiga.c");
+    let walk = body(
+        &source,
+        "CL_NOINLINE void cl_res_each(void (*release)(void *handle),\n                 void (*visit)(void *handle, void *context), void *context)",
+    );
+    assert_order(
+        "walk",
+        walk,
+        &[
+            "for (record = cl_res_head; record != NULL; record = next) {",
+            "next = record->next;",
+            "if (record->release == release) {",
+            "visit(record->handle, context);",
+        ],
+    );
+    assert_order(
+        "noinline",
+        &source,
+        &["#if defined(__GNUC__)", "#define CL_NOINLINE __attribute__((noinline))", "#else", "#define CL_NOINLINE\n#endif"],
+    );
+}
+
+/// Freeing a layer, by the program or at exit, first ends an update the
+/// program left open (without completing the redraw), then removes the clip
+/// region the program installed, and only then deletes the layer.
+#[test]
+fn a_freed_layer_ends_its_open_update_and_unclips_before_deletion() {
+    let source = shim("shim_hosted_amiga.c");
+    let free = body(&source, "void cl_layer_free(void *handle)");
+    assert_order(
+        "free",
+        free,
+        &[
+            "cl_res_remove(&layer->res);",
+            "if (layer->updating) {",
+            "EndUpdate(layer->layer, FALSE);",
+            "layer->updating = 0;",
+            "cl_layer_unclip(layer);",
+            "deleted = DeleteLayer(0, layer->layer);",
+        ],
+    );
+    let unclip = body(&source, "static void cl_layer_unclip(cl_layer *layer)");
+    assert_order(
+        "unclip",
+        unclip,
+        &["if (layer->layer->ClipRegion != NULL) {", "InstallClipRegion(layer->layer, NULL)"],
+    );
+    assert!(!unclip.contains("EndUpdate"), "unclipping never ends an update:\n{unclip}");
+}
+
+/// The update flag is set on every layerBeginUpdate, before BeginUpdate runs
+/// and whatever it returns; layerEndUpdate still completes the redraw with
+/// EndUpdate(TRUE) and then clears the flag.
+#[test]
+fn the_update_flag_follows_the_programs_begin_and_end_calls() {
+    let source = shim("shim_hosted_amiga.c");
+    let begin = body(&source, "BOOL cl_layer_begin_update(void *handle)");
+    assert_order(
+        "begin",
+        begin,
+        &["layer->updating = 1;", "return BeginUpdate(layer->layer) ? TRUE : FALSE;"],
+    );
+    let end = body(&source, "void cl_layer_end_update(void *handle)");
+    assert_order("end", end, &["EndUpdate(layer->layer, TRUE);", "layer->updating = 0;"]);
+    assert!(!end.contains("FALSE"), "the program's end completes the redraw:\n{end}");
+}
+
+/// Freeing a region unclips every live layer that has it installed before it
+/// disposes the region; it leaves an open update alone, and the program's own
+/// set and clear calls are unchanged.
+#[test]
+fn a_freed_region_unclips_every_layer_that_holds_it_first() {
+    let source = shim("shim_hosted_amiga_optional.c");
+    let free = body(&source, "void cl_free_region(void *handle)");
+    assert_order(
+        "free",
+        free,
+        &[
+            "cl_res_remove(&region->res);",
+            "cl_res_each(cl_layer_free, cl_region_unclip_layer, region->region);",
+            "DisposeRegion(region->region);",
+        ],
+    );
+    let visit = body(&source, "static void cl_region_unclip_layer(void *layer_handle, void *region)");
+    assert_order(
+        "visit",
+        visit,
+        &["layer->layer->ClipRegion == (struct Region *)region", "cl_layer_unclip(layer);"],
+    );
+    assert!(!visit.contains("EndUpdate"), "the region walk leaves an update open:\n{visit}");
+    let set = body(&source, "void cl_layer_set_clip(void *layer_handle, void *region_handle)");
+    assert!(
+        set.contains("(void)InstallClipRegion(layer->layer, region->region);") && !set.contains("EndUpdate"),
+        "set clip is unchanged:\n{set}"
+    );
+    let clear = body(&source, "void cl_layer_clear_clip(void *layer_handle)");
+    assert!(
+        clear.contains("(void)InstallClipRegion(layer->layer, NULL);") && !clear.contains("EndUpdate"),
+        "clear clip is unchanged:\n{clear}"
+    );
+}
+
+/// Each guide message records its guide when it is received. Closing the
+/// guide replies the messages of that guide the program still holds, clears
+/// their message and guide, and only then closes the context; the orphaned
+/// handles stay registered, so their getters read 0 and their reply only
+/// frees them.
+#[test]
+fn closing_a_guide_replies_and_orphans_its_held_messages_first() {
+    let source = shim("shim_hosted_amiga_optional_net.c");
+    let wait = body(&source, "void *cl_guide_wait(void *handle_void)");
+    assert_order(
+        "wait",
+        wait,
+        &["message->message = raw;", "message->guide = guide;", "cl_res_add(&message->res, cl_guide_reply, message)"],
+    );
+    let close = body(&source, "void cl_guide_close(void *handle_void)");
+    assert_order(
+        "close",
+        close,
+        &[
+            "cl_res_remove(&guide->res);",
+            "cl_res_each(cl_guide_reply, cl_guide_reply_held, guide);",
+            "CloseAmigaGuide(guide->context);",
+        ],
+    );
+    let held = body(&source, "static void cl_guide_reply_held(void *message_void, void *guide)");
+    assert_order(
+        "held",
+        held,
+        &[
+            "message->guide == (cl_guide *)guide && message->message != NULL",
+            "ReplyAmigaGuideMsg(message->message);",
+            "message->message = NULL;",
+            "message->guide = NULL;",
+        ],
+    );
+    assert!(!held.contains("cl_res_remove"), "an orphan stays registered:\n{held}");
+    let reply = body(&source, "void cl_guide_reply(void *handle_void)");
+    assert_order(
+        "reply",
+        reply,
+        &["if (message->message != NULL) {", "ReplyAmigaGuideMsg(message->message);", "FreeMem(message, (ULONG)sizeof *message);"],
+    );
+}
+
 /// Only the two screen and window constructors and the two entries that can
 /// run first open Intuition; every other Intuition user receives a screen or
 /// window handle, so the library is already open when it runs.

@@ -1,0 +1,31 @@
+// Crash-safety probe: an AmigaGuide message still held when its guide is
+// closed. Closing the guide must answer the message the program holds; after
+// that, reading the message must report nothing (type 0) instead of reading
+// the closed context, and replying it must only free the handle.
+module robustness.crash_safety.guide_late;
+
+import { AmigaGuide, GuideMessage, openAmigaGuide, closeAmigaGuide,
+         waitAmigaGuideMessage, guideMessageType, replyGuideMessage }
+    from std.amiga.amigaguide;
+import { println } from std.io;
+
+func main(): i32 {
+    let opened: AmigaGuide? = openAmigaGuide("CNEXT:hello.guide", "Workbench");
+    if (opened == null) {
+        println("guidelate: err open");
+        return 1;
+    }
+    let guide: AmigaGuide = opened;
+    let received: GuideMessage? = waitAmigaGuideMessage(guide);
+    if (received == null) {
+        closeAmigaGuide(guide);
+        println("guidelate: err wait");
+        return 1;
+    }
+    let message: GuideMessage = received;
+    closeAmigaGuide(guide);
+    let kind: u32 = guideMessageType(message);
+    replyGuideMessage(message);
+    println($"guidelate: ok type {kind}");
+    return 0;
+}

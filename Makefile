@@ -423,7 +423,7 @@ sdk-a1200-ks30-addons: sdk-bundle9-build
 
 # The A1200 gate also runs the crash-safety probes after its legs: each one
 # calls a stdlib entry on a path that used to crash or hang the machine.
-CRASH_SAFETY_A1200 := pubscreen-wb clip-raw clip-iff
+CRASH_SAFETY_A1200 := pubscreen-wb region-free guide-late clip-raw clip-iff
 
 sdk-a1200-addons: sdk-bundle9-build sdk-advanced-build
 	$(DOCKER_MAKE) exec CMD="cargo build --workspace --quiet$(foreach probe,$(CRASH_SAFETY_A1200), && ./target/debug/clorraine build --release --profile hosted-amiga examples/robustness/crash-safety/$(probe).clo)"

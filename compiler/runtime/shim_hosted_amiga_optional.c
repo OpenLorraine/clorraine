@@ -996,6 +996,20 @@ void *cl_region_new(void)
     return handle;
 }
 
+/* Unclip one layer when `region` is its installed clip region. */
+static void cl_region_unclip_layer(void *layer_handle, void *region)
+{
+    cl_layer *layer = (cl_layer *)layer_handle;
+
+    if (layer->layer != NULL &&
+        layer->layer->ClipRegion == (struct Region *)region) {
+        cl_layer_unclip(layer);
+    }
+}
+
+/* Dispose a region. A layer that still has it installed borrows it, so every
+ * such layer is unclipped first and draws unclipped afterwards. An open
+ * update is left for the program's own layerEndUpdate to end. */
 void cl_free_region(void *handle)
 {
     cl_region *region = (cl_region *)handle;
@@ -1005,6 +1019,7 @@ void cl_free_region(void *handle)
     }
     cl_res_remove(&region->res);
     if (region->region != NULL) {
+        cl_res_each(cl_layer_free, cl_region_unclip_layer, region->region);
         DisposeRegion(region->region);
     }
     FreeMem(region, (ULONG)sizeof *region);

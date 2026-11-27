@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-27 10:17
-> **Progress**: 15/39 tasks (38%)
+> **Last Updated**: 2026-11-27 10:45
+> **Progress**: 25/39 tasks (64%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -149,34 +149,39 @@ r2 24 r3 24 c 109` on the unfixed shim; the 2.04 device reads the IFF clips exac
 
 ## Phase 3: Clip regions and guide messages
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill)_
+> **Phase baseline tree**: e292549aabce27a08cabb1d426327f71d8c713d5 (scope mode strict)
 > **Reasoning**: high — touches the 1.3 layer free path and the exit-time release order.
 
 ### Step 3.1: Specification tests
 
 **Reference**: [07](07-testing-strategy.md) ST-7, ST-8, ST-3 (the `cl_res_each` part) · AR-6..AR-9, AR-13, AR-15
 
-- [ ] 3.1.1 [spec-author] Write the ST-7 and ST-8 probes and their A1200 gate checks — `examples/robustness/crash-safety/{region-free,guide-late}.clo`, `docker/scripts/a1200-addons-smoke.sh`, `Makefile`
-- [ ] 3.1.2 [spec-author] Add the `cl_res_each` half of ST-3 (hello and a program with no region or guide link no `cl_res_each`; `region-free` links it) — `compiler/tests/amiga_crash_safety_spec_test.rs`
-- [ ] 3.1.3 Red phase: `make sdk-a1200-addons` and the spec test; record ST-7 (checksums differ or crash), ST-8 (stale type or crash), and ST-3's new half failing; ST-7's layer-free half is a guard (07 §Red-phase expectations)
+- [x] 3.1.1 [spec-author] Write the ST-7 and ST-8 probes and their A1200 gate checks — `examples/robustness/crash-safety/{region-free,guide-late}.clo`, `docker/scripts/a1200-addons-smoke.sh`, `Makefile` ✅ (completed: 2026-11-27 10:21)
+- [x] 3.1.2 [spec-author] Add the `cl_res_each` half of ST-3 (hello and a program with no region or guide link no `cl_res_each`; `region-free` links it) — `compiler/tests/amiga_crash_safety_spec_test.rs` ✅ (completed: 2026-11-27 10:21)
+- [x] 3.1.3 Red phase: `make sdk-a1200-addons` and the spec test; record ST-7 (checksums differ or crash), ST-8 (stale type or crash), and ST-3's new half failing; ST-7's layer-free half is a guard (07 §Red-phase expectations) ✅ (completed: 2026-11-27 10:21)
+
+**Red-phase evidence (2026-11-27 10:21)**: spec suite 2 passed, 1 failed (`region-free` does not link
+`cl_res_each`). `make sdk-a1200-addons`: `region: ok same 0` (both comparisons differ: the freed
+region still clips the layer), `guidelate: ok type 11007` (the getter reads the closed context);
+the existing legs, `pub`, and both clipboard probes pass.
 
 ### Step 3.2: Implementation
 
 **Reference**: [03-03](03-03-borrowed-objects.md) · AR-6..AR-9
 
-- [ ] 3.2.1 Add `cl_res_each` next to `cl_own_ports_hold` — `compiler/runtime/shim_hosted_amiga.c`
-- [ ] 3.2.2 Add the layer update flag (set on every `layerBeginUpdate`, cleared by `layerEndUpdate`, which still calls `EndUpdate(layer, TRUE)`) and `cl_layer_unclip`; in `cl_layer_free`, end an open update with `EndUpdate(layer, FALSE)`, then unclip, before `DeleteLayer` — `compiler/runtime/shim_hosted_amiga.c`
-- [ ] 3.2.3 Unclip every holding layer in `cl_free_region` (no `EndUpdate`); leave set/clear clip unchanged — `compiler/runtime/shim_hosted_amiga_optional.c`
-- [ ] 3.2.4 Link each guide message to its guide; reply and orphan held messages in `cl_guide_close` — `compiler/runtime/shim_hosted_amiga_optional_net.c`
-- [ ] 3.2.5 Green phase: ST-7, ST-8, ST-3 (this half) pass; the existing legs still pass
+- [x] 3.2.1 Add `cl_res_each` next to `cl_own_ports_hold` (mechanical correction: marked `CL_NOINLINE` for GCC, because external linkage alone let `-O2` inline it and section GC drop the symbol ST-3 checks) — `compiler/runtime/shim_hosted_amiga.c` ✅ (completed: 2026-11-27 10:25)
+- [x] 3.2.2 Add the layer update flag (set on every `layerBeginUpdate`, cleared by `layerEndUpdate`, which still calls `EndUpdate(layer, TRUE)`) and `cl_layer_unclip`; in `cl_layer_free`, end an open update with `EndUpdate(layer, FALSE)`, then unclip, before `DeleteLayer` — `compiler/runtime/shim_hosted_amiga.c` ✅ (completed: 2026-11-27 10:25)
+- [x] 3.2.3 Unclip every holding layer in `cl_free_region` (no `EndUpdate`); leave set/clear clip unchanged — `compiler/runtime/shim_hosted_amiga_optional.c` ✅ (completed: 2026-11-27 10:25)
+- [x] 3.2.4 Link each guide message to its guide; reply and orphan held messages in `cl_guide_close` — `compiler/runtime/shim_hosted_amiga_optional_net.c` ✅ (completed: 2026-11-27 10:25)
+- [x] 3.2.5 Green phase: ST-7, ST-8, ST-3 (this half) pass; the existing legs still pass ✅ (completed: 2026-11-27 10:25; spec 3/3; `sdk-a1200-addons` OK with 5 probes: `region: ok same 2`, `guidelate: ok type 0`)
 
 ### Step 3.3: Implementation tests and hardening
 
-- [ ] 3.3.1 Write the layer, region, and guide impl tests; update any pin whose text intentionally changed — `compiler/tests/amiga_crash_safety_impl_test.rs`
-- [ ] 3.3.2 Phase gate: `make check`, `make run-fault-amiga`, `make sdk-a1200-addons`, `make sdk-a500-text`, `make sdk-a500-assets`, `make sdk-a500-fault-cleanup`
+- [x] 3.3.1 Write the layer, region, and guide impl tests; update any pin whose text intentionally changed — `compiler/tests/amiga_crash_safety_impl_test.rs` ✅ (completed: 2026-11-27 10:38; impl suite 10/10; no existing pin needed a change)
+- [x] 3.3.2 Phase gate: `make check`, `make run-fault-amiga`, `make sdk-a1200-addons`, `make sdk-a500-text`, `make sdk-a500-assets`, `make sdk-a500-fault-cleanup` ✅ (completed: 2026-11-27 10:38; `make check` 4530 tests; `run-fault-amiga` 16+15; `sdk-a1200-addons` 5 probes; `sdk-a500-text`, `sdk-a500-assets`, `sdk-a500-fault-cleanup` OK)
 
 **Deliverables**:
-- [ ] ST-7, ST-8 green; the 1.3 layer gates unchanged
+- [x] ST-7, ST-8 green; the 1.3 layer gates unchanged
 
 **Verify (gate)**: `make check && make run-fault-amiga && make sdk-a1200-addons && make sdk-a500-text && make sdk-a500-assets && make sdk-a500-fault-cleanup`
 

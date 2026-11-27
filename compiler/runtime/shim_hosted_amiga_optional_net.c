@@ -158,8 +158,12 @@ typedef struct cl_guide {
     cl_res res;
 } cl_guide;
 
+/* A message the program holds, and the guide context it came from. Closing
+ * the guide replies a held message and clears both pointers; the handle then
+ * reads 0 and its reply only frees it. */
 typedef struct cl_guide_message {
     struct AmigaGuideMsg *message;
+    struct cl_guide *guide;
     cl_res res;
 } cl_guide_message;
 
@@ -219,6 +223,18 @@ void *cl_guide_open(char *path, char *public_screen)
     return guide;
 }
 
+/* Reply one held message of the guide being closed and orphan its handle. */
+static void cl_guide_reply_held(void *message_void, void *guide)
+{
+    cl_guide_message *message = (cl_guide_message *)message_void;
+
+    if (message->guide == (cl_guide *)guide && message->message != NULL) {
+        ReplyAmigaGuideMsg(message->message);
+        message->message = NULL;
+        message->guide = NULL;
+    }
+}
+
 void cl_guide_close(void *handle_void)
 {
     cl_guide *guide = (cl_guide *)handle_void;
@@ -228,6 +244,9 @@ void cl_guide_close(void *handle_void)
     }
     cl_res_remove(&guide->res);
     if (guide->context != NULL) {
+        /* Messages the program still holds belong to this context: answer
+         * them while it is open, so no later getter or reply reaches it. */
+        cl_res_each(cl_guide_reply, cl_guide_reply_held, guide);
         CloseAmigaGuide(guide->context);
     }
     if (guide->screen != NULL) {
@@ -273,6 +292,7 @@ void *cl_guide_wait(void *handle_void)
         return NULL;
     }
     message->message = raw;
+    message->guide = guide;
     if (!cl_res_add(&message->res, cl_guide_reply, message)) {
         cl_guide_reply(message);
         return NULL;

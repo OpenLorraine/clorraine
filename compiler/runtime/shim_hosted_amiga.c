@@ -3424,6 +3424,34 @@ int cl_own_ports_hold(struct Node *node)
     return 0;
 }
 
+/* Keeps a helper a real function in GCC builds. A helper that is only linked
+ * into the programs that need it is checked by its symbol in a release image;
+ * inlined into its callers, it would leave no symbol behind. */
+#if defined(__GNUC__)
+#define CL_NOINLINE __attribute__((noinline))
+#else
+#define CL_NOINLINE
+#endif
+
+/* Call `visit` with each live record's handle whose release function is
+ * `release`, oldest first. The next record is read before each call, so
+ * `visit` may remove the record it is given. Freeing a region and closing a
+ * guide use it to find the layers and messages that still borrow from them;
+ * a program that frees neither does not link it. */
+CL_NOINLINE void cl_res_each(void (*release)(void *handle),
+                 void (*visit)(void *handle, void *context), void *context)
+{
+    cl_res *record;
+    cl_res *next;
+
+    for (record = cl_res_head; record != NULL; record = next) {
+        next = record->next;
+        if (record->release == release) {
+            visit(record->handle, context);
+        }
+    }
+}
+
 /* True when `message` is queued on a port the program still owns. The caller
  * holds Forbid. */
 static int cl_own_port_holds(cl_message *message)
@@ -6571,8 +6599,19 @@ typedef struct cl_layer {
     int bitmap_height;
     int width;
     int height;
+    UBYTE updating; /* layerBeginUpdate ran and layerEndUpdate has not */
     cl_res res;
 } cl_layer;
+
+/* Remove a clip region the program installed. The layers library requires
+ * this before DeleteLayer, and a region being disposed must not stay
+ * installed. Installing NULL always succeeds. It never ends an update. */
+static void cl_layer_unclip(cl_layer *layer)
+{
+    if (layer->layer->ClipRegion != NULL) {
+        (void)InstallClipRegion(layer->layer, NULL);
+    }
+}
 
 void cl_layer_free(void *handle);
 
@@ -6800,7 +6839,18 @@ void cl_layer_free(void *handle)
     }
     cl_res_remove(&layer->res);
     if (layer->layer != NULL) {
-        LONG deleted = DeleteLayer(0, layer->layer);
+        LONG deleted;
+
+        /* A layer freed between layerBeginUpdate and layerEndUpdate, by the
+         * program or at exit, ends the update first. No handle is left to end
+         * it later, and BeginUpdate needs its EndUpdate even when it failed.
+         * The redraw is not complete, so the damage is kept. */
+        if (layer->updating) {
+            EndUpdate(layer->layer, FALSE);
+            layer->updating = 0;
+        }
+        cl_layer_unclip(layer);
+        deleted = DeleteLayer(0, layer->layer);
         if (!deleted) {
             /* The layer is still live; leak the Layer_Info rather than dispose
              * it under the library. */
@@ -6920,6 +6970,9 @@ BOOL cl_layer_begin_update(void *handle)
     if (layer == NULL || layer->layer == NULL) {
         return FALSE;
     }
+    /* Recorded whatever BeginUpdate returns: a failed begin still needs its
+     * EndUpdate, which freeing the layer then supplies. */
+    layer->updating = 1;
     return BeginUpdate(layer->layer) ? TRUE : FALSE;
 }
 
@@ -6930,6 +6983,7 @@ void cl_layer_end_update(void *handle)
 
     if (layer != NULL && layer->layer != NULL) {
         EndUpdate(layer->layer, TRUE);
+        layer->updating = 0;
     }
 }
 

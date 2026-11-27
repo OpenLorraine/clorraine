@@ -1,0 +1,123 @@
+// Crash-safety probe: a clip region freed while a layer still has it
+// installed, a layer freed while it holds a clip, a region freed during the
+// layer's update, and a layer freed during an update. After the region is
+// freed, the layer must draw unclipped, exactly like a twin layer that never
+// had a clip; it must not keep clipping through the freed region. Each
+// comparison fills both layers' bitmaps and compares their checksums; the
+// result line shows the machine survived the last free.
+//
+// Layer drawing returns before the blitter finishes, so a fill on a scratch
+// bitmap, which waits for the blitter, runs before each checksum.
+module robustness.crash_safety.region_free;
+
+import { Bitmap, newBitmap, freeBitmap, bitmapFill, bitmapChecksum }
+    from std.amiga.video;
+import { Layer, newLayer, freeLayer, layerFill, layerClear,
+         layerBeginUpdate, layerEndUpdate } from std.amiga.layers;
+import { Region, newRegion, freeRegion, regionOrRect, layerSetClipRegion }
+    from std.amiga.regions;
+import { println } from std.io;
+
+/// Fills both layers completely with pen 1, waits for the blitter, and
+/// returns 1 when their bitmaps then match.
+func fillAndCompare(borrow clipped: Layer, borrow twin: Layer,
+                    borrow scratch: Bitmap, const a: Bitmap,
+                    const b: Bitmap): i32 {
+    layerFill(clipped, 0, 0, 63, 31, 1);
+    layerFill(twin, 0, 0, 63, 31, 1);
+    bitmapFill(scratch, 0, 0, 0, 0, 1);
+    if (bitmapChecksum(a) == bitmapChecksum(b)) {
+        return 1;
+    }
+    return 0;
+}
+
+func main(): i32 {
+    let aMade: Bitmap? = newBitmap(64, 32, 1);
+    let bMade: Bitmap? = newBitmap(64, 32, 1);
+    let cMade: Bitmap? = newBitmap(64, 32, 1);
+    let sMade: Bitmap? = newBitmap(16, 16, 1);
+    if (aMade == null || bMade == null || cMade == null || sMade == null) {
+        println("region: err bitmap");
+        return 1;
+    }
+    let a: Bitmap = aMade;
+    let b: Bitmap = bMade;
+    let c: Bitmap = cMade;
+    let s: Bitmap = sMade;
+    let laMade: Layer? = newLayer(a, 0, 0, 63, 31);
+    let lbMade: Layer? = newLayer(b, 0, 0, 63, 31);
+    let lcMade: Layer? = newLayer(c, 0, 0, 63, 31);
+    if (laMade == null || lbMade == null || lcMade == null) {
+        println("region: err layer");
+        return 1;
+    }
+    let la: Layer = laMade;
+    let lb: Layer = lbMade;
+    let lc: Layer = lcMade;
+
+    // A region freed while installed in one layer.
+    let r1Made: Region? = newRegion();
+    if (r1Made == null) {
+        println("region: err region");
+        return 1;
+    }
+    let r1: Region = r1Made;
+    regionOrRect(r1, 0, 0, 3, 3);
+    layerSetClipRegion(la, r1);
+    freeRegion(r1);
+    let same: i32 = fillAndCompare(la, lb, s, a, b);
+
+    // A region installed in two layers: one layer is freed with the clip
+    // installed, then the region is freed while the other still holds it.
+    let r2Made: Region? = newRegion();
+    if (r2Made == null) {
+        println("region: err region");
+        return 1;
+    }
+    let r2: Region = r2Made;
+    regionOrRect(r2, 0, 0, 3, 3);
+    layerSetClipRegion(la, r2);
+    layerSetClipRegion(lc, r2);
+    freeLayer(lc);
+    freeRegion(r2);
+    layerClear(la, 0);
+    layerClear(lb, 0);
+    same = same + fillAndCompare(la, lb, s, a, b);
+
+    // A region freed while installed, between the layer's begin and end of
+    // an update; the program's own end still closes the update.
+    let r3Made: Region? = newRegion();
+    if (r3Made == null) {
+        println("region: err region");
+        return 1;
+    }
+    let r3: Region = r3Made;
+    regionOrRect(r3, 0, 0, 3, 3);
+    layerSetClipRegion(la, r3);
+    layerBeginUpdate(la);
+    freeRegion(r3);
+    layerEndUpdate(la);
+    layerClear(la, 0);
+    layerClear(lb, 0);
+    same = same + fillAndCompare(la, lb, s, a, b);
+
+    // A layer freed between the begin and end of an update.
+    let ldMade: Layer? = newLayer(c, 0, 0, 63, 31);
+    if (ldMade == null) {
+        println("region: err layer");
+        return 1;
+    }
+    let ld: Layer = ldMade;
+    layerBeginUpdate(ld);
+    freeLayer(ld);
+
+    freeLayer(la);
+    freeLayer(lb);
+    freeBitmap(s);
+    freeBitmap(c);
+    freeBitmap(b);
+    freeBitmap(a);
+    println($"region: ok same {same}");
+    return 0;
+}

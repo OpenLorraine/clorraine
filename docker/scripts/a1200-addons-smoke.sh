@@ -45,6 +45,8 @@ peer_pid=""
 # probe from examples/robustness/crash-safety/ before this script runs.
 PROBES=(
     "pubscreen-wb|pub.txt|pub: ok unknown false wb true"
+    "region-free|region.txt|region: ok same 3"
+    "guide-late|guidelate.txt|guidelate: ok type 0"
     "clip-raw|clipraw.txt|clipraw: ok w2 true"
     "clip-iff|clipiff.txt|clip: ok r1 8 r2 24 r3 24 c 109"
 )

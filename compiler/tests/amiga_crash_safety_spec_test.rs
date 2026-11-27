@@ -9,6 +9,10 @@
 //! the case where the library cannot be opened, and reports any resource the
 //! program left behind when it ends.
 //!
+//! The runtime helpers these fixes add cost nothing in a program that never
+//! calls the entries that need them: a release build without them must not
+//! link them.
+//!
 //! The cases need the m68k cross toolchain and `vamos`; they skip themselves
 //! with a note when those tools are absent, like the other hosted-amiga suites.
 
@@ -75,10 +79,18 @@ fn sdk_present() -> bool {
     false
 }
 
-/// Emits `source` for `profile` with zero diagnostics and cross-builds it on
-/// the debug line of the compile matrix, warnings as errors, with the named
-/// libnix runtime. Returns the program path inside `scratch`.
-fn build(scratch: &ScratchDir, tag: &str, profile: &str, crt: &str, source: &Path) -> PathBuf {
+/// How a probe is compiled: the debug line of the compile matrix with warnings
+/// as errors, or the release line without the final strip so the symbol table
+/// can be inspected.
+#[derive(Clone, Copy)]
+enum Build {
+    Debug,
+    ReleaseUnstripped,
+}
+
+/// Emits `source` for `profile` with zero diagnostics and cross-builds it with
+/// the named libnix runtime. Returns the program path inside `scratch`.
+fn build(scratch: &ScratchDir, tag: &str, profile: &str, crt: &str, source: &Path, how: Build) -> PathBuf {
     let c_path = scratch.path().join(format!("{tag}.c"));
     let emit = Command::new(env!("CARGO_BIN_EXE_clc"))
         .args(["--profile", profile, "-o"])
@@ -97,9 +109,14 @@ fn build(scratch: &ScratchDir, tag: &str, profile: &str, crt: &str, source: &Pat
         text(&emit.stderr)
     );
     let binary = scratch.path().join(tag);
+    let flags: &[&str] = match how {
+        Build::Debug => &["-O0", "-g", "-Wall", "-Wextra", "-Werror"],
+        Build::ReleaseUnstripped => &["-O2", "-ffunction-sections", "-fdata-sections", "-Wl,--gc-sections"],
+    };
     let gcc = Command::new("m68k-amigaos-gcc")
         .args(["-std=c99", &format!("-mcrt={crt}"), "-m68000", "-fwrapv"])
-        .args(["-O0", "-g", "-Wall", "-Wextra", "-Werror", "-o"])
+        .args(flags)
+        .arg("-o")
         .arg(&binary)
         .arg(&c_path)
         .args(["-lamiga", "-lm"])
@@ -167,7 +184,7 @@ fn assert_runs_without_intuition(probe_name: &str, expected: &str, profiles: &[(
     for &(profile, crt) in profiles {
         let tag = format!("{}-{profile}", probe_name.trim_end_matches(".clo"));
         let scratch = ScratchDir::new(&tag);
-        let binary = build(&scratch, &tag, profile, crt, &probe(probe_name));
+        let binary = build(&scratch, &tag, profile, crt, &probe(probe_name), Build::Debug);
         let run = run_without_intuition(&binary);
         assert_eq!(
             run.stdout, expected,
@@ -211,5 +228,63 @@ fn a_public_screen_capture_before_any_screen_fails_when_intuition_cannot_open() 
         "pubscreen-first.clo",
         "calling\nsaved false\n",
         &[("hosted-amiga", "nix20")],
+    );
+}
+
+/// True when the unstripped program at `binary` defines the C symbol `name`
+/// (m68k symbols carry one leading underscore).
+fn defines_symbol(binary: &Path, name: &str) -> bool {
+    let nm = Command::new("m68k-amigaos-nm")
+        .arg(binary)
+        .output()
+        .expect("run m68k-amigaos-nm");
+    assert!(
+        nm.status.success(),
+        "m68k-amigaos-nm failed on {}; stderr:\n{}",
+        binary.display(),
+        text(&nm.stderr)
+    );
+    let wanted = format!("_{name}");
+    text(&nm.stdout)
+        .lines()
+        .filter_map(|line| line.split_whitespace().last())
+        .any(|symbol| symbol == wanted)
+}
+
+/// Builds `source` release-unstripped for `profile` and reports whether it
+/// defines `symbol`.
+fn links(source: &Path, tag: &str, profile: &str, crt: &str, symbol: &str) -> bool {
+    let scratch = ScratchDir::new(&format!("symbols-{tag}-{profile}"));
+    let binary = build(&scratch, tag, profile, crt, source, Build::ReleaseUnstripped);
+    defines_symbol(&binary, symbol)
+}
+
+// The registry walk that freeing a region or closing a guide uses is linked
+// only into programs that free regions or close guides: hello and a program
+// that only shows an alert do not carry it, on either hosted profile, and a
+// program that frees a region and one that closes a guide do.
+#[test]
+fn only_programs_that_free_regions_or_close_guides_link_the_registry_walk() {
+    if !sdk_present() || !tool_available("m68k-amigaos-nm") {
+        return;
+    }
+    let hello = repo_root().join("examples/hello/hello.clo");
+    for (profile, crt) in [("hosted-amiga", "nix20"), ("hosted-amiga-13", "nix13")] {
+        assert!(
+            !links(&hello, "hello", profile, crt, "cl_res_each"),
+            "{profile}: hello links the registry walk"
+        );
+        assert!(
+            !links(&probe("alert-first.clo"), "alert-first", profile, crt, "cl_res_each"),
+            "{profile}: a program that only shows an alert links the registry walk"
+        );
+    }
+    assert!(
+        links(&probe("region-free.clo"), "region-free", "hosted-amiga", "nix20", "cl_res_each"),
+        "hosted-amiga: a program that frees a region must link the registry walk"
+    );
+    assert!(
+        links(&probe("guide-late.clo"), "guide-late", "hosted-amiga", "nix20", "cl_res_each"),
+        "hosted-amiga: a program that closes a guide must link the registry walk"
     );
 }
