@@ -24,10 +24,8 @@ ARCHIVE_NAME='@ARCHIVE_NAME@'
 ARCHIVE_URL='@ARCHIVE_URL@'
 ARCHIVE_BYTES='@ARCHIVE_BYTES@'
 ARCHIVE_SHA256='@ARCHIVE_SHA256@'
-VSIX_NAME='@VSIX_NAME@'
-VSIX_URL='@VSIX_URL@'
-VSIX_BYTES='@VSIX_BYTES@'
-VSIX_SHA256='@VSIX_SHA256@'
+# The VS Code extension, installed from the Visual Studio Marketplace by ID.
+EXTENSION_ID=openlorraine.clorraine
 
 # Plain-text style until `init_style` sees an interactive terminal.
 BOLD= DIM= RESET= GREEN= YELLOW= CYAN= C1= C2= C3= C4= C5=
@@ -56,8 +54,9 @@ Options:
   --no-hello                do not run the hello programs
   --starter DIR             create a starter Amiga project in DIR
   --no-starter              do not offer a starter project
-  --vscode                  install the VS Code extension when detected
-  --no-vscode               skip VS Code detection and install
+  --vscode                  install or update the VS Code extension from the
+                            Marketplace without asking
+  --no-vscode               leave VS Code and its extensions unchanged
   --uninstall               remove the active version and PATH block
   --purge                   also remove versions and the CLI config
   -h, --help                show this help
@@ -615,56 +614,39 @@ func main(): i32 {
 EOF
 }
 
-# Downloads, verifies, and returns the pinned VS Code extension.
-download_vsix() {
-    local target actual_bytes actual_sha
-    case "$VSIX_BYTES" in
-        ''|*[!0-9]*)
-            printf 'clorraine: the VS Code extension is not pinned in this installer\n' >&2
-            return 1
-            ;;
+# Seconds an editor command may run before it is stopped. Installing the
+# extension talks to the Marketplace, and a stuck proxy must not hang the
+# installer; CLORRAINE_EDITOR_TIMEOUT overrides the bound with a positive
+# whole number of seconds.
+editor_timeout() {
+    local seconds=${CLORRAINE_EDITOR_TIMEOUT:-}
+    case "$seconds" in
+        ''|*[!0-9]*) seconds=300 ;;
     esac
-    case "$VSIX_SHA256" in
-        ''|*[!0-9a-fA-F]*)
-            printf 'clorraine: the VS Code extension is not pinned in this installer\n' >&2
-            return 1
-            ;;
-    esac
-    if [ "$VSIX_BYTES" -le 0 ] || [ "${#VSIX_SHA256}" -ne 64 ]; then
-        printf 'clorraine: the VS Code extension is not pinned in this installer\n' >&2
-        return 1
+    [ "$seconds" -gt 0 ] 2>/dev/null || seconds=300
+    printf '%s\n' "$seconds"
+}
+
+# Runs an editor command within the bound, keeping its standard output.
+bounded_editor() {
+    if command -v timeout >/dev/null 2>&1; then
+        timeout --kill-after=5 "$(editor_timeout)" "$@" </dev/null 2>/dev/null
+    else
+        "$@" </dev/null 2>/dev/null
     fi
-    require_commands curl
-    if [ -z "${download_dir:-}" ]; then
-        download_dir=$(mktemp -d "${TMPDIR:-/tmp}/clorraine-install.XXXXXXXX") || return 1
-    fi
-    target="$download_dir/$VSIX_NAME"
-    if ! curl --disable --fail --location --proto '=https' --proto-redir '=https' \
-        --connect-timeout 20 --max-time 120 \
-        --max-filesize "$((VSIX_BYTES + 1))" \
-        --output "$target" "$VSIX_URL"; then
-        printf 'clorraine: cannot download the VS Code extension\n' >&2
-        return 1
-    fi
-    actual_bytes=$(wc -c <"$target")
-    if [ "$actual_bytes" -ne "$VSIX_BYTES" ]; then
-        printf 'clorraine: VS Code extension byte count mismatch\n' >&2
-        return 1
-    fi
-    actual_sha=$(sha256sum "$target" | awk '{print $1}')
-    if [ "$actual_sha" != "$VSIX_SHA256" ]; then
-        printf 'clorraine: VS Code extension SHA-256 mismatch\n' >&2
-        return 1
-    fi
-    printf '%s\n' "$target"
+}
+
+# Runs an editor command within the bound and discards its output.
+run_editor() {
+    bounded_editor "$@" >/dev/null
 }
 
 # Finds a working VS Code-family launcher.
 detect_editor() {
     local name path
-    for name in code codium code-insiders; do
+    for name in code code-insiders; do
         path=$(command -v "$name" 2>/dev/null) || continue
-        if "$path" --version >/dev/null 2>&1; then
+        if run_editor "$path" --version; then
             printf '%s\n' "$path"
             return 0
         fi
@@ -674,12 +656,13 @@ detect_editor() {
 
 # True when the editor already lists the Clorraine extension.
 vscode_extension_installed() {
-    "$1" --list-extensions 2>/dev/null | grep -Fxiq 'openlorraine.clorraine'
+    bounded_editor "$1" --list-extensions | grep -Fxiq "$EXTENSION_ID"
 }
 
-# Detects and optionally installs the pinned VS Code extension.
+# Installs the VS Code extension from the Marketplace, or reinstalls it when
+# it is already there. A failure is reported and never stops the install.
 install_vscode() {
-    local editor vsix
+    local editor
     VSCODE_STATE=${VSCODE_STATE:-unavailable}
     if [ "$NO_VSCODE" = 1 ]; then
         VSCODE_STATE=skipped
@@ -687,14 +670,27 @@ install_vscode() {
     fi
     if ! editor=$(detect_editor); then
         if [ "$VSCODE" = 1 ]; then
-            printf 'VS Code was not found; install VS Code, then run: code --install-extension %s\n' "$VSIX_NAME" >&2
+            printf 'VS Code was not found; install VS Code, then run: code --install-extension %s\n' "$EXTENSION_ID" >&2
         fi
         VSCODE_STATE=unavailable
         return 0
     fi
     if vscode_extension_installed "$editor"; then
-        ok "the Clorraine extension is already installed in VS Code"
-        VSCODE_STATE=already-installed
+        # Uninstalling first replaces an install from a release file, which VS
+        # Code pins and never updates, with a Marketplace install it keeps
+        # current; --force alone would keep the pin.
+        if ! run_editor "$editor" --uninstall-extension "$EXTENSION_ID"; then
+            printf 'could not update the VS Code extension; run: code --install-extension %s --force\n' "$EXTENSION_ID" >&2
+            VSCODE_STATE=failed
+            return 0
+        fi
+        if run_editor "$editor" --install-extension "$EXTENSION_ID"; then
+            ok "updated the Clorraine extension from the Marketplace"
+            VSCODE_STATE=updated
+        else
+            printf 'the Clorraine extension was removed but could not be reinstalled from the Marketplace; run: code --install-extension %s\n' "$EXTENSION_ID" >&2
+            VSCODE_STATE=failed
+        fi
         return 0
     fi
     if [ "$VSCODE_SET" = 0 ]; then
@@ -709,21 +705,11 @@ install_vscode() {
             return 0
         fi
     fi
-    # download_vsix runs in a subshell; create its directory here so the
-    # exit cleanup sees it.
-    if [ -z "${download_dir:-}" ]; then
-        download_dir=$(mktemp -d "${TMPDIR:-/tmp}/clorraine-install.XXXXXXXX") || download_dir=
-    fi
-    if ! vsix=$(download_vsix); then
-        printf 'could not download the VS Code extension; install it from the release\n' >&2
-        VSCODE_STATE=failed
-        return 0
-    fi
-    if "$editor" --install-extension "$vsix" >/dev/null 2>&1; then
+    if run_editor "$editor" --install-extension "$EXTENSION_ID"; then
         ok "installed the Clorraine extension in VS Code"
         VSCODE_STATE=installed
     else
-        printf 'could not install the VS Code extension; run: %s --install-extension %s\n' "$editor" "$vsix" >&2
+        printf 'could not install the VS Code extension from the Marketplace; run: code --install-extension %s\n' "$EXTENSION_ID" >&2
         VSCODE_STATE=failed
     fi
     return 0
@@ -1129,9 +1115,9 @@ print_summary() {
     esac
     case "${VSCODE_STATE:-unavailable}" in
         installed) printf '  VS Code    extension installed\n' ;;
-        already-installed) printf '  VS Code    extension already installed\n' ;;
-        failed) printf '  VS Code    extension not installed\n' ;;
-        available) printf '  VS Code    detected; rerun with --vscode\n' ;;
+        updated) printf '  VS Code    extension updated from the Marketplace\n' ;;
+        failed) printf '  VS Code    extension not installed; run: code --install-extension %s\n' "$EXTENSION_ID" ;;
+        available) printf '  VS Code    detected; rerun with --vscode to install the extension\n' ;;
         skipped) printf '  VS Code    skipped\n' ;;
         *) printf '  VS Code    not found\n' ;;
     esac
@@ -1229,7 +1215,7 @@ print_next_steps() {
         "${HELLO_FILE:-$PREFIX/share/clorraine/examples/hello.clo}"
     printf '  Amiga hello: %s/bin/clorraine run -p hosted-amiga --release --emulator --fs-uae fs-uae --kickstart <ks31-a1200.rom> %s\n' \
         "$PREFIX" "${HELLO_GUEST_FILE:-$PREFIX/share/clorraine/examples/hello-amiga.clo}"
-    printf '  VS Code extension: install %s from the release\n' "$VSIX_NAME"
+    printf '  VS Code extension: code --install-extension %s\n' "$EXTENSION_ID"
 }
 
 # Removes this prefix's links, current, and PATH block; keeps versions/config.
