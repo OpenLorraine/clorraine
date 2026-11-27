@@ -2,9 +2,11 @@
 
 > **Document**: 08-merge-notes.md
 > **Parent**: [Index](00-index.md)
-> **Status**: Merged as PR #96 (2026-11-27). Done: `AGENTS.md` and the roadmap. Open: the
-> shared `clorraine-sdk:dev` image rebuild (until then `make check` on `main` fails at the
-> Windows `cargo check` step), the release edits, and the decisions and follow-ups below.
+> **Status**: Merged as PR #96 (2026-11-27). Done: `AGENTS.md` and the roadmap. The release
+> steps below are superseded by `plans/vscode-marketplace-v1.3.0/` (v1.3.0 carries Windows and
+> drops the VSIX asset). Open: the shared `clorraine-sdk:dev` image rebuild (until then
+> `make check` on `main` fails at the Windows `cargo check` step) and the decisions and
+> follow-ups below.
 
 ## Before merging
 
@@ -38,6 +40,10 @@
    auth file is `.mutter-Xwaylandauth.89WIZ3`.
 
 ## At release (AR-3, AR-63)
+
+> Superseded: v1.3.0 is the release that carries Windows; its steps live in
+> `plans/vscode-marketplace-v1.3.0/03-05-docs-release.md` and `RELEASE.md`, and the
+> release has four assets (no VSIX).
 
 1. Choose the release that carries Windows.
 2. Replace `vX.Y.Z` with its tag in the Windows commands of `README.md`, `docs/windows-cli.md`,

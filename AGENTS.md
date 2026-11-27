@@ -56,9 +56,9 @@ acceptance gate. `make check` and `make verify` remain authoritative.
 | `make run FILE=…` / `make build FILE=…` | Build (and run) one program in the container; set `PROFILE=hosted-amiga\|hosted-amiga-13\|freestanding`, `EMULATOR=1`, `CAPTURE=1` |
 | `make toolchain-check TOOLCHAIN=…` | Build hello, the portable corpus, and freestanding with an extracted upstream rc24 toolchain; local product check, not part of `make check` |
 | `make fs-uae-check KICKSTART=… [TOOLCHAIN=…]` | Run hello, the four hosted-amiga corpus programs, one hosted-amiga-13 corpus program, and an rc-1 negative in a real A1200/KS3.1 FS-UAE; compare output and reject a surviving emulator/Xvfb process |
-| `make dist` | Build the Linux and Windows release binaries and the VSIX, then write the five candidate assets (Linux archive, Windows zip, VSIX, `install.sh`, `install.ps1`) and one `SHA256SUMS` under `build/dist`; no publication |
+| `make dist` | Build the Linux and Windows release binaries, then write the four candidate assets (Linux archive, Windows zip, `install.sh`, `install.ps1`) and one `SHA256SUMS` under `build/dist`; no publication. The VS Code extension is published to the Marketplace by `.github/workflows/publish-vscode.yml`, not shipped with the release |
 | `make dist-verify` / `make dist-check` | Verify the candidate layout, pins, and hashes (`--verify` rebuilds `install.ps1` and checks every zip entry); run the hermetic installer/producer/acceptance/removal tests, including the Windows packaging and evidence suites |
-| `make acceptance CANDIDATE=… TOOLCHAIN_ARCHIVE=… KICKSTART=…` | Install the exact candidate into an isolated HOME, run the rc24/FS-UAE matrix, and write local acceptance evidence |
+| `make acceptance CANDIDATE=… TOOLCHAIN_ARCHIVE=… KICKSTART=… PUBLISH_RUN=… PUBLISH_SHA256=… [EDITOR_CONFIRMED=1]` | Install the exact candidate (with the Marketplace extension) into an isolated HOME, run the rc24/FS-UAE matrix, and write local acceptance evidence naming the installed extension and its publish run |
 | `make acceptance-check EVIDENCE=… CANDIDATE=…` | Validate a recorded Linux or Windows acceptance record against the candidate bytes and corpus goldens; Windows records come from `tools/setup/acceptance.ps1` |
 | `make -C docker exec CMD="cargo build --workspace"` | Build `clc`, `clorraine`, and `clorraine-lsp` at `target/debug/` |
 | `make -C docker exec CMD="target/debug/clorraine run FILE.clo"` | Driver directly: `run`, `build`, or `emit` (`-p host\|hosted-amiga\|hosted-amiga-13\|freestanding`, `--release`, `--size`, `--capture`, `--emulator`, `--emit-c`, `--explain CODE`, `--doc [-o DIR] FILE...`, `--diagnostics=json`) |
@@ -113,11 +113,11 @@ acceptance gate. `make check` and `make verify` remain authoritative.
 | `tools/perf/` | Benchmark harness and its unit tests |
 | `tools/fuzz/` | Deterministic differential fuzzer, committed seeds and goldens, and its unit tests |
 | `docker/` | Pinned Amiga SDK: toolchain config, scripts, and emulator wrappers |
-| `.github/workflows/` | Host-only GitHub Actions checks (`check.yml`) and the Pages site build/deploy (`docs.yml`) |
+| `.github/workflows/` | Host-only GitHub Actions checks (`check.yml`), the Pages site build/deploy (`docs.yml`), and the manually dispatched Marketplace publish of the VS Code extension (`publish-vscode.yml`, Trusted Publishing, `marketplace` environment, `v*` tags only) |
 | `demo/` | Demo story (`story.ts`), per-file scaffold, Vim syntax file, recorder shim, and committed poster; rendered media is ignored |
 | `tools/demo/` | `@clorraine/demo`, the zero-build TypeScript render toolkit (headless Chrome, Shiki, VHS, ffmpeg) |
 | `tools/setup/` | Fetch/detect SDK installer and its Python unit tests; the Linux and Windows CLI installers (`install.sh`, `install.ps1`), the candidate producer (`package.sh`, `pe_check.py`), the acceptance producers and checker, and the Windows test-host helper (`windows-remote.sh`, `windows-desktop-run.ps1`) |
-| `tools/vscode/` | VS Code extension package, LSP client, and headless tests |
+| `tools/vscode/` | VS Code extension package (`openlorraine.clorraine` on the Visual Studio Marketplace), LSP client, headless tests, and the release version guard (`scripts/release-version.mjs`); maintainer notes in `DEVELOPMENT.md` |
 | `site/` | Public VitePress documentation site, custom theme, screenshots, and OG image; deployed by `.github/workflows/docs.yml` |
 | `editors/` | Canonical editor assets: `clorraine.tmLanguage.json`, consumed by the demo toolkit and enforced against the EBNF by `make check` |
 | `examples/` | Small example programs, including the hosted-amiga acceptance programs under `examples/amiga/`, the target-side fault probes under `examples/robustness/`, and a compile-fail ownership sample |

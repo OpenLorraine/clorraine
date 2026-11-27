@@ -251,10 +251,10 @@ C-hook trampoline surfaces.
 | Host attribution | The host release-binary reduction includes symbol removal; scored host `.text` falls 19.7–59.9% (calibration falls 80.2%), while the file size falls 20.6–36.5%. | Compare `.text` for code size and the stripped file for the shipped artifact. |
 | Non-GNU Linux | The host predicate selects Linux, not the linker family; a non-GNU linker on Linux would receive GNU-only flags. The tested and shipped host is the pinned GNU toolchain. | Use a GNU-compatible linker or extend the predicate with a linker probe. |
 
-## 15. Linux installer (v1.2.0 developer preview)
+## 15. Linux installer (developer preview)
 
-v1.2.0 is a developer preview, published as a GitHub prerelease for Linux
-x86_64. One command installs the CLI, the rc24 toolchain, the VS Code extension,
+v1.3.0 is a developer preview, published as a GitHub prerelease for Linux
+x86_64 and Windows 11 x64 (section 17). One command installs the CLI, the rc24 toolchain, the VS Code extension,
 and a starter project; see [Linux CLI](linux-cli.md).
 
 - **Host floor.** Linux x86_64 with glibc 2.38 or newer. Ubuntu 24.04 is the
@@ -272,8 +272,11 @@ and a starter project; see [Linux CLI](linux-cli.md).
   that run until reset, such as the showcase demos, are watched in the browser
   player instead. The A500/Kickstart 1.3 profile builds run on the A1200, which
   is not a Kickstart 1.3 test.
-- **Editor.** The installer installs the VS Code extension from the release; it
-  is not in a marketplace yet.
+- **Editor.** The installers install the VS Code extension from the Visual
+  Studio Marketplace. VS Code (Microsoft's build) is the supported editor;
+  VSCodium and other editors that use Open VSX cannot install it yet. An
+  extension installed by the v1.2.0 installer is pinned and never updates on its
+  own; rerunning the installer reinstalls it from the Marketplace.
 - **Platforms.** Windows is covered in section 17; macOS is on the way; WSL,
   Remote-WSL, and ARM hosts are not claimed.
 
@@ -315,9 +318,9 @@ Drops are still skipped on a fault, panic, or break. The limits are:
   and the runtime finishes the remaining releases. This relies on libnix `exit`; the vbcc leg is
   build-only and makes no runtime claim.
 
-## 17. Windows installer (developer preview, next release)
+## 17. Windows installer (developer preview)
 
-Windows support ships with the first release after v1.2.0. One PowerShell
+Windows support starts with v1.3.0. One PowerShell
 script installs the CLI for the current user and, with approval, the rc24
 toolchain, FS-UAE, the VS Code extension, and a starter project; see
 [Windows CLI](windows-cli.md).

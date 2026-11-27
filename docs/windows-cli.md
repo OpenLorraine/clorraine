@@ -1,10 +1,6 @@
 # Windows CLI (developer preview)
 
-> **Next release.** Windows support ships with the first Clorraine release after
-> v1.2.0; the v1.2.0 release has Linux assets only. The commands below write
-> that release's version as `vX.Y.Z`.
-
-Clorraine runs on **Windows 11 x64** as a developer preview. One
+Clorraine v1.3.0 runs on **Windows 11 x64** as a developer preview. One
 PowerShell script installs the CLI for your Windows account and, with your
 approval, the Amiga toolchain, FS-UAE, the VS Code extension, and a starter
 project. It needs no Docker or WSL; PC builds need GCC.
@@ -14,8 +10,12 @@ project. It needs no Docker or WSL; PC builds need GCC.
 Open **Windows PowerShell** (not as administrator) and run:
 
 ```powershell
-curl.exe -fsSLo clorraine-install.ps1 https://github.com/OpenLorraine/clorraine/releases/download/vX.Y.Z/install.ps1; powershell -ExecutionPolicy Bypass -File .\clorraine-install.ps1
+powershell -ExecutionPolicy ByPass -c "irm https://github.com/OpenLorraine/clorraine/releases/download/v1.3.0/install.ps1 | iex"
 ```
+
+Keep the `powershell … -c` part: it runs the installer in its own process. The
+installer ends with `exit`, so pasting only `irm … | iex` into an open
+PowerShell window would close that window when it finishes.
 
 The installer walks through the same five steps as on Linux:
 
@@ -36,25 +36,24 @@ The installer walks through the same five steps as on Linux:
 4. **Say hello.** It runs the hello program on the PC with GCC and plays the
    demo-scene hello on an emulated Amiga 1200 in FS-UAE.
 5. **Your first Amiga project.** It installs the VS Code extension from the
-   same release and offers a starter project in the current folder, which it
-   can open in VS Code.
+   Visual Studio Marketplace and offers a starter project in the current
+   folder, which it can open in VS Code.
 
-To check the installer before running it, download `install.ps1` and
-`SHA256SUMS` from the
-[release](https://github.com/OpenLorraine/clorraine/releases) that carries Windows
+To check the installer before running it, or to pass options, download
+`install.ps1` and `SHA256SUMS` from the
+[v1.3.0 release](https://github.com/OpenLorraine/clorraine/releases/tag/v1.3.0)
 and compare the hash:
 
 ```powershell
-curl.exe -fsSLO https://github.com/OpenLorraine/clorraine/releases/download/vX.Y.Z/install.ps1
-curl.exe -fsSLO https://github.com/OpenLorraine/clorraine/releases/download/vX.Y.Z/SHA256SUMS
+curl.exe -fsSLO https://github.com/OpenLorraine/clorraine/releases/download/v1.3.0/install.ps1
+curl.exe -fsSLO https://github.com/OpenLorraine/clorraine/releases/download/v1.3.0/SHA256SUMS
 (Get-FileHash -Algorithm SHA256 .\install.ps1).Hash.ToLower()
 Select-String 'install.ps1' .\SHA256SUMS
 powershell -ExecutionPolicy Bypass -File .\install.ps1
 ```
 
-The two hashes must match before you run the last line. The commands below
-call the installer `clorraine-install.ps1`; use `install.ps1` if you
-downloaded it this way.
+The two hashes must match before you run the last line. The commands below use
+the downloaded `install.ps1`.
 
 ## The execution policy and the UAC prompt
 
@@ -162,24 +161,33 @@ of a failed or timed-out run. The FS-UAE window opens on your desktop.
 
 ## VS Code
 
-The installer installs the `openlorraine.clorraine` extension from the release
-when VS Code (`code`, `codium`, or `code-insiders`) is found. The extension
-finds `clorraine.exe` and `clorraine-lsp.exe` in
+When VS Code (`code.cmd` or `code-insiders.cmd`) is found and you agree, or pass
+`-VSCode`, the installer installs the
+[`openlorraine.clorraine` extension](https://marketplace.visualstudio.com/items?itemName=openlorraine.clorraine) from the
+Visual Studio Marketplace, which keeps it up to date. If the extension is
+already installed, the installer reinstalls it from the Marketplace. The step
+waits at most five minutes, and on any failure it prints the command to run
+yourself, `code --install-extension openlorraine.clorraine`, and carries on.
+VS Code (Microsoft's build) is the supported editor; VSCodium and other editors
+that use Open VSX cannot install the extension yet.
+
+The extension finds `clorraine.exe` and `clorraine-lsp.exe` in
 `%LOCALAPPDATA%\Programs\Clorraine\current\bin`, so it works without the
-`PATH` entry. With a custom `-Prefix`, keep the `PATH` entry or set
-`clorraine.driver.path` and `clorraine.lsp.path` in your User Settings. Diagnostics, navigation, and the **Run in FS-UAE** and **Run**
-buttons behave as on Linux.
+`PATH` entry, and offers the install guide when they are missing. With a custom
+`-Prefix`, keep the `PATH` entry or set `clorraine.driver.path` and
+`clorraine.lsp.path` in your User Settings. Diagnostics, navigation, and the
+**Run in FS-UAE** and **Run** buttons behave as on Linux.
 
 ## Scripted installs and removal
 
 Without a console the installer asks nothing, keeps its defaults, and never
 asks for administrator approval or downloads FS-UAE unless told to. The
-options are listed by `.\clorraine-install.ps1 -Help`, among them `-Prefix`,
+options are listed by `powershell -ExecutionPolicy Bypass -File .\install.ps1 -Help`, among them `-Prefix`,
 `-ModifyPath`, `-Toolchain`, `-NoToolchain`, `-InstallToolchain`,
 `-ReplaceToolchain`, `-FsUae`, `-Kickstart`, `-InstallFsUae`, `-NoEmulator`,
 `-NoHello`, `-Starter DIR`, `-NoStarter`, `-VSCode`, and `-NoVSCode`.
 
-`.\clorraine-install.ps1 -Uninstall` removes the `current` link and the `PATH`
+`powershell -ExecutionPolicy Bypass -File .\install.ps1 -Uninstall` removes the `current` link and the `PATH`
 entry; `-Uninstall -Purge` also removes the installed versions, the examples,
 the FS-UAE it downloaded, and the CLI config. Neither touches files you put
 in the install folder. The rc24 toolchain is removed under **Settings > Apps >
@@ -201,7 +209,7 @@ Installed apps** (`amiga-gcc version 16.2-rc24`).
   comma are not supported.
 - The binaries and scripts are not code-signed yet, so SmartScreen or
   Defender may ask before the first run.
-- The VS Code extension is not in a marketplace yet.
+- The VS Code extension is on the Visual Studio Marketplace only, not Open VSX.
 - The full list is in [known limitations](known-limitations.md).
 
 ## Related

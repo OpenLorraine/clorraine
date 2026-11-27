@@ -1,6 +1,6 @@
-# Linux CLI (v1.2.0 developer preview)
+# Linux CLI (v1.3.0 developer preview)
 
-Clorraine v1.2.0 is a public **developer preview** for **Linux x86_64**. One
+Clorraine v1.3.0 is a public **developer preview** for **Linux x86_64**. One
 command installs the CLI, the Amiga toolchain, the VS Code extension, and a
 starter project. Windows has its own [guide](windows-cli.md); macOS is on the
 way.
@@ -8,7 +8,7 @@ way.
 ## Install
 
 ```sh
-curl -fsSL https://github.com/OpenLorraine/clorraine/releases/download/v1.2.0/install.sh -o clorraine-install.sh && sh clorraine-install.sh
+curl -fsSL https://github.com/OpenLorraine/clorraine/releases/download/v1.3.0/install.sh -o clorraine-install.sh && sh clorraine-install.sh
 ```
 
 The installer walks through five steps:
@@ -24,13 +24,13 @@ The installer walks through five steps:
    three paths.
 4. **Say hello.** On request, it runs the hello program on the PC and plays the
    demo-scene hello on an emulated Amiga 1200 in FS-UAE.
-5. **Your first Amiga project.** It installs the VS Code extension from the same
-   release and offers a starter project in the current folder, which it can
-   open in VS Code.
+5. **Your first Amiga project.** It installs the VS Code extension from the
+   Visual Studio Marketplace and offers a starter project in the current folder,
+   which it can open in VS Code.
 
 To check the installer before running it, download `install.sh` and
 `SHA256SUMS` from the
-[v1.2.0 release](https://github.com/OpenLorraine/clorraine/releases/tag/v1.2.0)
+[v1.3.0 release](https://github.com/OpenLorraine/clorraine/releases/tag/v1.3.0)
 and run `sha256sum -c SHA256SUMS --ignore-missing` first. A literal
 `curl … | sh` is not supported, because the installer asks questions on the
 terminal.
@@ -117,11 +117,22 @@ directory.
 
 ## VS Code
 
-The installer installs the `openlorraine.clorraine` extension from the release
-when VS Code (`code`, `codium`, or `code-insiders`) is found. It adds
-diagnostics, hover, go to definition, completion, document symbols, and
-**Run in FS-UAE** and **Run** buttons in the editor title bar for `.clo` files.
-It finds the CLI and the language server in `~/.local/bin`.
+When VS Code (`code` or `code-insiders`) is found and you agree, or pass
+`--vscode`, the installer installs the
+[`openlorraine.clorraine` extension](https://marketplace.visualstudio.com/items?itemName=openlorraine.clorraine) from the
+Visual Studio Marketplace, which keeps it up to date. If the extension is
+already installed, the installer reinstalls it from the Marketplace; this also
+moves an extension installed by the v1.2.0 installer, which VS Code never
+updated, onto automatic updates. The step waits at most five minutes, and on
+any failure it prints the command to run yourself,
+`code --install-extension openlorraine.clorraine`, and carries on. VS Code
+(Microsoft's build) is the supported editor; VSCodium and other editors that
+use Open VSX cannot install the extension yet.
+
+The extension adds diagnostics, hover, go to definition, completion, document
+symbols, and **Run in FS-UAE** and **Run** buttons in the editor title bar for
+`.clo` files. It finds the CLI and the language server in `~/.local/bin`, and
+offers the install guide when they are missing.
 
 ## Scripted installs and removal
 
@@ -139,11 +150,11 @@ and the CLI config.
 
 - x86_64 only on Linux; Windows has its own [guide](windows-cli.md). macOS is
   on the way; WSL2, Remote-WSL, and ARM hosts are not claimed.
-- The VS Code extension is not in a marketplace yet.
+- The VS Code extension is on the Visual Studio Marketplace only, not Open VSX.
 - The full list is in [known limitations](known-limitations.md).
 
 ## Related
 
 - [Quick start on the website](https://openlorraine.github.io/clorraine/guide/quick-start)
 - [Known limitations](known-limitations.md)
-- [v1.2.0 release](https://github.com/OpenLorraine/clorraine/releases/tag/v1.2.0)
+- [v1.3.0 release](https://github.com/OpenLorraine/clorraine/releases/tag/v1.3.0)

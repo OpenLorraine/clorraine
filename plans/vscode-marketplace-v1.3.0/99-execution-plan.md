@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-27 16:18
-> **Progress**: 38/55 tasks (69%)
+> **Last Updated**: 2026-11-27 16:19
+> **Progress**: 39/55 tasks (70%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -193,7 +193,7 @@ branch; only Phase 1 reaches `main` before the release (AR-40).
 
 **Reference**: 03-05 §Docs sweep, §Release text, §Version bump · AR-34, AR-36, AR-37, AR-26
 
-- [ ] 6.1.1 Repository docs — `README.md`, `docs/{README,linux-cli,windows-cli,known-limitations}.md`, `AGENTS.md`, `plans/windows-cli/08-merge-notes.md` (03-05 §Docs sweep)
+- [x] 6.1.1 Repository docs — `README.md`, `docs/{README,linux-cli,windows-cli,known-limitations}.md`, `AGENTS.md`, `plans/windows-cli/08-merge-notes.md` (03-05 §Docs sweep) ✅ (completed: 2026-11-27 16:19)
 - [ ] 6.1.2 Site guide pages — `site/guide/{quick-start,known-limitations,roadmap}.md`, `site/status.md`
 - [ ] 6.1.3 Site project pages and theme — `site/project/{brief,contributing}.md`, `site/.vitepress/theme/components/HomePage.vue`, `site/.vitepress/theme/Layout.vue`; sweep grep returns nothing
 - [ ] 6.1.4 Release text — `CHANGELOG.md`, `RELEASE-NOTES.md`, `RELEASE.md`, `tools/vscode/CHANGELOG.md` (1.3.0 entry final)

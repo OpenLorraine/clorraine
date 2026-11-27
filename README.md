@@ -4,9 +4,9 @@
 
 # Clorraine
 
-> **Developer preview.** Clorraine is under active development. The v1.2.0
-> Linux build is a public prerelease; expect changes. Windows support ships
-> with the next release; macOS is on the way.
+> **Developer preview.** Clorraine is under active development. The v1.3.0
+> builds for Linux and Windows are a public prerelease; expect changes. macOS is
+> on the way.
 
 Clorraine is a safe, C-like language for the Amiga and LorraineOS. It has
 Rust-style ownership and borrow checking, compiles to plain C, and runs on the
@@ -17,7 +17,7 @@ existing Amiga toolchains. The language and LorraineOS are designed together.
 Linux x86_64, glibc 2.38 or newer. One command:
 
 ```sh
-curl -fsSL https://github.com/OpenLorraine/clorraine/releases/download/v1.2.0/install.sh -o clorraine-install.sh && sh clorraine-install.sh
+curl -fsSL https://github.com/OpenLorraine/clorraine/releases/download/v1.3.0/install.sh -o clorraine-install.sh && sh clorraine-install.sh
 ```
 
 The installer walks you through five steps:
@@ -29,8 +29,9 @@ The installer walks you through five steps:
 3. finds FS-UAE and your licensed Kickstart ROM and remembers them;
 4. runs the hello program, then boots an Amiga 1200 in FS-UAE and plays a
    demo-scene intro: copper gradients, raster bars, and a chrome logo;
-5. installs the VS Code extension and creates a starter Amiga project in the
-   current folder that runs in FS-UAE with one click.
+5. installs the [VS Code extension](https://marketplace.visualstudio.com/items?itemName=openlorraine.clorraine) from the
+   Visual Studio Marketplace and creates a starter Amiga project in the current
+   folder that runs in FS-UAE with one click.
 
 Make another project at any time:
 
@@ -42,16 +43,15 @@ cd my-game && code .
 Open `main.clo`, change the message or the colours, and press **Run in FS-UAE**
 in the editor title bar. You supply the licensed Kickstart ROM; Clorraine never
 bundles or mirrors it. The
-[release page](https://github.com/OpenLorraine/clorraine/releases/tag/v1.2.0)
+[release page](https://github.com/OpenLorraine/clorraine/releases/tag/v1.3.0)
 has the details, including checksum verification.
 
 ## Install on Windows
 
-Windows 11 x64, from the next release on (`vX.Y.Z` below is that release). In
-Windows PowerShell:
+Windows 11 x64. In Windows PowerShell (not as administrator):
 
 ```powershell
-curl.exe -fsSLo clorraine-install.ps1 https://github.com/OpenLorraine/clorraine/releases/download/vX.Y.Z/install.ps1; powershell -ExecutionPolicy Bypass -File .\clorraine-install.ps1
+powershell -ExecutionPolicy ByPass -c "irm https://github.com/OpenLorraine/clorraine/releases/download/v1.3.0/install.ps1 | iex"
 ```
 
 The same five steps install the CLI for your account; only the rc24
