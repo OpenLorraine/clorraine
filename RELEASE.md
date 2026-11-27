@@ -69,7 +69,9 @@ legs of `make verify` on a private Xvfb display.
    account in the signed-in desktop session, with rc24 not yet registered:
    `powershell -NoProfile -ExecutionPolicy Bypass -File tools\setup\acceptance.ps1 -Candidate DIR -Kickstart ROM -Output FILE -PublishRun ID -PublishSha256 HEX`;
    confirm the UAC prompt and the editor check; then
-   `make acceptance-check EVIDENCE=… CANDIDATE=…` on the Linux side.
+   `make acceptance-check EVIDENCE=… CANDIDATE=…` on the Linux side. The
+   standard account may be kept between releases; afterwards uninstall rc24
+   and remove `C:\ProgramData\Clorraine`, so the next run is a clean install.
 10. **Publish the release.** `gh release create vX.Y.Z --prerelease --title "vX.Y.Z developer preview" --notes-file RELEASE-NOTES.md`
     with the four assets and `SHA256SUMS` (drop `--prerelease` for a stable
     release). Then fast-forward `main` to the release commit; the site deploys
