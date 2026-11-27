@@ -94,3 +94,4 @@
 | RV-913 | 9 | MINOR | compiler/src/clorraine | fixed |
 | RV-914 | 9 | MINOR | compiler/src/clorraine | fixed |
 | RV-915 | 9 | MINOR | compiler/src/clorraine | fixed |
+| AC-903 | 9 | MAJOR | compiler/src/clorraine/emulator/select.rs, tools/setup/install.ps1 | fixed (Windows only; Linux follow-up in 08-merge-notes.md) |

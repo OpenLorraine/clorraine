@@ -175,6 +175,17 @@ fn leading_number(text: &str) -> Option<u64> {
     }
 }
 
+/// True when a Windows run would get an encrypted Cloanto ROM it cannot use.
+///
+/// Such a ROM starts with `AMIROMTYPE1`; FS-UAE decrypts it with the
+/// `rom.key` in the same folder, and without the key the Amiga never boots, so
+/// the run could only time out. Linux keeps accepting the ROM as before.
+pub fn kickstart_key_missing_for(os: HostOs, rom: &Path, header: &[u8]) -> bool {
+    matches!(os, HostOs::Windows)
+        && header.starts_with(b"AMIROMTYPE1")
+        && !rom.parent().is_some_and(|folder| folder.join("rom.key").is_file())
+}
+
 /// Resolves and size-checks the Kickstart image.
 pub(super) fn resolve_rom(explicit: Option<&str>) -> Result<Rom, EnvironmentError> {
     let selected = match explicit
@@ -229,6 +240,20 @@ pub(super) fn resolve_rom(explicit: Option<&str>) -> Result<Rom, EnvironmentErro
                 ),
             ));
         }
+    }
+    let mut header = [0u8; 11];
+    let read = File::open(&path)
+        .and_then(|mut file| io::Read::read(&mut file, &mut header))
+        .unwrap_or(0);
+    if kickstart_key_missing_for(HostOs::current(), &path, &header[..read]) {
+        return Err(input_error(
+            2,
+            "--kickstart",
+            &format!(
+                "'{}' is an encrypted Cloanto ROM; put its rom.key in the same folder",
+                path.display()
+            ),
+        ));
     }
     let copy_into_run = path.as_os_str().as_encoded_bytes().ends_with(b" ");
     Ok(Rom { path, media, copy_into_run })
