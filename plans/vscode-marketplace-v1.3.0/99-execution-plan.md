@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-11-27 14:55
-> **Progress**: 2/55 tasks (3%)
+> **Progress**: 3/55 tasks (5%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -63,7 +63,7 @@ branch; only Phase 1 reaches `main` before the release (AR-40).
 
 - [x] 1.1.1 Confirm worktree `../clorraine-release` on `release-1.3.0` (created with the plan commit) is up to date with `origin/main`; install `tools/vscode` dependencies ✅ (completed: 2026-11-27 14:54) — worktree at origin/main + plan commit; npm ci done
 - [x] 1.1.2 [spec-author] Write spec tests from ST-1..ST-10 — `tools/vscode/test/publish-workflow.spec.test.ts`, `tools/vscode/test/release-version.spec.test.ts` ✅ (completed: 2026-11-27 14:55)
-- [ ] 1.1.3 Red phase: run the two spec files; they fail (no workflow, no script)
+- [x] 1.1.3 Red phase: run the two spec files; they fail (no workflow, no script) ✅ (completed: 2026-11-27 14:55) — 11/11 spec tests fail: workflow and script missing
 
 ### Step 1.2: Implementation
 
