@@ -28,13 +28,11 @@ class StaticSpecTests(unittest.TestCase):
         for needle in needles:
             self.assertTrue(any(needle in line for line in lines), f"{needle!r} not in [{rule}] lines:\n{out}")
 
-    # ST-1
     def test_should_pass_a_clean_release(self) -> None:
         code, out = self.fx.run()
         self.assertEqual(code, 0, out)
         self.assertIn("0 findings", out)
 
-    # ST-2
     def test_should_validate_the_version_argument(self) -> None:
         for bad in ("1.3", "1.3.0-rc.1", ""):
             with self.subTest(version=bad):
@@ -43,13 +41,11 @@ class StaticSpecTests(unittest.TestCase):
         code, out = self.fx.run("--version", "v1.3.0")
         self.assertEqual(code, 0, out)
 
-    # ST-3
     def test_should_refuse_a_version_the_tree_does_not_carry(self) -> None:
         self.fx.replace("compiler/Cargo.toml", 'version = "1.3.0"', 'version = "1.2.0"')
         code, out = self.fx.run()
         self.assert_finding(code, out, "version-input", "compiler/Cargo.toml")
 
-    # ST-4
     def test_should_report_a_stale_version_with_a_ready_allowlist_entry(self) -> None:
         self.fx.write("site/guide/roadmap.md", "# Roadmap\n\nToday v1.2.0 is the current release.\n")
         code, out = self.fx.run()
@@ -58,7 +54,6 @@ class StaticSpecTests(unittest.TestCase):
         self.assertIn('"reason": ""', out)
         self.assertIn(f'"reviewed_for": "{VERSION}"', out)
 
-    # ST-5
     def test_should_accept_an_allowlisted_historical_mention(self) -> None:
         self.fx.write("site/guide/roadmap.md", "# Roadmap\n\nDeveloper preview since v1.2.0.\n")
         self.fx.manifest["allowlist"].append({
@@ -69,21 +64,18 @@ class StaticSpecTests(unittest.TestCase):
         code, out = self.fx.run()
         self.assertEqual(code, 0, out)
 
-    # ST-6
     def test_should_fail_an_allowlist_entry_whose_phrase_changed(self) -> None:
         self.fx.replace("site/status.md", "v1.1.2 remains the latest stable release", "v1.1.2 is still the latest stable release")
         code, out = self.fx.run()
         self.assert_finding(code, out, "allowlist-unused", "site/status.md")
         self.assert_finding(code, out, "stale-version", "v1.1.2")
 
-    # ST-7
     def test_should_require_every_allowlist_entry_to_be_reviewed_for_this_release(self) -> None:
         self.fx.manifest["allowlist"][0]["reviewed_for"] = "1.2.0"
         self.fx.save_manifest()
         code, out = self.fx.run()
         self.assert_finding(code, out, "allowlist-review", "site/status.md")
 
-    # ST-8
     def test_should_reject_an_allowlist_entry_without_a_reason(self) -> None:
         self.fx.manifest["allowlist"][0]["reason"] = ""
         self.fx.save_manifest()
@@ -91,13 +83,11 @@ class StaticSpecTests(unittest.TestCase):
         self.assertEqual(code, 2, out)
         self.assertIn("reason", out)
 
-    # ST-9
     def test_should_report_a_stale_two_part_version(self) -> None:
         self.fx.write("site/guide/known-limitations.md", "# Limitations\n\nThe limitations of Clorraine v1.2.\n")
         code, out = self.fx.run()
         self.assert_finding(code, out, "stale-version", "v1.2")
 
-    # ST-10
     def test_should_not_confuse_a_longer_version_with_the_release(self) -> None:
         self.fx.write("site/guide/roadmap.md", "# Roadmap\n\nv1.3.10 is planned; v1.3.0 is out.\n")
         code, out = self.fx.run()
@@ -105,47 +95,40 @@ class StaticSpecTests(unittest.TestCase):
         stale = [line for line in out.splitlines() if "[stale-version]" in line]
         self.assertFalse(any("v1.3.0" in line and "v1.3.10" not in line for line in stale), out)
 
-    # ST-11
     def test_should_ignore_third_party_versions_without_a_v(self) -> None:
         self.fx.write("site/amiga/emulator.md", "# Emulator\n\nUse FS-UAE 3.2.35 or newer.\n")
         code, out = self.fx.run()
         self.assertEqual(code, 0, out)
 
-    # ST-12
     def test_should_match_allowlisted_phrases_across_markup_and_line_wraps(self) -> None:
         self.fx.replace("site/status.md", "v1.1.2 remains the latest stable release",
                         "**v1.1.2** remains the latest\nstable release")
         code, out = self.fx.run()
         self.assertEqual(code, 0, out)
 
-    # ST-13
     def test_should_require_every_platform_command_on_every_install_surface(self) -> None:
         home = "site/.vitepress/theme/components/HomePage.vue"
         self.fx.replace(home, WINDOWS.replace("{v}", VERSION), "")
         code, out = self.fx.run()
         self.assert_finding(code, out, "platform", "Windows", home)
 
-    # ST-14
     def test_should_require_an_install_entry_per_platform_in_the_sidebar(self) -> None:
         self.fx.replace("site/.vitepress/config.ts",
                         '      { text: "Install on Windows", link: "/guide/quick-start#install-on-windows" },\n', "")
         code, out = self.fx.run()
         self.assert_finding(code, out, "platform", "Windows", "site/.vitepress/config.ts")
 
-    # ST-15
     def test_should_report_an_install_command_pinned_to_an_old_release(self) -> None:
         self.fx.replace("docs/linux-cli.md", f"download/v{VERSION}/", "download/v1.2.0/")
         code, out = self.fx.run()
         self.assert_finding(code, out, "stale-version", "docs/linux-cli.md", "v1.2.0")
         self.assert_finding(code, out, "platform", "Linux", "docs/linux-cli.md")
 
-    # ST-16
     def test_should_report_banned_wording(self) -> None:
         self.fx.write("site/guide/roadmap.md", "# Roadmap\n\nmacOS ships with the Next Release.\n")
         code, out = self.fx.run()
         self.assert_finding(code, out, "banned", "site/guide/roadmap.md:3", "next release")
 
-    # ST-17
     def test_should_require_exactly_one_checksum_placeholder_in_the_committed_notes(self) -> None:
         notes = self.fx.read("RELEASE-NOTES.md")
         self.fx.write("RELEASE-NOTES.md", notes.replace("PENDING-CHECKSUMS: the release steps replace this line with the asset table.\n",
@@ -156,7 +139,6 @@ class StaticSpecTests(unittest.TestCase):
         code, out = self.fx.run()
         self.assert_finding(code, out, "placeholder", "RELEASE-NOTES.md")
 
-    # ST-18
     def test_should_require_a_recent_brief_date(self) -> None:
         code, out = self.fx.run(today=TODAY + dt.timedelta(days=15))
         self.assert_finding(code, out, "dated", "site/project/brief.md")
@@ -165,7 +147,6 @@ class StaticSpecTests(unittest.TestCase):
         code, out = self.fx.run(today=TODAY + dt.timedelta(days=14))
         self.assertNotIn("[dated]", out)
 
-    # ST-19
     def test_should_exempt_old_changelog_sections_but_not_the_current_one(self) -> None:
         code, out = self.fx.run()
         self.assertEqual(code, 0, out)
@@ -173,19 +154,16 @@ class StaticSpecTests(unittest.TestCase):
         code, out = self.fx.run()
         self.assert_finding(code, out, "stale-version", "CHANGELOG.md", "v1.2.0")
 
-    # ST-20
     def test_should_require_a_dated_top_changelog_heading(self) -> None:
         self.fx.replace("CHANGELOG.md", f"## [{VERSION}] - {TODAY.isoformat()}", f"## [{VERSION}]")
         code, out = self.fx.run()
         self.assert_finding(code, out, "changelog", "CHANGELOG.md")
 
-    # ST-21
     def test_should_report_a_release_facing_file_the_manifest_does_not_classify(self) -> None:
         self.fx.write("docs/macos-cli.md", "# macOS CLI\n\nSoon.\n")
         code, out = self.fx.run()
         self.assert_finding(code, out, "unclassified", "docs/macos-cli.md")
 
-    # ST-22
     def test_should_validate_the_review_record(self) -> None:
         path = f"docs/release-reviews/v{VERSION}.md"
         good = record()
@@ -208,7 +186,6 @@ class StaticSpecTests(unittest.TestCase):
                 self.assert_finding(code, out, "review", path)
                 self.fx.write(path, good)
 
-    # ST-23 (static half)
     def test_should_accept_an_after_deploy_section_still_unticked_before_the_tag(self) -> None:
         self.fx.write(f"docs/release-reviews/v{VERSION}.md", record(after=False))
         code, out = self.fx.run()
