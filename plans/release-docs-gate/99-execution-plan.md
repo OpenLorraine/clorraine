@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-27 20:19
-> **Progress**: 16/23 tasks (70%)
+> **Last Updated**: 2026-11-27 20:57
+> **Progress**: 20/23 tasks (87%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -32,7 +32,7 @@ review record (AR-10).
 
 ### Session 1.3: Implementation tests and hardening
 - [x] 1.3.1 `tools/release/tests/docs_check_impl.py`: normalization, offsets, loader errors, month table, CLI usage ✅ (completed: 2026-11-27 20:10; 21 impl tests; found and fixed a decoded &#8203; surviving normalize())
-- [ ] 1.3.2 Phase gate and review (correctness reviewer)
+- [x] 1.3.2 Phase gate and review (correctness reviewer) ✅ (completed: 2026-11-27 20:57; review: 2 MAJOR (test gaps) + 10 MINOR, all fixed (05-findings.md))
 
 **Verify (gate)**: `make release-docs-test`
 
@@ -51,7 +51,7 @@ review record (AR-10).
 
 ### Session 2.3: Implementation tests and hardening
 - [x] 2.3.1 Impl tests: HTML extraction, `Retry-After`, cross-page dedup, redirect host checks ✅ (completed: 2026-11-27 20:14; 11 live impl tests; 65 total pass)
-- [ ] 2.3.2 Phase gate and review (correctness reviewer + security auditor)
+- [x] 2.3.2 Phase gate and review (correctness reviewer + security auditor) ✅ (completed: 2026-11-27 20:57; reviews: 2 MAJOR (freshness rule, missing controls) + 6 MINOR, audit 9 MINOR; all fixed or moot (05-findings.md); 112 tests)
 
 **Verify (gate)**: `make release-docs-test`
 
@@ -63,7 +63,7 @@ review record (AR-10).
 - [x] 3.1.1 `Makefile` targets `release-docs-check` and `release-docs-test` (in `check`); a `check.yml` step ✅ (completed: 2026-11-27 20:15; targets in Makefile (release-docs-test in check) and a check.yml step)
 - [x] 3.1.2 `docs/release-reviews/TEMPLATE.md`; `docs/README.md` links the folder; an impl test parses the real template ✅ (completed: 2026-11-27 20:15; template with 12 Before-tag and 3 After-deploy items; docs/README links the folder; template impl test)
 - [x] 3.1.3 `RELEASE.md` steps 2, 3, 11, 12 and the fix-forward rows; `AGENTS.md` rule and Commands rows ✅ (completed: 2026-11-27 20:16; RELEASE.md steps 2, 3, 11, 12 + three fix-forward rows; AGENTS.md rule, Commands rows, Layout row)
-- [ ] 3.1.4 Phase gate and review (correctness reviewer)
+- [x] 3.1.4 Phase gate and review (correctness reviewer) ✅ (completed: 2026-11-27 20:57; make check passed (4529 Rust tests))
 
 **Verify (gate)**: `make check`
 
@@ -74,7 +74,7 @@ review record (AR-10).
 
 - [x] 4.1.1 The real `tools/release/docs-manifest.json`: scan set, excluded files, platforms, install surfaces, required claims, banned wording, dated lines, changelogs, theme files ✅ (completed: 2026-11-27 20:19; real manifest: 9 files + site globs, 11 excluded, 2 platforms, 4 install surfaces, 13 required claims, 5 banned phrases, 1 dated line, 2 changelogs, 3 theme files)
 - [x] 4.1.2 `make release-docs-check VERSION=1.3.0`; fix each real docs defect or add an allowlist entry with a true reason ✅ (completed: 2026-11-27 20:19; no stale docs; 37 historical/third-party mentions allowlisted with reasons; checker fixes: blockquote markers, cell/heading-bounded phrase suggestions; replay at 54b0d9b6 reports the three missed v1.3.0 defects (home-page Windows command, both sidebar items))
-- [ ] 4.1.3 **approval** Draft `docs/release-reviews/v1.3.0.md`; the maintainer walks the Before-tag items and confirms; tick them and fill `Reviewer`
+- [x] 4.1.3 **approval** Draft `docs/release-reviews/v1.3.0.md`; the maintainer walks the Before-tag items and confirms; tick them and fill `Reviewer` ✅ (completed: 2026-11-27 20:57; the maintainer confirmed the 12 Before-tag items; Reviewer @blendsdk)
 - [ ] 4.1.4 Static pass; push (site fixes deploy); wait for the docs deploy
 - [ ] 4.1.5 **approval** `make release-docs-check VERSION=1.3.0 LIVE=1`; the maintainer confirms the After-deploy items; tick them; live pass
 - [ ] 4.1.6 Roadmap row T-06 Done; close the plan

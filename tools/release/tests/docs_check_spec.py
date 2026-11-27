@@ -191,6 +191,125 @@ class StaticSpecTests(unittest.TestCase):
         code, out = self.fx.run()
         self.assertEqual(code, 0, out)
 
+    def test_should_cover_only_the_tokens_inside_an_allowlisted_phrase(self) -> None:
+        self.fx.replace("site/status.md", "FS-UAE 3.2.35 is the tested emulator.",
+                        "FS-UAE 3.2.35 is the tested emulator. v1.0.0 is old.")
+        code, out = self.fx.run()
+        self.assert_finding(code, out, "stale-version", "site/status.md", "v1.0.0")
+
+    def test_should_not_cover_a_token_the_phrase_only_partly_spans(self) -> None:
+        self.fx.write("site/guide/roadmap.md", "# Roadmap\n\nPreview since v1.2.0 here.\n")
+        self.fx.manifest["allowlist"].append({
+            "file": "site/guide/roadmap.md", "phrase": "since v1.2", "reason": "test", "reviewed_for": VERSION,
+        })
+        self.fx.save_manifest()
+        code, out = self.fx.run()
+        self.assert_finding(code, out, "stale-version", "v1.2.0")
+
+    def test_should_require_each_release_claim(self) -> None:
+        self.fx.replace("site/status.md", "is published as a developer preview", "is available")
+        code, out = self.fx.run()
+        self.assert_finding(code, out, "required", "site/status.md", "release state")
+
+    def test_should_require_the_quick_start_heading_per_platform(self) -> None:
+        self.fx.replace("site/guide/quick-start.md", "## Install on Windows", "## Windows")
+        code, out = self.fx.run()
+        self.assert_finding(code, out, "platform", "site/guide/quick-start.md", "Install on Windows")
+
+    def test_should_tie_the_sidebar_text_to_its_link(self) -> None:
+        self.fx.replace("site/.vitepress/config.ts",
+                        '{ text: "Install on Windows", link: "/guide/quick-start#install-on-windows" }',
+                        '{ text: "Install on Windows", link: "/guide/windows" },\n      '
+                        '{ text: "Other", link: "/guide/quick-start#install-on-windows" }')
+        code, out = self.fx.run()
+        self.assert_finding(code, out, "platform", "site/.vitepress/config.ts", "Windows")
+
+    def test_should_check_every_version_input(self) -> None:
+        cases = {
+            "tools/vscode/package.json": ('"version": "1.3.0"', '"version": "1.2.0"'),
+            "tools/vscode/CHANGELOG.md": ("## 1.3.0", "## 1.3.1"),
+            "RELEASE-NOTES.md": ("# Clorraine v1.3.0 developer preview", "# Clorraine developer preview"),
+        }
+        for path, (old, new) in cases.items():
+            with self.subTest(path=path):
+                original = self.fx.read(path)
+                self.fx.replace(path, old, new)
+                code, out = self.fx.run()
+                self.assert_finding(code, out, "version-input", path)
+                self.fx.write(path, original)
+
+    def test_should_require_a_recent_changelog_date(self) -> None:
+        self.fx.replace("CHANGELOG.md", f"## [{VERSION}] - {TODAY.isoformat()}", f"## [{VERSION}] - 2026-10-01")
+        code, out = self.fx.run()
+        self.assert_finding(code, out, "changelog", "CHANGELOG.md", "days old")
+
+    def test_should_check_the_placeholder_in_the_working_tree_too(self) -> None:
+        notes = self.fx.read("RELEASE-NOTES.md")
+        (self.fx.root / "RELEASE-NOTES.md").write_text(notes + "PENDING-CHECKSUMS: an uncommitted second line.\n")
+        code, out = self.fx.run()
+        self.assert_finding(code, out, "placeholder", "RELEASE-NOTES.md", "working-tree")
+
+    def test_should_exempt_only_the_placeholder_wording_on_the_placeholder_line(self) -> None:
+        self.fx.replace("RELEASE-NOTES.md", "PENDING-CHECKSUMS: the release steps replace this line with the asset table.",
+                        "PENDING-CHECKSUMS: filled in with the next release.")
+        code, out = self.fx.run()
+        self.assert_finding(code, out, "banned", "RELEASE-NOTES.md", "next release")
+
+    def test_should_check_the_record_header_fields_and_item_order(self) -> None:
+        path = f"docs/release-reviews/v{VERSION}.md"
+        good = record()
+        swapped = good.replace("- [x] Status page matches this release\n- [x] Project brief matches this release",
+                               "- [x] Project brief matches this release\n- [x] Status page matches this release")
+        self.assertNotEqual(swapped, good)
+        cases = {
+            "heading": good.replace(f"# Release review: v{VERSION}", "# Review"),
+            "prepared": good.replace("Prepared by: agent\n", ""),
+            "date": good.replace(f"Date: {TODAY.isoformat()}", "Date: today"),
+            "order": swapped,
+        }
+        for name, text in cases.items():
+            with self.subTest(case=name):
+                self.fx.write(path, text)
+                code, out = self.fx.run()
+                self.assert_finding(code, out, "review", path)
+        self.fx.write(path, good)
+
+    def test_should_require_the_record_to_be_committed(self) -> None:
+        path = f"docs/release-reviews/v{VERSION}.md"
+        import subprocess
+        subprocess.run(["git", "rm", "-q", "--cached", path], cwd=self.fx.root, check=True)
+        subprocess.run(["git", "commit", "-q", "-m", "untrack"], cwd=self.fx.root, check=True)
+        code, out = self.fx.run()
+        self.assert_finding(code, out, "review", path, "not committed")
+
+    def test_should_reject_more_than_one_leading_v(self) -> None:
+        code, out = self.fx.run("--version", "vv1.3.0")
+        self.assertEqual(code, 2, out)
+
+    def test_should_reject_manifest_entries_without_review_or_reason(self) -> None:
+        self.fx.manifest["allowlist"][0]["reviewed_for"] = "soon"
+        self.fx.save_manifest()
+        self.assertEqual(self.fx.run()[0], 2)
+        self.fx.manifest["allowlist"][0]["reviewed_for"] = VERSION
+        self.fx.manifest["excluded"][0]["reason"] = ""
+        self.fx.save_manifest()
+        self.assertEqual(self.fx.run()[0], 2)
+
+    def test_should_report_an_unreadable_file(self) -> None:
+        (self.fx.root / "site/status.md").write_bytes(b"\xff\xfe not utf-8")
+        code, out = self.fx.run()
+        self.assert_finding(code, out, "unreadable", "site/status.md")
+
+    def test_should_require_a_release_link_to_name_the_whole_version(self) -> None:
+        self.fx.write("site/guide/roadmap.md", "# Roadmap\n\nSee releases/tag/v1.3 for details.\n")
+        code, out = self.fx.run()
+        self.assert_finding(code, out, "stale-version", "releases/tag/v1.3")
+
+    def test_should_classify_markdown_files_whatever_the_extension_case(self) -> None:
+        self.fx.write("CONTRIBUTING.MD", "# Contributing\n")
+        code, out = self.fx.run()
+        self.assert_finding(code, out, "unclassified", "CONTRIBUTING.MD")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -250,6 +250,10 @@ class Fixture:
         code = docs_check.main(argv, stdout=out, stderr=out, fetcher=fetcher, gh=gh)
         return code, out.getvalue()
 
+    def head(self) -> str:
+        return subprocess.run(["git", "rev-parse", "HEAD"], cwd=self.root, check=True,
+                              capture_output=True, text=True).stdout.strip()
+
     def cleanup(self) -> None:
         shutil.rmtree(self.root, ignore_errors=True)
 

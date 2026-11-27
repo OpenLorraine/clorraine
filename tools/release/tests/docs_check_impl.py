@@ -51,7 +51,7 @@ class TokenTests(unittest.TestCase):
 
     def test_should_find_versions_in_urls_and_asset_names(self) -> None:
         text = "releases/download/v1.2.0/install.sh and clorraine-1.2.0-x86_64-linux.tar.gz"
-        self.assertEqual(self.names(text), ["v1.2.0", "clorraine-1.2.0"])
+        self.assertEqual(self.names(text), ["releases/download/v1.2.0", "v1.2.0", "clorraine-1.2.0"])
 
     def test_should_skip_words_that_only_contain_a_v(self) -> None:
         self.assertEqual(self.names("nv1.2 dev1.2.3 x.v1.2 FS-UAE 3.2.35"), [])

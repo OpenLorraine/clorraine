@@ -38,8 +38,10 @@ ready-to-paste entry:
 | `banned` | `[{pattern, message}]` | case-insensitive literal phrases (`next release`, `vX.Y.Z`, `X.Y.Z`, `not in a marketplace`, `PENDING-`) |
 | `placeholder` | `{file, line_prefix}` | `RELEASE-NOTES.md`, `PENDING-CHECKSUMS:` (AR-13) |
 | `dated` | `[{file, pattern}]` | regex with named groups `day`, `month`, `year` (AR-25) |
-| `changelogs` | `[{file, heading}]` | regex for a released heading with group `version` (+ `date`) (AR-18) |
+| `changelogs` | `[{file, heading, dated}]` | regex for a released heading with group `version` (+ `date`) (AR-18) |
 | `theme_files` | `[{file, pages}]` | `"all"` or `"home"` (AR-38) |
+| `navigation` | `{sidebar, quick_start, quick_start_url}` | where the sidebar items and the quick start live (AR-34, AR-40) |
+| `review` | `{template, dir}` | the review template and the records' folder (AR-32, AR-40) |
 | `allowlist` | `[{file, phrase, reason, reviewed_for}]` | AR-3, AR-14 |
 
 Loader errors (exit 2): unknown key, a listed file that is not tracked, an
@@ -53,6 +55,7 @@ needed.
   leading `v`; `minor` is `X.Y`.
 - **Tokens:**
   - `v`-tokens: `(?<![\w.])v\d+\.\d+(?:\.\d+)?(?:-[0-9A-Za-z.]+)?(?![\w])`, not followed by `.\d`.
+  - Release references `releases/(tag|download)/vX.Y[.Z]` must name the whole version (AR-40).
   - Release references: `releases/(?:tag|download)/v\d+\.\d+\.\d+` and `clorraine-\d+\.\d+\.\d+`.
 - **Valid tokens:** a three-part token is valid when it equals `vX.Y.Z`. A two-part token is valid when it equals `vX.Y`. Release references must carry `X.Y.Z`.
 - **Allowlist entries:** an entry allows the tokens inside each occurrence of its phrase in the normalized text of its file.

@@ -1,6 +1,6 @@
 ## Ambiguity Register: release docs gate
 
-> **Status**: ✅ GATE PASSED — all 38 items resolved (18 user decisions, 20 delegated under --auto-design)
+> **Status**: ✅ GATE PASSED — all 40 items resolved (18 user decisions, 22 delegated under --auto-design)
 > **Last Updated**: 2026-11-27 19:13
 > **Source**: user request after the v1.3.0 release: "a non negotiable check and flow … do a deep check and update the docs website for each release, like the project status, project brief, and such"
 
@@ -61,6 +61,8 @@
 | 36 | Technical | Verify commands | Delegated under --auto-design | Task: `make release-docs-test`; phase gate: `make check` (+ `make site-check` when `site/` changes); proof: `make release-docs-check VERSION=1.3.0` and `LIVE=1` (AR-7) | ✅ Resolved (delegated) |
 | 37 | Scope | Where the work happens | Delegated under --auto-design | Directly on `main` (no release is in flight); proof-run docs fixes deploy the site, which is wanted; roadmap row T-06; plan folder `plans/release-docs-gate/` (AR-7) | ✅ Resolved (delegated) |
 | 38 | Behavioral | Theme files and live mapping | Delegated under --auto-design | `theme_files` maps `Layout.vue` and `config.ts` to every page and `HomePage.vue` to the home page; their allowlist entries apply to those pages in live mode; `site/README.md` (excluded from the build) is static-only (C1 CV-005, C3 CV-304) | ✅ Resolved (delegated) |
+| 39 | Behavioral | Deploy freshness: VitePress writes author dates, the Pages checkout is shallow, and a push whose head does not touch the site makes a timestamp rule wait forever (Phase 2 review) | Delegated under --auto-design | Replaces the timestamp half of AR-24: the newest `github-pages` deployment (read-only `gh api`) must be `success`, its commit must be an ancestor of HEAD, and `git diff --quiet <sha> HEAD -- site docs/amiga-sdk demo/poster.png .github/workflows/docs.yml` must hold; the sitemap now only checks the page set (VitePress `srcExclude`: `site/README.md`, `site/public/**`). Exit 4 otherwise | ✅ Resolved (delegated) |
+| 40 | Technical | Review-driven hardening that refines AR-2, AR-22, AR-23, AR-28 | Delegated under --auto-design | Tokens use the spec lookbehind `(?<![\w.])` and release references (`releases/(tag|download)/vX…`) must name the whole version; link labels may wrap one line; the manifest also has `navigation`, `review` and `changelogs[].dated`; `required` patterns need a placeholder; the review record must be tracked; the placeholder count holds in HEAD and the working tree, and only the placeholder pattern is exempt on its line; sidebar text and link must be one item; unreadable files are findings; plain GETs refuse userinfo and ports, allow the CDN only after a Marketplace hop, and enforce the per-request and run budgets on every hop; `gh` runs with `--hostname github.com` / `--repo github.com/…` and without GH_HOST/GH_REPO; link segments are validated before they reach `gh`; a release without `SHA256SUMS` is a finding | ✅ Resolved (delegated) |
 
 ## Coverage Map
 

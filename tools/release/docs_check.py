@@ -59,8 +59,10 @@ def release_version(text: str) -> str:
 class Static:
     """The static rules over the working tree of one repository."""
 
-    def __init__(self, repo: Path, manifest: Manifest, version: str, today: dt.date) -> None:
+    def __init__(self, repo: Path, manifest: Manifest, version: str, today: dt.date,
+                 manifest_path: str = "tools/release/docs-manifest.json") -> None:
         self.repo = repo
+        self.manifest_path = manifest_path
         self.manifest = manifest
         self.version = version
         self.minor = ".".join(version.split(".")[:2])
@@ -72,7 +74,14 @@ class Static:
 
     def raw(self, path: str) -> str:
         if path not in self._cache:
-            self._cache[path] = (self.repo / path).read_text(encoding="utf-8")
+            try:
+                self._cache[path] = (self.repo / path).read_text(encoding="utf-8")
+            except FileNotFoundError:
+                self._cache[path] = ""
+                self.add(path, "unreadable", "git tracks this file but it is missing from the working tree")
+            except UnicodeDecodeError as error:
+                self._cache[path] = ""
+                self.add(path, "unreadable", f"not UTF-8 text ({error.reason} at byte {error.start})")
         return self._cache[path]
 
     def add(self, where: str, rule: str, message: str, extra: str = "") -> None:
@@ -123,8 +132,9 @@ class Static:
     def unclassified(self) -> None:
         known = set(self.manifest.scan_set) | {entry["path"] for entry in self.manifest["excluded"]}
         for name in sorted(self.manifest.tracked):
-            top_level = "/" not in name and name.endswith(".md")
-            in_docs = name.startswith("docs/") and name.count("/") == 1 and name.endswith(".md")
+            markdown = name.lower().endswith(".md")
+            top_level = "/" not in name and markdown
+            in_docs = name.startswith("docs/") and name.count("/") == 1 and markdown
             if (top_level or in_docs) and name not in known:
                 self.add(name, "unclassified",
                          "this Markdown file is neither scanned nor excluded in the docs manifest")
@@ -134,7 +144,7 @@ class Static:
         used = [False] * len(entries)
         for index, entry in enumerate(entries):
             if entry["reviewed_for"] != self.version:
-                self.add("tools/release/docs-manifest.json", "allowlist-review",
+                self.add(self.manifest_path, "allowlist-review",
                          f"re-confirm the entry for {entry['file']} ({entry['phrase']!r}) and set reviewed_for to {self.version}")
         for path in self.manifest.scan_set:
             text = normalize(self.raw(path))
@@ -162,7 +172,7 @@ class Static:
                          f"{token.text} is not v{expected}; update it or allowlist it as history", entry)
         for index, entry in enumerate(entries):
             if not used[index]:
-                self.add("tools/release/docs-manifest.json", "allowlist-unused",
+                self.add(self.manifest_path, "allowlist-unused",
                          f"the entry for {entry['file']} no longer matches: {entry['phrase']!r}")
 
     def required(self) -> None:
@@ -173,7 +183,7 @@ class Static:
 
     def platforms(self) -> None:
         navigation = self.manifest["navigation"]
-        sidebar = normalize(self.raw(navigation["sidebar"])).text
+        sidebar = self.raw(navigation["sidebar"])
         quick_start = self.raw(navigation["quick_start"]).splitlines()
         for platform in self.manifest["platforms"]:
             command = normalize(self.fill(platform["command"])).text
@@ -182,7 +192,9 @@ class Static:
                 if command not in normalize(self.raw(surface)).text:
                     self.add(surface, "platform", f"the {name} install command for v{self.version} is missing")
             link = f"{navigation['quick_start_url']}#{platform['anchor']}"
-            if platform["sidebar_text"] not in sidebar or link not in sidebar:
+            item = re.compile(r"\{\s*text:\s*([\"'])" + re.escape(platform["sidebar_text"]) + r"\1\s*,\s*link:\s*([\"'])"
+                              + re.escape(link) + r"\2\s*,?\s*\}")
+            if not item.search(sidebar):
                 self.add(navigation["sidebar"], "platform",
                          f"the sidebar needs '{platform['sidebar_text']}' linking to {link} for {name}")
             if platform["heading"] not in (line.rstrip() for line in quick_start):
@@ -191,12 +203,14 @@ class Static:
 
     def banned(self) -> None:
         placeholder = self.manifest["placeholder"]
+        prefix = placeholder["line_prefix"].lower()
         for path in self.manifest.scan_set:
             raw = self.raw(path)
-            skip = set()
+            # Only the one placeholder line, and only for the pattern it starts with, is exempt.
+            exempt = None
             if path == placeholder["file"]:
-                skip = {number for number, line in enumerate(raw.splitlines(), 1)
-                        if line.startswith(placeholder["line_prefix"])}
+                exempt = next((number for number, line in enumerate(raw.splitlines(), 1)
+                               if line.startswith(placeholder["line_prefix"])), None)
             text = normalize(raw)
             lowered = text.text.lower()
             for entry in self.manifest["banned"]:
@@ -204,17 +218,18 @@ class Static:
                 start = lowered.find(needle)
                 while start >= 0:
                     line = text.line_at(start)
-                    if line not in skip:
+                    if not (line == exempt and prefix.startswith(needle)):
                         self.add(f"{path}:{line}", "banned", f"'{entry['pattern']}': {entry['message']}")
                     start = lowered.find(needle, start + 1)
 
     def placeholder(self) -> None:
         entry = self.manifest["placeholder"]
-        committed = committed_text(self.repo, entry["file"])
-        count = sum(1 for line in (committed or "").splitlines() if line.startswith(entry["line_prefix"]))
-        if count != 1:
-            self.add(entry["file"], "placeholder",
-                     f"the committed file must keep exactly one '{entry['line_prefix']}' line (found {count})")
+        for label, text in (("committed", committed_text(self.repo, entry["file"])),
+                            ("working-tree", self.raw(entry["file"]))):
+            count = sum(1 for line in (text or "").splitlines() if line.startswith(entry["line_prefix"]))
+            if count != 1:
+                self.add(entry["file"], "placeholder",
+                         f"the {label} file must keep exactly one '{entry['line_prefix']}' line (found {count})")
 
     def dated(self) -> None:
         for entry in self.manifest["dated"]:
@@ -256,7 +271,8 @@ class Static:
         review = self.manifest["review"]
         path = f"{review['dir'].rstrip('/')}/v{self.version}.md"
         record = self.raw(path) if (self.repo / path).is_file() else None
-        self.findings += review_findings(path, record, self.raw(review["template"]), self.version, sections)
+        self.findings += review_findings(path, record, self.raw(review["template"]), self.version, sections,
+                                         tracked=path in self.manifest.tracked)
 
     # Helpers -------------------------------------------------------------
 
@@ -307,7 +323,11 @@ def main(argv: list[str] | None = None, stdout: TextIO = sys.stdout, stderr: Tex
         print(f"release-docs-check: {error}", file=stderr)
         return EXIT_USAGE
     sections = ("Before tag", "After deploy") if args.live else ("Before tag",)
-    findings = Static(repo, manifest, version, today).run(sections)
+    try:
+        shown = str(manifest_path.resolve().relative_to(repo))
+    except ValueError:
+        shown = str(manifest_path)
+    findings = Static(repo, manifest, version, today, shown).run(sections)
     unreachable: list[Finding] = []
     if args.live:
         import docs_live
@@ -322,12 +342,16 @@ def main(argv: list[str] | None = None, stdout: TextIO = sys.stdout, stderr: Tex
             return EXIT_NOT_DEPLOYED
         findings += outcome.findings
         unreachable = outcome.unreachable
+        if outcome.prerelease is not None:
+            release_kind = "prerelease" if outcome.prerelease else "release"
     unique = sorted(set(findings), key=Finding.sort_key)
     for finding in unique:
         print(finding.render(), file=stdout)
     for finding in sorted(set(unreachable), key=Finding.sort_key):
         print(finding.render(), file=stdout)
     mode = "static and live" if args.live else "static"
+    if args.live and outcome.prerelease is not None:
+        mode += f", published as a {release_kind}"
     print(f"release-docs-check: {len(unique)} findings, {len(set(unreachable))} unreachable "
           f"(v{version}, {mode})", file=stdout)
     if unique:

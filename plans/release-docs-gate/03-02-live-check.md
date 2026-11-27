@@ -6,19 +6,18 @@
 `--live` runs the static rules first, then the live steps below in this order.
 Any static finding is reported, and the live steps still run.
 
-## 1. Deploy freshness (AR-24) → exit 4
+## 1. Deploy freshness (AR-24, AR-39) → exit 4
 
-Live mode needs a git checkout (it reads commit times); outside one it stops with exit 2.
+Live mode needs a git checkout; outside one it stops with exit 2. Before any page is fetched:
+- The newest `github-pages` deployment (`gh api repos/OpenLorraine/clorraine/deployments?environment=github-pages&per_page=1`)
+  must have a latest status of `success`.
+- Its commit must be an ancestor of HEAD, and no file under `site`, `docs/amiga-sdk`,
+  `demo/poster.png` or `.github/workflows/docs.yml` may differ between it and HEAD.
+- The sitemap's page set must equal the tracked page set: every tracked `site/**/*.md` except
+  `site/README.md` and `site/public/**` (the site's `srcExclude`); `index.md` maps to the directory URL.
 
-This step does three things:
-- Fetch `<site_url>sitemap.xml`.
-- Require that its newest `<lastmod>` equals, as an instant, the committer time of the last commit
-  that touches `site`, `docs/amiga-sdk`, `demo/poster.png` or `.github/workflows/docs.yml`. That
-  time comes from `git log -1 --format=%cI -- …`.
-- Require that its page set equals the tracked page set. Each tracked `site/**/*.md` maps to a page,
-  except `README.md` and `public/**`: `index.md` maps to the directory URL, and `x.md` maps to `x`.
-
-If either requirement fails, the result is `deploy-not-current` with exit 4, and no page checks run.
+Any failure is `deploy-not-current` with exit 4; static findings are still printed. A sitemap location
+outside `site_url` is a `sitemap` finding.
 
 ## 2. Pages
 
@@ -47,7 +46,11 @@ If either requirement fails, the result is `deploy-not-current` with exit 4, and
 | `marketplace.visualstudio.com/items?itemName=openlorraine.clorraine` | GET of the listing page **and** of the versioned gallery package URL `…/_apis/public/gallery/publishers/openlorraine/vsextensions/clorraine/X.Y.Z/vspackage` | both 200 |
 
 How `gh` is run:
-- `gh` gets an argument list, never a shell.
+- `gh` gets an argument list, never a shell; `gh api` calls carry `--hostname github.com`, the
+  download carries `--repo github.com/OpenLorraine/clorraine`, and `GH_HOST`/`GH_REPO` are removed from its
+  environment.
+- Link path segments must match `[A-Za-z0-9._-]+` and must not be `.` or `..`; release tags must be
+  `vX.Y.Z` (or `latest`). Anything else is a `link` finding and never reaches `gh`.
 - A non-zero exit with `HTTP 404` is a finding.
 - Any other failure, including a missing `gh` or `gh` not being logged in, is `unreachable`.
 
@@ -65,7 +68,7 @@ The record's `After deploy` items must all be ticked (03-01).
 
 ## Network policy (AR-23) → exit 3 when unreachable
 
-- **Allowed requests:** HTTPS only. Plain GETs may go only to `openlorraine.github.io`, `discord.com` and `marketplace.visualstudio.com`, the last with any redirect target on `*.vsassets.io` or `*.gallerycdn.vsassets.io`. The host is checked on every redirect hop, at most 5 hops.
+- **Allowed requests:** HTTPS only, with no userinfo and no explicit port. Plain GETs may go only to `openlorraine.github.io`, `discord.com` and `marketplace.visualstudio.com`, and `*.vsassets.io` only when the request started at `marketplace.visualstudio.com`. The host is checked on every redirect hop, at most 5 hops.
 - **Request settings:** User-Agent `clorraine-release-docs-check/1`. No cookies, no auth headers, no tokens.
 - **Limits:**
   - 20 s per request, and 10 min for the whole run;

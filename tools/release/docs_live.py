@@ -1,19 +1,21 @@
 """The live half of the release docs check.
 
-After the site deploys, this module confirms that the deployed site is the
-current commit, reads every page in the sitemap as rendered text and applies
-the text rules to it, probes every project link (GitHub through the
-maintainer's authenticated `gh`, Discord through its invite API, the
-Marketplace through the versioned package URL), and reads the published
-release body. Plain HTTPS requests go only to a fixed set of hosts, follow
-redirects one checked hop at a time, and retry only transient failures; a
-probe that never answers is reported as unreachable, never as a pass.
+After the site deploys, this module confirms that the latest GitHub Pages
+deployment succeeded and carries the current site content, reads every page
+in the sitemap as rendered text and applies the text rules to it, probes
+every project link (GitHub through the maintainer's authenticated `gh`,
+Discord through its invite API, the Marketplace through the versioned package
+URL), and reads the published release body. Plain HTTPS requests go only to a
+fixed set of hosts, follow redirects one checked hop at a time, and retry only
+transient failures; a probe that never answers is reported as unreachable,
+never as a pass.
 """
 
 from __future__ import annotations
 
-import datetime as dt
+import http.client
 import json
+import os
 import re
 import subprocess
 import time
@@ -24,7 +26,7 @@ from dataclasses import dataclass, field
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Callable
-from urllib.parse import quote, urljoin, urlsplit
+from urllib.parse import parse_qs, quote, urljoin, urlsplit
 
 from docs_rules import Finding, Manifest, glob_regex, normalize, tokens
 
@@ -36,16 +38,23 @@ RETRIES = 2
 MAX_REDIRECTS = 5
 MAX_RETRY_AFTER = 60
 PLAIN_HOSTS = ("openlorraine.github.io", "discord.com", "marketplace.visualstudio.com")
+MARKETPLACE = "marketplace.visualstudio.com"
 CDN_SUFFIX = ".vsassets.io"
 SITE_PATHS = ("site", "docs/amiga-sdk", "demo/poster.png", ".github/workflows/docs.yml")
+# The pages VitePress leaves out of the build (`srcExclude` in the site config).
+NOT_PAGES = ("site/README.md", "site/public/**")
 OWNER_REPO = "OpenLorraine/clorraine"
 GITHUB_PREFIX = f"https://github.com/{OWNER_REPO}"
 ASSETS = ("clorraine-{version}-x86_64-linux.tar.gz", "clorraine-{version}-x86_64-windows.zip",
           "install.sh", "install.ps1")
 RELEASE_URL = re.compile(r"https://github\.com/OpenLorraine/clorraine/releases/(?:download|tag)/[^\s\"'<>)`]+")
+SEGMENT = re.compile(r"^[A-Za-z0-9._-]+$")
+TAG = re.compile(r"^v\d+\.\d+\.\d+$")
+INVITE = re.compile(r"^[A-Za-z0-9-]+$")
 
-# Tests replace this so retries do not wait.
+# Tests replace these so retries do not wait and budgets can be exercised.
 sleep = time.sleep
+clock = time.monotonic
 
 
 class Unreachable(Exception):
@@ -64,36 +73,50 @@ class Outcome:
     findings: list[Finding] = field(default_factory=list)
     unreachable: list[Finding] = field(default_factory=list)
     not_deployed: Finding | None = None
+    prerelease: bool | None = None
 
 
 # --- Transport ---------------------------------------------------------------
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
-    def redirect_request(self, *args, **kwargs):  # noqa: D401 - urllib hook
+    def redirect_request(self, *args, **kwargs):  # urllib hook: never follow
         return None
 
 
 _OPENER = urllib.request.build_opener(_NoRedirect())
 
 
-def http_transport(url: str, read_body: bool = True) -> Response:
-    """One HTTPS GET hop: no redirect is followed, no cookie or token is sent."""
+def http_transport(url: str, read_body: bool = True, deadline: float | None = None) -> Response:
+    """One HTTPS GET hop: no redirect is followed, no cookie or token is sent,
+    and the body is read against a wall-clock limit and a size cap."""
+    stop = min(clock() + REQUEST_TIMEOUT, deadline) if deadline else clock() + REQUEST_TIMEOUT
     request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, "Accept": "*/*"})
     try:
-        with _OPENER.open(request, timeout=REQUEST_TIMEOUT) as answer:
-            body = answer.read(BODY_LIMIT + 1) if read_body else b""
-            if len(body) > BODY_LIMIT:
-                raise Unreachable(f"{url}: the answer is larger than {BODY_LIMIT} bytes")
-            return Response(answer.status, dict(answer.headers), body)
+        with _OPENER.open(request, timeout=max(1.0, stop - clock())) as answer:
+            chunks, size = [], 0
+            while read_body:
+                if clock() > stop:
+                    raise Unreachable(f"{url}: the answer took longer than {REQUEST_TIMEOUT} s")
+                chunk = answer.read(64 * 1024)
+                if not chunk:
+                    break
+                size += len(chunk)
+                if size > BODY_LIMIT:
+                    raise Unreachable(f"{url}: the answer is larger than {BODY_LIMIT} bytes")
+                chunks.append(chunk)
+            return Response(answer.status, dict(answer.headers), b"".join(chunks))
     except urllib.error.HTTPError as error:
         return Response(error.code, dict(error.headers or {}), b"")
 
 
-def gh_runner(args: list[str]) -> tuple[int, str, str]:
-    """Runs `gh` with an argument list; it uses the maintainer's own login."""
+def gh_runner(args: list[str], timeout: float = REQUEST_TIMEOUT) -> tuple[int, str, str]:
+    """Runs `gh` with an argument list and the maintainer's own login; the
+    host and repository come from the arguments, never from GH_HOST/GH_REPO."""
+    env = {key: value for key, value in os.environ.items() if key not in ("GH_HOST", "GH_REPO")}
     try:
-        result = subprocess.run(["gh", *args], capture_output=True, text=True, timeout=REQUEST_TIMEOUT * 3)
+        result = subprocess.run(["gh", *args], capture_output=True, encoding="utf-8", errors="replace",
+                                timeout=timeout, env=env)
     except FileNotFoundError:
         raise Unreachable("the GitHub CLI `gh` is not installed") from None
     except subprocess.TimeoutExpired:
@@ -101,27 +124,23 @@ def gh_runner(args: list[str]) -> tuple[int, str, str]:
     return result.returncode, result.stdout, result.stderr
 
 
-def _host_allowed(host: str) -> bool:
-    return host in PLAIN_HOSTS or host.endswith(CDN_SUFFIX)
-
-
 class Client:
     """HTTPS GETs under the network policy, within one run's time budget."""
 
-    def __init__(self, transport: Callable) -> None:
+    def __init__(self, transport: Callable, deadline: float) -> None:
         self.transport = transport
-        self.deadline = time.monotonic() + RUN_BUDGET
+        self.deadline = deadline
 
     def get(self, url: str, read_body: bool = True) -> Response:
         last = "no answer"
         for attempt in range(RETRIES + 1):
-            if time.monotonic() > self.deadline:
-                raise Unreachable(f"{url}: the run's time budget is spent")
             try:
                 answer = self._follow(url, read_body)
             except Unreachable:
                 raise
-            except (OSError, TimeoutError, urllib.error.URLError) as error:
+            except ValueError as error:
+                raise Unreachable(f"{url}: not a usable URL ({error})") from None
+            except (OSError, TimeoutError, urllib.error.URLError, http.client.HTTPException) as error:
                 last = str(error) or type(error).__name__
             else:
                 if answer.status == 429 or answer.status >= 500:
@@ -136,11 +155,17 @@ class Client:
 
     def _follow(self, url: str, read_body: bool) -> Response:
         current = url
+        origin = (urlsplit(url).hostname or "").lower()
         for _ in range(MAX_REDIRECTS + 1):
+            if clock() > self.deadline:
+                raise Unreachable(f"{url}: the run's time budget is spent")
             parts = urlsplit(current)
-            if parts.scheme != "https" or not _host_allowed(parts.hostname or ""):
-                raise Unreachable(f"{url}: refused a request to {parts.hostname or current} (not an allowed host)")
-            answer = self.transport(current, read_body)
+            host = (parts.hostname or "").lower()
+            plain = parts.username is None and parts.password is None and parts.port is None
+            allowed = host in PLAIN_HOSTS or (origin == MARKETPLACE and host.endswith(CDN_SUFFIX))
+            if parts.scheme != "https" or not plain or not allowed or parts.netloc.lower() != host:
+                raise Unreachable(f"{url}: refused a request to {parts.netloc or current} (not an allowed host)")
+            answer = self._hop(current, read_body)
             if answer.status in (301, 302, 303, 307, 308):
                 location = answer.headers.get("Location") or answer.headers.get("location")
                 if not location:
@@ -149,6 +174,11 @@ class Client:
                 continue
             return answer
         raise Unreachable(f"{url}: more than {MAX_REDIRECTS} redirects")
+
+    def _hop(self, url: str, read_body: bool) -> Response:
+        if self.transport is http_transport:
+            return http_transport(url, read_body, self.deadline)
+        return self.transport(url, read_body)
 
     @staticmethod
     def _retry_after(answer: Response, attempt: int) -> float:
@@ -172,15 +202,12 @@ class _PageText(HTMLParser):
         self.parts: list[str] = []
         self.hrefs: list[str] = []
         self.skip = 0
-        self.in_title = False
 
     def handle_starttag(self, tag: str, attrs) -> None:
         values = dict(attrs)
         if tag in _SKIP:
             self.skip += 1
             return
-        if tag == "title":
-            self.in_title = True
         if tag == "meta":
             name = values.get("name") or values.get("property")
             if name in ("description", "og:description") and values.get("content"):
@@ -195,8 +222,6 @@ class _PageText(HTMLParser):
         if tag in _SKIP:
             self.skip = max(0, self.skip - 1)
             return
-        if tag == "title":
-            self.in_title = False
         if tag not in _INLINE:
             self.parts.append("\n")
 
@@ -222,12 +247,12 @@ class Live:
         self.manifest = manifest
         self.version = version
         self.minor = ".".join(version.split(".")[:2])
-        self.client = Client(transport)
+        self.deadline = clock() + RUN_BUDGET
+        self.client = Client(transport, self.deadline)
         self.gh = gh
         self.outcome = Outcome()
         self.site_url = manifest["site_url"]
-        self._release: dict | None = None
-        self._release_error: Finding | None = None
+        self._releases: dict[str, dict | None] = {}
 
     def finding(self, where: str, rule: str, message: str) -> None:
         self.outcome.findings.append(Finding(where, rule, message))
@@ -236,7 +261,13 @@ class Live:
         self.outcome.unreachable.append(Finding(where, "unreachable", message))
 
     def run(self) -> Outcome:
-        pages = self.fresh_pages()
+        try:
+            if not self.deployment_current():
+                return self.outcome
+        except Unreachable as error:
+            self.unreachable("GitHub Pages deployment", str(error))
+            return self.outcome
+        pages = self.sitemap_pages()
         if pages is None:
             return self.outcome
         links: set[str] = set()
@@ -249,7 +280,38 @@ class Live:
 
     # Freshness -----------------------------------------------------------
 
-    def fresh_pages(self) -> list[str] | None:
+    def deployment_current(self) -> bool:
+        """The newest Pages deployment succeeded and has the current site content."""
+        where = "GitHub Pages deployment"
+        deployments = self.gh_json(["api", f"repos/{OWNER_REPO}/deployments?environment=github-pages&per_page=1"])
+        if not isinstance(deployments, list) or not deployments or not isinstance(deployments[0], dict):
+            self.outcome.not_deployed = Finding(where, "deploy-not-current", "GitHub lists no Pages deployment")
+            return False
+        deployment = deployments[0]
+        sha = str(deployment.get("sha", ""))
+        statuses = self.gh_json(["api", f"repos/{OWNER_REPO}/deployments/{int(deployment.get('id', 0))}/statuses?per_page=1"])
+        state = statuses[0].get("state") if isinstance(statuses, list) and statuses and isinstance(statuses[0], dict) else None
+        if state != "success":
+            self.outcome.not_deployed = Finding(where, "deploy-not-current",
+                                                f"the newest deployment ({sha[:8]}) is {state or 'without a status'}")
+            return False
+        if not re.fullmatch(r"[0-9a-f]{40}", sha) or not self._ancestor(sha):
+            self.outcome.not_deployed = Finding(where, "deploy-not-current",
+                                                f"the deployed commit {sha[:8]} is not in this checkout's history; fetch and retry")
+            return False
+        changed = subprocess.run(["git", "-C", str(self.repo), "diff", "--quiet", sha, "HEAD", "--", *SITE_PATHS])
+        if changed.returncode != 0:
+            self.outcome.not_deployed = Finding(where, "deploy-not-current",
+                                                f"the site changed after the deployed commit {sha[:8]}; wait for the docs deploy")
+            return False
+        return True
+
+    def _ancestor(self, sha: str) -> bool:
+        result = subprocess.run(["git", "-C", str(self.repo), "merge-base", "--is-ancestor", sha, "HEAD"],
+                                capture_output=True)
+        return result.returncode == 0
+
+    def sitemap_pages(self) -> list[str] | None:
         url = self.site_url + "sitemap.xml"
         try:
             answer = self.client.get(url)
@@ -257,7 +319,7 @@ class Live:
             self.unreachable(url, str(error))
             return None
         if answer.status != 200:
-            self.unreachable(url, f"HTTP {answer.status}")
+            self.finding(url, "sitemap", f"HTTP {answer.status}")
             return None
         try:
             root = ET.fromstring(answer.body)
@@ -265,42 +327,27 @@ class Live:
             self.finding(url, "sitemap", f"not valid XML: {error}")
             return None
         ns = {"s": "http://www.sitemaps.org/schemas/sitemap/0.9"}
-        locations, stamps = [], []
+        locations = []
         for entry in root.findall("s:url", ns):
             loc = (entry.findtext("s:loc", default="", namespaces=ns) or "").strip()
-            stamp = (entry.findtext("s:lastmod", default="", namespaces=ns) or "").strip()
             if not loc.startswith(self.site_url):
                 self.finding(url, "sitemap", f"{loc} is outside {self.site_url}")
                 continue
             locations.append(loc[len(self.site_url):])
-            if stamp:
-                stamps.append(_instant(stamp))
-        expected = self.commit_time()
-        newest = max((stamp for stamp in stamps if stamp), default=None)
         tracked = self.tracked_pages()
-        if newest != expected or set(locations) != tracked:
-            detail = []
-            if newest != expected:
-                detail.append(f"its newest lastmod is {newest} but the last site commit is {expected}")
-            if set(locations) != tracked:
-                detail.append(f"pages differ (missing {sorted(tracked - set(locations))}, "
-                              f"extra {sorted(set(locations) - tracked)})")
-            self.outcome.not_deployed = Finding(url, "deploy-not-current", "the sitemap " + "; ".join(detail))
+        if set(locations) != tracked:
+            self.outcome.not_deployed = Finding(
+                url, "deploy-not-current",
+                f"the sitemap pages differ from the tracked pages (missing {sorted(tracked - set(locations))}, "
+                f"extra {sorted(set(locations) - tracked)})")
             return None
         return sorted(set(locations))
 
-    def commit_time(self) -> dt.datetime | None:
-        result = subprocess.run(["git", "-C", str(self.repo), "log", "-1", "--format=%cI", "--", *SITE_PATHS],
-                                capture_output=True, text=True)
-        return _instant(result.stdout.strip()) if result.returncode == 0 and result.stdout.strip() else None
-
     def tracked_pages(self) -> set[str]:
-        excludes = [glob_regex(pattern) for pattern in self.manifest["scan"]["exclude"]]
+        excludes = [glob_regex(pattern) for pattern in NOT_PAGES]
         pages = set()
         for name in self.manifest.tracked:
-            if not (name.startswith("site/") and name.endswith(".md")) or name.endswith("/README.md"):
-                continue
-            if any(rx.match(name) for rx in excludes):
+            if not (name.startswith("site/") and name.endswith(".md")) or any(rx.match(name) for rx in excludes):
                 continue
             stem = name[len("site/"):-len(".md")]
             pages.add(stem[: -len("index")] if stem == "index" or stem.endswith("/index") else stem)
@@ -323,11 +370,11 @@ class Live:
         except Unreachable as error:
             self.unreachable(url, str(error))
             return set()
+        where = urlsplit(url).path
         if answer.status != 200:
-            self.finding(url, "page", f"HTTP {answer.status}")
+            self.finding(where, "page", f"HTTP {answer.status}")
             return set()
         text, hrefs = page_text(answer.body.decode("utf-8", "replace"))
-        where = urlsplit(url).path
         allowed = set()
         sources = self.sources(path)
         for entry in self.manifest["allowlist"]:
@@ -346,24 +393,38 @@ class Live:
                 command = normalize(platform["command"].replace("{version}", self.version)).text
                 if command not in text:
                     self.finding(where, "platform", f"the deployed page lacks the {platform['name']} install command")
-        links = {urljoin(url, href) for href in hrefs}
-        links |= set(RELEASE_URL.findall(text))
+        links = set()
+        for href in hrefs:
+            try:
+                links.add(urljoin(url, href))
+            except ValueError:
+                self.finding(where, "link", f"malformed link {href!r}")
+        links |= {match.rstrip(".,;:") for match in RELEASE_URL.findall(text)}
         return {link.split("#")[0] for link in links if link.startswith("https://") and "/edit/" not in link}
 
     # Probes --------------------------------------------------------------
 
     def probe(self, link: str) -> None:
-        parts = urlsplit(link)
-        host = parts.hostname or ""
         try:
-            if link == GITHUB_PREFIX or link.startswith(GITHUB_PREFIX + "/"):
-                self.probe_github(link)
-            elif host in ("discord.gg", "discord.com") and (parts.path.startswith("/invite/") or host == "discord.gg"):
-                code = parts.path.rsplit("/", 1)[-1]
-                self.expect_ok(link, f"https://discord.com/api/v10/invites/{quote(code)}")
-            elif host == "marketplace.visualstudio.com" and parts.path == "/items":
+            parts = urlsplit(link)
+        except ValueError:
+            self.finding(link, "link", "malformed link")
+            return
+        host = (parts.hostname or "").lower()
+        try:
+            if host == "github.com" and parts.path.lower().rstrip("/").split("/")[1:3] == ["openlorraine", "clorraine"]:
+                self.probe_github(link, parts.path)
+            elif host in ("discord.gg", "discord.com") and (host == "discord.gg" or parts.path.startswith("/invite/")):
+                code = parts.path.rstrip("/").rsplit("/", 1)[-1]
+                if not INVITE.match(code):
+                    self.finding(link, "link", "not a Discord invite code")
+                    return
+                self.expect_ok(link, f"https://discord.com/api/v10/invites/{code}")
+            elif host == MARKETPLACE and parts.path == "/items":
+                if parse_qs(parts.query).get("itemName") != ["openlorraine.clorraine"]:
+                    return
                 self.expect_ok(link, link)
-                self.expect_ok(link, "https://marketplace.visualstudio.com/_apis/public/gallery/publishers/openlorraine/"
+                self.expect_ok(link, f"https://{MARKETPLACE}/_apis/public/gallery/publishers/openlorraine/"
                                      f"vsextensions/clorraine/{self.version}/vspackage", read_body=False)
         except Unreachable as error:
             self.unreachable(link, str(error))
@@ -373,30 +434,50 @@ class Live:
         if answer.status != 200:
             self.finding(link, "link", f"{url} answered HTTP {answer.status}")
 
-    def probe_github(self, link: str) -> None:
-        rest = link[len(GITHUB_PREFIX):].strip("/")
-        segments = [segment for segment in rest.split("/") if segment]
+    def probe_github(self, link: str, path: str) -> None:
+        segments = [segment for segment in path.split("/") if segment][2:]
+        if any(segment in (".", "..") or not SEGMENT.match(segment) for segment in segments):
+            self.finding(link, "link", "the link has a path segment the check does not follow")
+            return
+        api = f"repos/{OWNER_REPO}"
         if segments[:2] == ["releases", "tag"] and len(segments) == 3:
             self.release(segments[2], link)
         elif segments[:2] == ["releases", "download"] and len(segments) == 4:
-            release = self.release(segments[2], link)
-            if release is not None and segments[3] not in {asset.get("name") for asset in release.get("assets", [])}:
-                self.finding(link, "link", f"release {segments[2]} has no asset {segments[3]}")
+            self.release_asset(segments[2], segments[3], link)
+        elif segments[:3] == ["releases", "latest", "download"] and len(segments) == 4:
+            self.release_asset("latest", segments[3], link)
         elif segments[:1] == ["releases"]:
-            self.gh_ok(link, ["api", f"repos/{OWNER_REPO}/releases?per_page=1"])
+            self.gh_ok(link, ["api", f"{api}/releases?per_page=1"])
         elif segments[:1] in (["blob"], ["tree"]) and len(segments) >= 2:
-            path = "/".join(segments[2:])
-            self.gh_ok(link, ["api", f"repos/{OWNER_REPO}/contents/{quote(path)}?ref={quote(segments[1])}"])
+            file = "/".join(quote(segment, safe="") for segment in segments[2:])
+            self.gh_ok(link, ["api", f"{api}/contents/{file}?ref={quote(segments[1], safe='')}"])
         elif segments[:1] in (["issues"], ["pull"]) and len(segments) == 2 and segments[1].isdigit():
-            self.gh_ok(link, ["api", f"repos/{OWNER_REPO}/issues/{segments[1]}"])
+            self.gh_ok(link, ["api", f"{api}/issues/{segments[1]}"])
         else:
-            self.gh_ok(link, ["api", f"repos/{OWNER_REPO}"])
+            self.gh_ok(link, ["api", api])
 
     def gh_call(self, args: list[str]) -> tuple[int, str, str]:
-        code, out, err = self.gh(args)
+        remaining = self.deadline - clock()
+        if remaining <= 0:
+            raise Unreachable(f"gh {' '.join(args)}: the run's time budget is spent")
+        if args[:1] == ["api"]:
+            args = ["api", "--hostname", "github.com", *args[1:]]
+        if self.gh is gh_runner:
+            code, out, err = gh_runner(args, min(REQUEST_TIMEOUT, remaining))
+        else:
+            code, out, err = self.gh(args)
         if code != 0 and "HTTP 404" not in err:
             raise Unreachable(f"gh {' '.join(args)} failed: {(err or out).strip()[:200]}")
         return code, out, err
+
+    def gh_json(self, args: list[str]):
+        code, out, err = self.gh_call(args)
+        if code != 0:
+            return None
+        try:
+            return json.loads(out)
+        except json.JSONDecodeError:
+            raise Unreachable(f"gh {' '.join(args)} did not answer JSON") from None
 
     def gh_ok(self, link: str, args: list[str]) -> bool:
         code, _, err = self.gh_call(args)
@@ -406,14 +487,24 @@ class Live:
         return True
 
     def release(self, tag: str, link: str) -> dict | None:
-        cache = getattr(self, "_releases", {})
-        self._releases = cache
-        if tag not in cache:
-            code, out, err = self.gh_call(["api", f"repos/{OWNER_REPO}/releases/tags/{tag}"])
-            cache[tag] = json.loads(out) if code == 0 else None
-        if cache[tag] is None:
+        if tag not in self._releases:
+            if tag != "latest" and not TAG.match(tag):
+                self._releases[tag] = None
+            else:
+                endpoint = "releases/latest" if tag == "latest" else f"releases/tags/{tag}"
+                value = self.gh_json(["api", f"repos/{OWNER_REPO}/{endpoint}"])
+                if value is not None and not isinstance(value, dict):
+                    raise Unreachable(f"GitHub answered an unexpected release object for {tag}")
+                self._releases[tag] = value
+        if self._releases[tag] is None:
             self.finding(link, "link", f"there is no published release {tag}")
-        return cache[tag]
+        return self._releases[tag]
+
+    def release_asset(self, tag: str, name: str, link: str) -> None:
+        release = self.release(tag, link)
+        names = {asset.get("name") for asset in release.get("assets", []) if isinstance(asset, dict)} if release else set()
+        if release is not None and name not in names:
+            self.finding(link, "link", f"release {tag} has no asset {name}")
 
     # Published release ---------------------------------------------------
 
@@ -424,20 +515,22 @@ class Live:
             release = self.release(tag, where)
             if release is None:
                 return
-            code, sums, err = self.gh_call(["release", "download", tag, "--repo", OWNER_REPO,
-                                            "--pattern", "SHA256SUMS", "--output", "-"])
+            self.outcome.prerelease = bool(release.get("prerelease"))
+            body = str(release.get("body") or "")
+            if "PENDING-" in body:
+                self.finding(where, "release-body", "the published body still contains PENDING-")
+            names = [name.replace("{version}", self.version) for name in ASSETS]
+            for name in names:
+                if name not in body:
+                    self.finding(where, "release-body", f"the published body does not name {name}")
+            assets = {asset.get("name") for asset in release.get("assets", []) if isinstance(asset, dict)}
+            if "SHA256SUMS" not in assets:
+                self.finding(where, "release-body", "the release has no SHA256SUMS asset")
+                return
+            _, sums, _ = self.gh_call(["release", "download", tag, "--repo", f"github.com/{OWNER_REPO}",
+                                       "--pattern", "SHA256SUMS", "--output", "-"])
         except Unreachable as error:
             self.unreachable(where, str(error))
-            return
-        body = release.get("body") or ""
-        if "PENDING-" in body:
-            self.finding(where, "release-body", "the published body still contains PENDING-")
-        names = [name.replace("{version}", self.version) for name in ASSETS]
-        for name in names:
-            if name not in body:
-                self.finding(where, "release-body", f"the published body does not name {name}")
-        if code != 0:
-            self.finding(where, "release-body", "the release has no SHA256SUMS asset")
             return
         expected = {}
         for line in sums.splitlines():
@@ -448,20 +541,9 @@ class Live:
             if not line.lstrip().startswith("|"):
                 continue
             name = next((candidate for candidate in names if candidate in line), None)
-            digest = re.search(r"\b[0-9a-f]{64}\b", line)
-            if name and digest and expected.get(name) != digest.group():
-                self.finding(where, "release-body",
-                             f"the hash for {name} in the body differs from SHA256SUMS")
-
-
-def _instant(text: str) -> dt.datetime | None:
-    try:
-        value = dt.datetime.fromisoformat(text.replace("Z", "+00:00"))
-    except ValueError:
-        return None
-    if value.tzinfo is None:
-        value = value.replace(tzinfo=dt.timezone.utc)
-    return value.astimezone(dt.timezone.utc).replace(microsecond=0)
+            digest = re.search(r"\b[0-9a-fA-F]{64}\b", line)
+            if name and digest and expected.get(name) != digest.group().lower():
+                self.finding(where, "release-body", f"the hash for {name} in the body differs from SHA256SUMS")
 
 
 def check(repo: Path, manifest: Manifest, version: str, fetcher: Callable | None = None,

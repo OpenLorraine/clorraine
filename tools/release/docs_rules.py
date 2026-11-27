@@ -22,10 +22,12 @@ VERSION_RE = re.compile(r"^\d+\.\d+\.\d+$")
 # prerelease suffix. The boundaries keep `v1.3.1` from matching inside
 # `v1.3.10` and skip words such as `nv1.2`.
 V_TOKEN = re.compile(
-    r"(?<![\w.\-])v(?P<num>\d+\.\d+(?:\.\d+)?)(?:-(?P<pre>[0-9A-Za-z]+(?:\.[0-9A-Za-z]+)*))?(?![\w]|\.\d)"
+    r"(?<![\w.])v(?P<num>\d+\.\d+(?:\.\d+)?)(?:-(?P<pre>[0-9A-Za-z]+(?:\.[0-9A-Za-z]+)*))?(?![\w]|\.\d)"
 )
 # A release asset name such as `clorraine-1.3.0-x86_64-linux.tar.gz`.
 ASSET_TOKEN = re.compile(r"(?<![\w.\-])clorraine-(?P<num>\d+\.\d+\.\d+)(?![\w]|\.\d)")
+# A release tag inside a Clorraine release URL must name the whole version.
+RELEASE_REF = re.compile(r"releases/(?:tag|download)/v(?P<num>\d+\.\d+(?:\.\d+)?)(?![\w]|\.\d)")
 EMAIL = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
 MONTHS = {
     name: index
@@ -75,9 +77,12 @@ class Finding:
 
 def tracked_files(repo: Path) -> list[str]:
     """The paths git tracks in `repo`, with `/` separators."""
-    result = subprocess.run(
-        ["git", "-C", str(repo), "ls-files", "-z"], capture_output=True, check=True
-    )
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(repo), "ls-files", "-z"], capture_output=True, check=True
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        raise ManifestError(f"{repo} is not a git checkout") from None
     return [name for name in result.stdout.decode("utf-8").split("\0") if name]
 
 
@@ -192,6 +197,8 @@ def load_manifest(path: Path, repo: Path) -> Manifest:
         need_tracked(entry.get("file"), "required")
         need_text(entry.get("pattern"), f"required {entry.get('file')} pattern")
         need_text(entry.get("why"), f"required {entry.get('file')} why")
+        if "{version}" not in entry["pattern"] and "{minor}" not in entry["pattern"]:
+            raise ManifestError(f"required {entry['file']} pattern needs {{version}} or {{minor}}")
     for entry in data["banned"]:
         need_text(entry.get("pattern"), "banned pattern")
         need_text(entry.get("message"), f"banned {entry.get('pattern')} message")
@@ -251,7 +258,7 @@ class Normalized:
 
 
 _NORMALIZE = re.compile(
-    r"(?P<link>\[(?P<label>[^\]\n]*)\]\((?P<url>[^)\s]*)\))"
+    r"(?P<link>\[(?P<label>(?:[^\]\n]|\n(?!\s*\n))*)\]\((?P<url>[^)\s]*)\))"
     r"|(?P<entity>&(?:#\d+|#x[0-9A-Fa-f]+|[A-Za-z][A-Za-z0-9]*);)"
     r"|(?P<mark>\*\*|__|`)"
     r"|(?P<zwsp>\u200b)"
@@ -291,7 +298,7 @@ def normalize(raw: str) -> Normalized:
             label = normalize(match.group("label")).text
             emit(f"{label} {match.group('url')}", match.start())
         elif kind == "entity":
-            emit(html.unescape(match.group()).replace("​", ""), match.start())
+            emit(html.unescape(match.group()).replace("\u200b", ""), match.start())
         elif kind in ("space", "quote"):
             emit(" ", match.start())
         position = match.end()
@@ -335,6 +342,10 @@ def tokens(text: str) -> list[Token]:
     found += [
         Token(m.group(), m.start(), m.end(), m.group("num"), None, True)
         for m in ASSET_TOKEN.finditer(text)
+    ]
+    found += [
+        Token(m.group(), m.start(), m.end(), m.group("num"), None, True)
+        for m in RELEASE_REF.finditer(text)
     ]
     return sorted(found, key=lambda token: token.start)
 
@@ -419,12 +430,14 @@ def checklist(text: str) -> dict[str, list[tuple[bool, str]]]:
 
 
 def review_findings(record_path: str, record: str | None, template: str, version: str,
-                    sections: tuple[str, ...]) -> list[Finding]:
+                    sections: tuple[str, ...], tracked: bool = True) -> list[Finding]:
     """Problems with a release review record; `sections` must be fully ticked."""
     where = record_path
     if record is None:
         return [Finding(where, "review", f"the review record for v{version} is missing; copy the template")]
     found: list[Finding] = []
+    if not tracked:
+        found.append(Finding(where, "review", "the review record is not committed; the tag must contain it"))
     wanted = checklist(template)
     have = checklist(record)
     first = next((line for line in record.splitlines() if line.strip()), "")

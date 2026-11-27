@@ -16,7 +16,6 @@ from docs_fixture import LINUX, SITE_URL, VERSION, WINDOWS
 
 import docs_live
 
-COMMIT_TIME = "2026-11-27T11:00:00.000Z"
 HASHES = {
     f"clorraine-{VERSION}-x86_64-linux.tar.gz": "a" * 64,
     f"clorraine-{VERSION}-x86_64-windows.zip": "b" * 64,
@@ -28,6 +27,13 @@ MARKETPLACE = "https://marketplace.visualstudio.com/items?itemName=openlorraine.
 PACKAGE = (f"https://marketplace.visualstudio.com/_apis/public/gallery/publishers/openlorraine/"
            f"vsextensions/clorraine/{VERSION}/vspackage")
 REPO = "https://github.com/OpenLorraine/clorraine"
+DEPLOYMENTS = "repos/OpenLorraine/clorraine/deployments?environment=github-pages&per_page=1"
+STATUSES = "repos/OpenLorraine/clorraine/deployments/7/statuses?per_page=1"
+
+
+def api(endpoint: str) -> tuple:
+    """The argument tuple of a `gh api` call, pinned to github.com."""
+    return ("api", "--hostname", "github.com", endpoint)
 
 
 def page(title: str, body: str) -> str:
@@ -69,7 +75,8 @@ class LiveSite:
     gh_answers: dict[tuple, tuple[int, str, str]] = field(default_factory=dict)
     requests: list[str] = field(default_factory=list)
     gh_calls: list[tuple] = field(default_factory=list)
-    lastmod: str = COMMIT_TIME
+    head: str = "0" * 40
+    extra_sitemap: list[str] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         self.pages = {
@@ -95,19 +102,26 @@ class LiveSite:
                    "assets": [{"name": name} for name in [*HASHES, "SHA256SUMS"]]}
         sums = "".join(f"{digest}  {name}\n" for name, digest in HASHES.items())
         self.gh_answers = {
-            ("api", "repos/OpenLorraine/clorraine"): (0, "{}", ""),
-            ("api", f"repos/OpenLorraine/clorraine/releases/tags/v{VERSION}"): (0, json.dumps(release), ""),
-            ("api", "repos/OpenLorraine/clorraine/contents/docs/known-limitations.md?ref=main"): (0, "{}", ""),
-            ("release", "download", f"v{VERSION}", "--repo", "OpenLorraine/clorraine", "--pattern", "SHA256SUMS",
-             "--output", "-"): (0, sums, ""),
+            api("repos/OpenLorraine/clorraine"): (0, "{}", ""),
+            api(f"repos/OpenLorraine/clorraine/releases/tags/v{VERSION}"): (0, json.dumps(release), ""),
+            api("repos/OpenLorraine/clorraine/contents/docs/known-limitations.md?ref=main"): (0, "{}", ""),
+            ("release", "download", f"v{VERSION}", "--repo", "github.com/OpenLorraine/clorraine", "--pattern",
+             "SHA256SUMS", "--output", "-"): (0, sums, ""),
         }
+        self.deploy(self.head, "success")
+
+    def deploy(self, sha: str, state: str) -> None:
+        """The newest GitHub Pages deployment and its latest status."""
+        self.gh_answers[api(DEPLOYMENTS)] = (0, json.dumps([{"id": 7, "sha": sha}]), "")
+        self.gh_answers[api(STATUSES)] = (0, json.dumps([{"state": state}]), "")
 
     def sitemap(self) -> bytes:
-        urls = "".join(f"<url><loc>{SITE_URL}{path}</loc><lastmod>{self.lastmod}</lastmod></url>" for path in self.pages)
+        locations = [SITE_URL + path for path in self.pages] + self.extra_sitemap
+        urls = "".join(f"<url><loc>{loc}</loc><lastmod>2026-11-27T11:00:00.000Z</lastmod></url>" for loc in locations)
         return f'<?xml version="1.0"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">{urls}</urlset>'.encode()
 
     def set_release(self, **changes) -> None:
-        key = ("api", f"repos/OpenLorraine/clorraine/releases/tags/v{VERSION}")
+        key = api(f"repos/OpenLorraine/clorraine/releases/tags/v{VERSION}")
         release = json.loads(self.gh_answers[key][1])
         release.update(changes)
         self.gh_answers[key] = (0, json.dumps(release), "")
@@ -117,7 +131,7 @@ class LiveSite:
         parts = urlsplit(url)
         query = "&".join(q for q in parts.query.split("&") if q and not q.startswith("release-docs-check="))
         key = urlunsplit((parts.scheme, parts.netloc, parts.path, query, ""))
-        self.requests.append(key)
+        self.requests.append(url)
         if key == SITE_URL + "sitemap.xml":
             return Response(200, {"content-type": "application/xml"}, self.sitemap())
         answer = self.http.get(key, Response(404))
