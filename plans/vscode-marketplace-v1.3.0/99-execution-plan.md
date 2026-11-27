@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-11-27 15:30
-> **Progress**: 19/55 tasks (34%)
+> **Progress**: 20/55 tasks (36%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -119,7 +119,7 @@ branch; only Phase 1 reaches `main` before the release (AR-40).
 **Reference**: 03-03 §Starter · AR-8, AR-25
 
 - [x] 3.1.1 [spec-author] Rewrite the starter tasks assertion from ST-21 — `compiler/tests/first_run_spec_test.rs` ✅ (completed: 2026-11-27 15:30)
-- [ ] 3.1.2 Red phase: run `first_run_spec_test`; it fails
+- [x] 3.1.2 Red phase: run `first_run_spec_test`; it fails ✅ (completed: 2026-11-27 15:30) — the rewritten starter spec test fails; the other four pass
 
 ### Step 3.2: Implementation
 
