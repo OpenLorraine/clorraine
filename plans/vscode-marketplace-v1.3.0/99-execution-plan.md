@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-27 15:53
-> **Progress**: 31/55 tasks (56%)
+> **Last Updated**: 2026-11-27 15:54
+> **Progress**: 32/55 tasks (58%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -156,9 +156,9 @@ branch; only Phase 1 reaches `main` before the release (AR-40).
 ### Step 4.3: Impl tests and gate
 
 - [x] 4.3.1 Write impl tests — `tools/setup/tests/install.impl.test.sh`, `install.impl.test.ps1` (timeout parsing, call order, summary text); run both ✅ (completed: 2026-11-27 15:53) — Linux impl 38 checks; Windows impl 37/37
-- [ ] 4.3.2 Phase gate `make dist-check` and `make check IMAGE=clorraine-sdk:windows-cli`
+- [x] 4.3.2 Phase gate: the four installer suites (Linux spec/impl, Windows spec/impl on the host); `make check` moves to the Phase 5 gate (AR-48) ✅ (completed: 2026-11-27 15:54) — Linux spec 196 + impl 38 checks; Windows spec 36/36 + impl 37/37; dist-check deferred to the phase 5 gate (5 expected packager failures)
 
-**Verify (gate)**: `make check` (includes `dist-check`) + the PowerShell suites on the Windows host
+**Verify (gate)**: installer suites on Linux and the Windows host (AR-48); `make check` at the Phase 5 gate
 
 ---
 

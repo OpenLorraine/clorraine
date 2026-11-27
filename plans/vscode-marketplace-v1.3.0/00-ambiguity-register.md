@@ -1,6 +1,6 @@
 ## Ambiguity Register: VS Code Marketplace extension and the v1.3.0 release
 
-> **Status**: ✅ GATE PASSED — all 47 items resolved (40 user decisions, 7 delegated under --auto-design)
+> **Status**: ✅ GATE PASSED — all 48 items resolved (40 user decisions, 8 delegated under --auto-design)
 > **Last Updated**: 2026-11-27 14:47
 > **Source**: GitHub issue #38 (Publish the VS Code extension), revised by the decisions below
 
@@ -53,6 +53,7 @@
 | 45 | Technical | Small mechanisms surfaced while writing the specs: `virtualWorkspaces`, the guide action on an invalid explicit setting, the Linux manual-confirmation key and rerun flag, stale-VSIX rejection in `dist-verify`, the uninstall-failure message | As recorded in 03-01, 03-03, 03-04 / alternatives in the note | Authority: AI — delegated by --auto-design (see AR-45 note) | ✅ Resolved |
 | 46 | UX & presentation (runtime) | How the Windows install command is documented | Today: `curl.exe -fsSLo … ; powershell -ExecutionPolicy Bypass -File …` / a one-liner like Codex's `powershell -ExecutionPolicy ByPass -c "irm <url> \| iex"` | User: "we should do something like what codex does … the URL would be from our repo". Primary command everywhere (README, docs/windows-cli.md, site quick start, release notes): `powershell -ExecutionPolicy ByPass -c "irm https://github.com/OpenLorraine/clorraine/releases/download/v1.3.0/install.ps1 \| iex"`. Delegated details (see AR-46 note): the versioned release URL (v1.3.0 is a pre-release, so `releases/latest` would not reach it); options and scripted installs keep the download-verify-`-File` form, which is unchanged | ✅ Resolved |
 | 47 | UX & presentation (runtime) | 03-3 §5 summary texts and ST-23 did not say whether they include the existing `VS Code    ` row label, and ST-23 mixed the run-time hint with the summary row | Keep the existing row layout and hints / rewrite the summary layout | Authority: AI — delegated by --auto-design (see AR-47 note) | ✅ Resolved |
+| 48 | Technical (runtime) | Phase 4 removes the installers' VSIX pins, but `package.sh --verify` and `dist.spec.test.sh` check them until Phase 5, so `make check` cannot pass between the two phases | Gate Phase 4 on the installer suites and run `make check` at the Phase 5 gate / pull the packaging change into Phase 4 | Authority: AI — delegated by --auto-design (see AR-48 note) | ✅ Resolved |
 
 ## Coverage Map
 
@@ -207,4 +208,18 @@ Confidence: High
 Policy version: 1
 Root invocation ID: ad-20261127-vsmkt
 Reopen triggers: the user wants different summary wording
+```
+
+**AR-48 (runtime, delegated):**
+
+```text
+Authority: AI — delegated by --auto-design
+Eligibility: implementation sequencing; no scope or behaviour change
+Decision: the Phase 4 gate is the four installer suites (Linux spec and impl, Windows spec and impl on the test host); `make check`, which includes `make dist-check`, runs at the Phase 5 gate once the packager and its tests drop the VSIX
+Evidence: make dist-check after Phase 4: install suites pass; dist.spec.test.sh fails 5 checks on the removed VSIX_BYTES/VSIX_SHA256 pins and the stale-VSIX message
+Rejected alternatives: moving the packager change into Phase 4 (breaks the spec-first ordering Phase 5 sets up for packaging)
+Confidence: High
+Policy version: 1
+Root invocation ID: ad-20261127-vsmkt
+Reopen triggers: none
 ```
