@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-27 15:21
-> **Progress**: 16/55 tasks (29%)
+> **Last Updated**: 2026-11-27 15:24
+> **Progress**: 18/55 tasks (32%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -102,8 +102,8 @@ branch; only Phase 1 reaches `main` before the release (AR-40).
 ### Step 2.3: Impl tests and gate
 
 - [x] 2.3.1 Write impl tests — `tools/vscode/test/guide.impl.test.ts`, audit negatives ✅ (completed: 2026-11-27 15:21) — 7 impl tests
-- [ ] 2.3.2 Phase gate `make vscode-check`
-- [ ] 2.3.3 Package once and review the staged listing (README, CHANGELOG, icon) by eye; record the VSIX size here
+- [x] 2.3.2 Phase gate `make vscode-check` ✅ (completed: 2026-11-27 15:24) — make vscode-check: 224 tests pass, audit ok (19 entries), packaged client ok
+- [x] 2.3.3 Package once and review the staged listing (README, CHANGELOG, icon) by eye; record the VSIX size here ✅ (completed: 2026-11-27 15:24) — VSIX 41,947 bytes, 19 entries; vsixmanifest: Public Preview, ExtensionKind workspace, banner #0c1219, tags and links as intended
 
 **Verify (gate)**: `make vscode-check`
 
