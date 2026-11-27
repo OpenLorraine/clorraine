@@ -46,18 +46,11 @@ legs of `make verify` on a private Xvfb display.
    `tools/vscode/package.json`, and `tools/vscode/package-lock.json`; add the
    `CHANGELOG.md` and `tools/vscode/CHANGELOG.md` entries; write
    `RELEASE-NOTES.md`; move the install commands in `README.md`, `docs/`, and
-   `site/` to `vX.Y.Z`. Sweep every release-facing page so it describes this
-   release: the status page, the project brief, the quick start, the roadmap,
-   the known limitations, the home page and preview bar, the README, and both
-   CLI guides. Copy `docs/release-reviews/TEMPLATE.md` to
-   `docs/release-reviews/vX.Y.Z.md` and walk its "Before tag" items with the
-   maintainer. An agent may prepare the record, but ticks the items and fills
-   in `Reviewer` only after the maintainer confirms each one.
-3. **Gate.** `make verify` **and** `make release-docs-check VERSION=X.Y.Z` on
-   the release commit; the tag waits for both. Fix each finding in the docs,
-   or, for a true historical mention, allowlist it in
-   `tools/release/docs-manifest.json` with its reason. Every allowlist entry is
-   re-confirmed for each release (`reviewed_for`).
+   `site/` to `vX.Y.Z`, and make every page that states the current release
+   (the status page, the project brief, the quick start, the roadmap, the
+   known limitations, the home page and preview bar, the README, and both CLI
+   guides) describe this release.
+3. **Gate.** `make verify` on the release commit.
 4. **Tag.** Push tag `vX.Y.Z` on the release commit.
 5. **Dry run.** Dispatch `publish-vscode` from the tag with `dry_run` ticked;
    the summary must show version `X.Y.Z` and a VSIX SHA-256.
@@ -87,13 +80,8 @@ legs of `make verify` on a private Xvfb display.
     release). Then fast-forward `main` to the release commit; the site deploys
     from `main`.
 11. **Check.** Install from the published release with the documented Linux
-    and Windows commands. When the docs deploy for `main` has succeeded, walk
-    the review record's "After deploy" items with the maintainer, tick them in
-    a commit on `main`, and run `make release-docs-check VERSION=X.Y.Z LIVE=1`.
-    Exit 4 means the deployed site is not the current commit yet: wait for the
-    deploy and retry once after 10 minutes. Exit 3 means a probe stayed
-    unreachable: rerun later. There is no override.
-12. **Close out.** Only after the live check passes: close the fixed issues
+    and Windows commands.
+12. **Close out.** Close the fixed issues
     with a link to the release, announce the release on the `#clorraine`
     channel of the AmigaDev Discord, and move the release off pre-release or
     to Latest when that is wanted.
@@ -106,11 +94,10 @@ legs of `make verify` on a private Xvfb display.
   published tag is never moved. Fix on the branch, bump to the next patch
   version, and restart at step 2 with the new tag.
 - **A docs defect found after step 10** (site, `README.md`, `docs/`): fix it
-  forward on `main` with the maintainer's approval, rerun
-  `make release-docs-check VERSION=X.Y.Z` and the live check. The tag and the
-  assets stay as they are.
+  forward on `main` with the maintainer's approval. The tag and the assets
+  stay as they are.
 - **A defect in the published release body:** `gh release edit vX.Y.Z
-  --notes-file …` with the maintainer's approval, then rerun the live check.
+  --notes-file …` with the maintainer's approval.
 - **A defect in the extension's README or CHANGELOG, or in an asset:** these
   ship in published bytes, so fix forward with a patch release.
 - **Publish job failed at the token exchange:** nothing was published; check

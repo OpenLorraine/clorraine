@@ -1,7 +1,9 @@
 # Release docs gate
 
 > **Document**: 00-index.md
-> **Status**: Done (2026-11-27)
+> **Status**: Superseded (2026-11-28): the user asked for a much simpler rule; the checker,
+> live check and review records were removed and replaced by one `AGENTS.md` bullet and the
+> `RELEASE.md` step 2 sweep. This folder is kept as history.
 > **Implements**: T-06 (user request, 2026-11-27; no RD)
 > **Created**: 2026-11-27 19:13
 > **CodeOps Artifact Schema**: 1

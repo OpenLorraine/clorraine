@@ -28,8 +28,6 @@ jobs:
         run: make dist-check
       - name: SDK setup tests
         run: make setup-check
-      - name: Release docs check tests
-        run: make release-docs-test
       # The runner has no Amiga SDK. These editor-source controls must run the
       # real m68k compiler and vamos and never skip themselves, so the SDK
       # container's `make check` runs them; this host-only job leaves them out.
