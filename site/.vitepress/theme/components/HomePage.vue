@@ -10,7 +10,7 @@ import { withBase } from "vitepress";
         <div class="cl-hero__copy">
           <p class="cl-kicker">
             <span class="cl-kicker__dot" aria-hidden="true"></span>
-            Developer preview · v1.2.0 · Linux
+            Developer preview · v1.3.0 · Linux · Windows
           </p>
           <h1>
             A safe systems language
@@ -23,7 +23,7 @@ import { withBase } from "vitepress";
           </p>
           <div class="cl-actions">
             <a class="cl-btn cl-btn--primary" :href="withBase('/guide/quick-start')">
-              Install on Linux
+              Install
               <span aria-hidden="true">→</span>
             </a>
             <a class="cl-btn cl-btn--ghost" :href="withBase('/examples/first-light')">
@@ -34,8 +34,8 @@ import { withBase } from "vitepress";
             </a>
           </div>
           <p class="cl-hero__note">
-            Apache 2.0 · No ROMs or Workbench media · Linux x86_64 today;
-            Windows 11 in the next release; macOS is on the way.
+            Apache 2.0 · No ROMs or Workbench media · Linux x86_64 and Windows 11
+            x64 today; macOS is on the way.
           </p>
         </div>
 
@@ -95,7 +95,7 @@ import { withBase } from "vitepress";
           <ul class="cl-checks">
             <li>Linux x86_64 with glibc 2.38 or newer.</li>
             <li>FS-UAE 3.2+ and your licensed Kickstart 3.1 ROM for the Amiga run.</li>
-            <li>Windows 11 support ships with the next release; macOS is on the way.</li>
+            <li>Windows 11 x64 installs with one PowerShell command; macOS is on the way.</li>
           </ul>
           <a class="cl-text-link" :href="withBase('/guide/quick-start')">
             Install guide and requirements
@@ -107,10 +107,10 @@ import { withBase } from "vitepress";
           <div class="cl-terminal__bar">
             <span class="cl-dots" aria-hidden="true"><i></i><i></i><i></i></span>
             <span class="cl-terminal__file">Linux x86_64</span>
-            <span class="cl-terminal__tag">v1.2.0 preview</span>
+            <span class="cl-terminal__tag">v1.3.0 preview</span>
           </div>
           <pre class="cl-code cl-code--wrap"><code><span class="tok-comment"># install Clorraine</span>
-curl -fsSL https://github.com/OpenLorraine/clorraine/releases/download/v1.2.0/install.sh -o clorraine-install.sh &amp;&amp; sh clorraine-install.sh
+curl -fsSL https://github.com/OpenLorraine/clorraine/releases/download/v1.3.0/install.sh -o clorraine-install.sh &amp;&amp; sh clorraine-install.sh
 
 <span class="tok-comment"># then, any time</span>
 clorraine new my-game

@@ -6,13 +6,13 @@ outline: false
 
 # Clorraine — project brief
 
-**Developer preview · v1.2.0 · Updated 25 November 2026**
+**Developer preview · v1.3.0 · Updated 27 November 2026**
 
 Clorraine is a compiler for 68K Amiga systems. It compiles a C-like language
 with Rust-style ownership to plain C99 and uses the AmigaPorts m68k GCC
 toolchain. The compiler is usable today for the supported language and the
-tracked Amiga SDK surface. The v1.2.0 developer preview installs on Linux x86_64
-with [one command](/guide/quick-start); Windows 11 support ships with the next release; macOS is on the way.
+tracked Amiga SDK surface. The v1.3.0 developer preview installs on Linux x86_64
+and Windows 11 x64 with [one command](/guide/quick-start); macOS is on the way.
 
 This page is the brief. It is written to be forwarded without a call.
 
@@ -22,7 +22,7 @@ This page is the brief. It is written to be forwarded without a call.
 |---|---|
 | **Project** | Clorraine, an independent compiler for 68K Amiga systems |
 | **Owner** | OpenLorraine |
-| **Status** | Developer preview; v1.2.0 installs on Linux x86_64 with one command; v1.1.2 is the latest stable release |
+| **Status** | Developer preview; v1.3.0 installs on Linux x86_64 and Windows 11 x64 with one command; v1.1.2 is the latest stable release |
 | **Language** | C-like syntax, Rust-style ownership, no garbage collector |
 | **Output** | One C99 translation unit, built with the AmigaPorts m68k GCC toolchain |
 | **Targets** | `host`, `hosted-amiga`, `hosted-amiga-13`, `freestanding` |
@@ -88,10 +88,9 @@ contains no ROM or Workbench image.
 
 ## Roadmap
 
-- The Windows 11 installer in the next release, then macOS; v1.2.0 installs on
-  Linux x86_64.
-- The VS Code extension in a marketplace; today the Linux installer installs it
-  from the release.
+- A macOS installer; v1.3.0 installs on Linux x86_64 and Windows 11 x64.
+- The VS Code extension on Open VSX for VSCodium and other editors; it is on the
+  Visual Studio Marketplace today.
 - Clearer NDK setup and diagnostics.
 - Broader host-platform testing and CI coverage.
 - Continued expansion of the tracked AmigaOS API surface.
