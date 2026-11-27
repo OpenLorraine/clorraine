@@ -202,15 +202,20 @@ fn new_creates_a_runnable_starter_project() {
     assert!(stdout.contains("Run in FS-UAE"), "next steps name the editor action:\n{stdout}");
 }
 
-/// The tasks run the same `clorraine` launcher that created the project, so
-/// they work even when the editor's PATH lacks the install directory.
+/// The tasks ask the Clorraine extension for the driver instead of naming a
+/// path, so the project works on any machine with Clorraine installed, even
+/// when the editor's PATH lacks the install directory.
 #[test]
-fn new_points_the_tasks_at_the_creating_launcher() {
+fn new_points_the_tasks_at_the_extension_driver_command() {
     let s = Scratch::new("launcher");
     exit(&s.run(&["new", "app"]), 0);
     let tasks = fs::read_to_string(s.work.join("app/.vscode/tasks.json")).expect("tasks");
+    let command = "\"command\": \"${command:clorraine.driverPath}\"";
+    assert_eq!(tasks.matches(command).count(), 2, "both tasks use the driver command: {tasks}");
+    assert_eq!(tasks.matches("\"command\":").count(), 2, "no other task command: {tasks}");
     let launcher = env!("CARGO_BIN_EXE_clorraine");
-    assert!(tasks.contains(&format!("\"command\": \"{launcher}\"")), "{tasks}");
+    assert!(!tasks.contains(launcher), "no machine-specific launcher path: {tasks}");
+    assert!(!tasks.contains("@CLORRAINE@"), "{tasks}");
 }
 
 /// Without a name the project is `amiga-starter` in the current directory.
