@@ -290,7 +290,7 @@ def normalize(raw: str) -> Normalized:
             label = normalize(match.group("label")).text
             emit(f"{label} {match.group('url')}", match.start())
         elif kind == "entity":
-            emit(html.unescape(match.group()), match.start())
+            emit(html.unescape(match.group()).replace("​", ""), match.start())
         elif kind == "space":
             emit(" ", match.start())
         position = match.end()

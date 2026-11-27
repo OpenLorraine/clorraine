@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-27 20:08
-> **Progress**: 5/23 tasks (22%)
+> **Last Updated**: 2026-11-27 20:10
+> **Progress**: 6/23 tasks (26%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -31,7 +31,7 @@ review record (AR-10).
 - [x] 1.2.3 Green phase: ST-1..ST-23 pass ✅ (completed: 2026-11-27 20:08; ST-1..ST-23 pass; outputs spot-checked)
 
 ### Session 1.3: Implementation tests and hardening
-- [ ] 1.3.1 `tools/release/tests/docs_check_impl.py`: normalization, offsets, loader errors, month table, CLI usage
+- [x] 1.3.1 `tools/release/tests/docs_check_impl.py`: normalization, offsets, loader errors, month table, CLI usage ✅ (completed: 2026-11-27 20:10; 21 impl tests; found and fixed a decoded &#8203; surviving normalize())
 - [ ] 1.3.2 Phase gate and review (correctness reviewer)
 
 **Verify (gate)**: `make release-docs-test`
