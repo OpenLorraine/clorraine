@@ -16,8 +16,6 @@ fixture() {
     root="$(new_root)"
     stage="$(make_stage "$root")"
     wstage="$(make_windows_stage "$root")"
-    vsix="$root/clorraine-1.2.0.vsix"
-    printf 'fake vsix\n' >"$vsix"
     output="$root/dist"
     mkdir -p "$output"
 }
@@ -29,11 +27,11 @@ run_package() {
 
 build() {
     run_package "${script:-$package_script}" --stage "$stage" --windows-stage "$wstage" \
-        --output "$output" --version 1.2.0 --vsix "$vsix" "$@"
+        --output "$output" --version 1.2.0 "$@"
 }
 
 rewrite_sums() {
-    ( cd "$output" && sha256sum clorraine-1.2.0-x86_64-linux.tar.gz "$zip_name" clorraine-1.2.0.vsix \
+    ( cd "$output" && sha256sum clorraine-1.2.0-x86_64-linux.tar.gz "$zip_name" \
         install.sh install.ps1 >SHA256SUMS )
 }
 

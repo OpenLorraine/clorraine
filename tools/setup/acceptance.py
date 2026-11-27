@@ -251,7 +251,7 @@ def _check_extension(value: object, version: str) -> None:
     installed = _text(entry["version"], "extension.version")
     _require(installed == version,
              f"extension version {installed} does not match candidate {version}")
-    _require(_text(entry["publish_run"], "extension.publish_run").isdigit(),
+    _require(re.fullmatch(r"[0-9]+", _text(entry["publish_run"], "extension.publish_run")) is not None,
              "extension.publish_run must be a GitHub Actions run ID")
     _digest(entry["vsix_sha256"], "extension.vsix_sha256")
 

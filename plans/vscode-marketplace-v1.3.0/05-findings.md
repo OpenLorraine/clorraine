@@ -16,6 +16,11 @@
 | RV-011 | 4 | MINOR | tools/setup/install.sh | accepted |
 | SA-002 | 4 | MINOR | tools/setup/install.ps1 | fixed |
 | SA-003 | 4 | MINOR | tools/setup/install.ps1 | fixed |
+| RV-012 | 5 | MINOR | tools/setup/acceptance.ps1 | fixed |
+| RV-013 | 5 | MINOR | tools/setup/acceptance.ps1 | fixed |
+| RV-014 | 5 | MINOR | tools/setup/acceptance.py | fixed |
+| RV-015 | 5 | MINOR | Makefile | fixed |
+| RV-016 | 5 | MINOR | tools/setup/acceptance.sh | fixed |
 
 Phase 1 review: correctness reviewer and security auditor dispatched as `general` agents
 (catalog roles unavailable in this session); no critical or major findings; both minor findings
@@ -43,3 +48,13 @@ range (RV-007/SA-003); output after a kill is collected for at most 5 s (RV-008)
 Accepted: Ctrl-C does not reach a Linux Marketplace install already under way; it stops at the
 bound, and the trade-off is documented in the installer (RV-011). Re-verified: Linux spec 199 and
 impl 40 checks; Windows spec 37/37 and impl 37/37.
+
+Phase 5 review: correctness reviewer (`general` agent); security auditor skipped — the phase changes
+packaging and evidence validation, adds no input surface beyond two operator-supplied acceptance
+arguments that are validated, and removes the VSIX download. No critical or major findings. Fixed:
+the Windows acceptance lists extensions through the installer's own Find-VSCode/Invoke-Editor instead
+of cmd.exe (verified on the Windows host), and the listing moved above the UAC comment; the publish
+run must be ASCII digits; `make dist` clears assets from an earlier candidate; extension failures
+point at the install logs. Gate: `make check` passed (4,529 Rust tests plus the setup, dist, bench,
+and fuzz suites); a real `make dist` wrote exactly four assets and a four-line SHA256SUMS, and
+`make dist-verify` passed.

@@ -86,6 +86,9 @@ toolchain-check:
 dist:
 	@test "$(VERSION)" = "$$(sed -n 's/^[[:space:]]*"version": "\([^"]*\)".*/\1/p' tools/vscode/package.json | head -1)" || { echo "dist: VERSION $(VERSION) does not match tools/vscode/package.json"; exit 1; }
 	$(DOCKER_MAKE) exec CMD="cargo build --release --workspace"
+	# Assets from an earlier candidate (an older version, or a VSIX from before
+	# the Marketplace) would fail verification; start from a clean set.
+	rm -f build/dist/*.tar.gz build/dist/*.zip build/dist/*.vsix build/dist/install.sh build/dist/install.ps1 build/dist/SHA256SUMS
 	rm -rf build/dist/stage
 	mkdir -p "build/dist/stage/clorraine-$(VERSION)-x86_64-linux/bin"
 	cp target/release/clc target/release/clorraine target/release/clorraine-lsp \

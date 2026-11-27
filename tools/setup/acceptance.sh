@@ -120,7 +120,7 @@ extension_line=$("$editor" --list-extensions --show-versions </dev/null 2>/dev/n
     grep -i '^openlorraine\.clorraine@' | head -1 || true)
 extension_version=${extension_line#*@}
 [ -n "$extension_line" ] && [ "$extension_version" = "$version" ] || {
-    echo "acceptance: VS Code lists '${extension_line:-no Clorraine extension}', not openlorraine.clorraine@$version" >&2
+    echo "acceptance: VS Code lists '${extension_line:-no Clorraine extension}', not openlorraine.clorraine@$version; see $out/install.log" >&2
     exit 1
 }
 if [ "${EDITOR_CONFIRMED:-}" = 1 ]; then editor_confirmed=true; else editor_confirmed=false; fi

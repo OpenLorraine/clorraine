@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-27 16:07
-> **Progress**: 37/55 tasks (67%)
+> **Last Updated**: 2026-11-27 16:18
+> **Progress**: 38/55 tasks (69%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -181,7 +181,7 @@ branch; only Phase 1 reaches `main` before the release (AR-40).
 
 ### Step 5.3: Impl tests and gate
 
-- [ ] 5.3.1 Update impl tests — `tools/setup/tests/{windows-dist.impl.test.sh,acceptance_windows_impl.py}`; phase gate `make check IMAGE=clorraine-sdk:windows-cli`; one local `make dist` + `make dist-verify` shows four assets
+- [x] 5.3.1 Update impl tests — `tools/setup/tests/{windows-dist.impl.test.sh,acceptance_windows_impl.py}`; phase gate `make check IMAGE=clorraine-sdk:windows-cli`; one local `make dist` + `make dist-verify` shows four assets ✅ (completed: 2026-11-27 16:18) — impl suites pass; make check passed (4,529 Rust tests + setup/dist/bench/fuzz); make dist wrote 4 assets + 4-line SHA256SUMS; dist-verify passed; review fixes re-verified
 
 **Verify (gate)**: `make check`
 

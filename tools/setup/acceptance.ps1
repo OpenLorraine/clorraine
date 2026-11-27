@@ -107,6 +107,22 @@ function Invoke-Child([string]$File, [string[]]$Arguments, [string]$Directory) {
     return [pscustomobject]@{ Code = $process.ExitCode; Out = $out.Result; Err = $err.Result }
 }
 
+# Runs the VS Code CLI with Arguments the way the installer does: a child
+# PowerShell loads the installer's functions, finds VS Code with Find-VSCode,
+# and runs it through Invoke-Editor, which starts the editor directly rather
+# than through cmd.exe. Exit code 3 means no VS Code was found, 4 an
+# unexpected launcher; with no Arguments it only looks for VS Code.
+function Invoke-EditorThroughInstaller([string]$Installer, [string[]]$Arguments) {
+    $quoted = ($Arguments | ForEach-Object { "'" + $_.Replace("'", "''") + "'" }) -join ', '
+    $script = "`$env:CLORRAINE_INSTALL_LIB = '1'; . '" + $Installer.Replace("'", "''") + "'; " +
+        "`$editor = Find-VSCode; if (-not `$editor) { exit 3 }; " +
+        "if (@($quoted).Count -eq 0) { exit 0 }; " +
+        "`$result = Invoke-Editor `$editor @($quoted); if (`$null -eq `$result) { exit 4 }; " +
+        "[Console]::Out.Write(`$result.Out); exit `$result.Code"
+    $powershell = Join-Path ([Environment]::SystemDirectory) 'WindowsPowerShell\v1.0\powershell.exe'
+    return Invoke-Child $powershell @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', $script) (Get-Location).ProviderPath
+}
+
 # Creates a folder only this user, SYSTEM, and Administrators can open.
 function New-PrivateFolder([string]$Path) {
     $security = New-Object Security.AccessControl.DirectorySecurity
@@ -141,8 +157,9 @@ foreach ($name in $zipName, 'install.ps1', 'SHA256SUMS') {
 }
 if ($PublishRun -notmatch '^[0-9]+$') { Stop-Acceptance 2 '-PublishRun must be the publish-vscode run ID' }
 if ($PublishSha256 -cnotmatch '^[0-9a-f]{64}$') { Stop-Acceptance 2 '-PublishSha256 must be the published VSIX SHA-256' }
-$codeCmd = Get-Command -Name 'code.cmd', 'code-insiders.cmd' -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
-if ($null -eq $codeCmd) { Stop-Acceptance 2 'VS Code (code.cmd or code-insiders.cmd) is required on PATH' }
+if ((Invoke-EditorThroughInstaller (Join-Path $Candidate 'install.ps1') @()).Code -eq 3) {
+    Stop-Acceptance 2 'VS Code was not found the way the installer looks for it (code.cmd or code-insiders.cmd)'
+}
 if (-not (Test-Path -LiteralPath $Kickstart -PathType Leaf)) { Stop-Acceptance 2 "missing Kickstart ROM $Kickstart" }
 foreach ($name in 'examples\hello\hello.clo') {
     if (-not (Test-Path -LiteralPath (Join-Path $Repo $name) -PathType Leaf)) { Stop-Acceptance 2 "missing $name under $Repo" }
@@ -303,13 +320,13 @@ Assert-NoEmulator 'the negative'
 
 # --- Evidence --------------------------------------------------------------------
 
-# Under UAC an administrator's unelevated token still lists Administrators,
-# as a deny-only group, so the whole group list decides, not the token's role.
 # The installer took the extension from the Marketplace; VS Code lists it with
-# its version. The arguments are fixed, so cmd.exe only runs the launcher.
-$listing = Invoke-Child (Join-Path ([Environment]::SystemDirectory) 'cmd.exe') @('/d', '/c', $codeCmd.Source, '--list-extensions', '--show-versions') $work
+# its version, run the same way the installer runs it.
+$listing = Invoke-EditorThroughInstaller $installer @('--list-extensions', '--show-versions')
 $extensionLine = @($listing.Out -split "`r?`n" | Where-Object { $_.Trim() -like 'openlorraine.clorraine@*' }) | Select-Object -First 1
 $extensionVersion = if ($extensionLine) { $extensionLine.Trim().Substring('openlorraine.clorraine@'.Length) } else { '' }
+# Under UAC an administrator's unelevated token still lists Administrators,
+# as a deny-only group, so the whole group list decides, not the token's role.
 $groups = Invoke-Child (Join-Path ([Environment]::SystemDirectory) 'whoami.exe') @('/groups', '/fo', 'csv', '/nh') $work
 if ($groups.Code -ne 0) { Stop-Acceptance 1 'whoami /groups failed' }
 $standard = -not $groups.Out.Contains('"S-1-5-32-544"')
@@ -350,7 +367,7 @@ if ($hostResult -ne 'ok') { $missing += 'the PC hello did not print the hello li
 if ($compiler -notmatch 'gcc') { $missing += "the PC hello compiler is not GCC: $compiler" }
 if ($build -lt 22000) { $missing += "Windows build $build is older than Windows 11" }
 if ($fsUae.source -eq 'downloaded' -and $fsUae.version -ne '3.2.35') { $missing += "the downloaded FS-UAE reports $($fsUae.version), not 3.2.35" }
-if ($extensionVersion -ne $version) { $missing += "VS Code lists openlorraine.clorraine '$extensionVersion', not $version" }
+if ($extensionVersion -ne $version) { $missing += "VS Code lists openlorraine.clorraine '$extensionVersion', not $version; see install-1.log and install-2.log" }
 if (-not $reused) { $missing += 'the second install did not reuse rc24' }
 if (-not $standard) { $missing += 'the account is an administrator, not a standard account' }
 if (-not $UacConfirmed) { $missing += 'the UAC prompt was not confirmed' }

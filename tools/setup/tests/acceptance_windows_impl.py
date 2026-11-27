@@ -81,11 +81,10 @@ class WindowsAcceptanceImplTests(acceptance_windows_spec.WindowsAcceptanceSpecTe
     def test_should_take_the_version_from_the_candidate_not_a_constant(self) -> None:
         moved = self.candidate / "clorraine-1.3.0-x86_64-windows.zip"
         self.archive.rename(moved)
-        (self.candidate / "clorraine-1.2.0.vsix").rename(self.candidate / "clorraine-1.3.0.vsix")
         record = json.loads(json.dumps(self.evidence))
         record["version"] = "1.3.0"
         record["archive"]["name"] = moved.name
-        record["vsix"]["name"] = "clorraine-1.3.0.vsix"
+        record["extension"]["version"] = "1.3.0"
         self.check(record)
 
     def test_should_require_gcc_for_the_pc_hello(self) -> None:
