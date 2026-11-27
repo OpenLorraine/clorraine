@@ -106,11 +106,14 @@ import { withBase } from "vitepress";
         <div class="cl-terminal">
           <div class="cl-terminal__bar">
             <span class="cl-dots" aria-hidden="true"><i></i><i></i><i></i></span>
-            <span class="cl-terminal__file">Linux x86_64</span>
+            <span class="cl-terminal__file">Linux · Windows</span>
             <span class="cl-terminal__tag">v1.3.0 preview</span>
           </div>
-          <pre class="cl-code cl-code--wrap"><code><span class="tok-comment"># install Clorraine</span>
+          <pre class="cl-code cl-code--wrap"><code><span class="tok-comment"># install on Linux x86_64</span>
 curl -fsSL https://github.com/OpenLorraine/clorraine/releases/download/v1.3.0/install.sh -o clorraine-install.sh &amp;&amp; sh clorraine-install.sh
+
+<span class="tok-comment"># install on Windows 11 x64 (PowerShell)</span>
+powershell -ExecutionPolicy ByPass -c "irm https://github.com/OpenLorraine/clorraine/releases/download/v1.3.0/install.ps1 | iex"
 
 <span class="tok-comment"># then, any time</span>
 clorraine new my-game
