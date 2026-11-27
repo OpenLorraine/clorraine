@@ -9,7 +9,10 @@ routing belongs in configuration, not prose.
 The Clorraine compiler: a std-only Rust workspace (one member, `compiler/`; no
 external crates, no build scripts) with three binaries. `clc` compiles `.clo`
 sources to one C99 translation unit; `clorraine` is the build/run driver;
-`clorraine-lsp` is the stdio language server.
+`clorraine-lsp` is the stdio language server. The binaries are built for Linux
+x86_64 and, from the same SDK image, for Windows 11 x64
+(`x86_64-pc-windows-gnu`); `tools/setup/install.sh` and `tools/setup/install.ps1`
+are the Linux and Windows installers.
 
 Profiles:
 - `host` — development and host test runs.
@@ -38,7 +41,7 @@ acceptance gate. `make check` and `make verify` remain authoritative.
 
 | Command | Purpose |
 |---------|---------|
-| `make check` | Fast gate: `./spec/check.sh`, `tools/amiga-sdk/registry_test.sh`, `make setup-check`, `make dist-check`, `cargo test --workspace` in the container, then `bench-test`, `fuzz-test`, and `fuzz-smoke` |
+| `make check` | Fast gate: `./spec/check.sh`, `tools/amiga-sdk/registry_test.sh`, `make setup-check`, `make dist-check`, `cargo test --workspace` and `cargo check --workspace --target x86_64-pc-windows-gnu` in the container, then `bench-test`, `fuzz-test`, and `fuzz-smoke` |
 | `make asan` | Run every suite that references `RDC_ASAN` under AddressSanitizer, one suite per process; the runner links ASan children with `-no-pie` |
 | `make ubsan` | Run every suite that references `RDC_UBSAN` under UndefinedBehaviorSanitizer; a known-overflow probe proves the leg is active, and the runner links children with `-no-pie`; part of `make verify` |
 | `make fuzz-test` | Fuzzer unit tests; part of `make check` |
@@ -53,10 +56,10 @@ acceptance gate. `make check` and `make verify` remain authoritative.
 | `make run FILE=…` / `make build FILE=…` | Build (and run) one program in the container; set `PROFILE=hosted-amiga\|hosted-amiga-13\|freestanding`, `EMULATOR=1`, `CAPTURE=1` |
 | `make toolchain-check TOOLCHAIN=…` | Build hello, the portable corpus, and freestanding with an extracted upstream rc24 toolchain; local product check, not part of `make check` |
 | `make fs-uae-check KICKSTART=… [TOOLCHAIN=…]` | Run hello, the four hosted-amiga corpus programs, one hosted-amiga-13 corpus program, and an rc-1 negative in a real A1200/KS3.1 FS-UAE; compare output and reject a surviving emulator/Xvfb process |
-| `make dist` | Build release binaries and the VSIX, then write the local candidate archive, installer, and `SHA256SUMS` under `build/dist`; no publication |
-| `make dist-verify` / `make dist-check` | Verify the candidate layout, pins, and hashes; run the hermetic installer/producer/acceptance/removal tests |
+| `make dist` | Build the Linux and Windows release binaries and the VSIX, then write the five candidate assets (Linux archive, Windows zip, VSIX, `install.sh`, `install.ps1`) and one `SHA256SUMS` under `build/dist`; no publication |
+| `make dist-verify` / `make dist-check` | Verify the candidate layout, pins, and hashes (`--verify` rebuilds `install.ps1` and checks every zip entry); run the hermetic installer/producer/acceptance/removal tests, including the Windows packaging and evidence suites |
 | `make acceptance CANDIDATE=… TOOLCHAIN_ARCHIVE=… KICKSTART=…` | Install the exact candidate into an isolated HOME, run the rc24/FS-UAE matrix, and write local acceptance evidence |
-| `make acceptance-check EVIDENCE=… CANDIDATE=…` | Validate a recorded acceptance record against the candidate bytes and corpus goldens |
+| `make acceptance-check EVIDENCE=… CANDIDATE=…` | Validate a recorded Linux or Windows acceptance record against the candidate bytes and corpus goldens; Windows records come from `tools/setup/acceptance.ps1` |
 | `make -C docker exec CMD="cargo build --workspace"` | Build `clc`, `clorraine`, and `clorraine-lsp` at `target/debug/` |
 | `make -C docker exec CMD="target/debug/clorraine run FILE.clo"` | Driver directly: `run`, `build`, or `emit` (`-p host\|hosted-amiga\|hosted-amiga-13\|freestanding`, `--release`, `--size`, `--capture`, `--emulator`, `--emit-c`, `--explain CODE`, `--doc [-o DIR] FILE...`, `--diagnostics=json`) |
 | `make sdk-registry` / `make sdk-issues` | Validate the Amiga SDK registry, regenerate `docs/amiga-sdk/coverage.md`, and write per-bundle issue bodies |
@@ -113,13 +116,13 @@ acceptance gate. `make check` and `make verify` remain authoritative.
 | `.github/workflows/` | Host-only GitHub Actions checks (`check.yml`) and the Pages site build/deploy (`docs.yml`) |
 | `demo/` | Demo story (`story.ts`), per-file scaffold, Vim syntax file, recorder shim, and committed poster; rendered media is ignored |
 | `tools/demo/` | `@clorraine/demo`, the zero-build TypeScript render toolkit (headless Chrome, Shiki, VHS, ffmpeg) |
-| `tools/setup/` | Fetch/detect SDK installer and its Python unit tests |
+| `tools/setup/` | Fetch/detect SDK installer and its Python unit tests; the Linux and Windows CLI installers (`install.sh`, `install.ps1`), the candidate producer (`package.sh`, `pe_check.py`), the acceptance producers and checker, and the Windows test-host helper (`windows-remote.sh`, `windows-desktop-run.ps1`) |
 | `tools/vscode/` | VS Code extension package, LSP client, and headless tests |
 | `site/` | Public VitePress documentation site, custom theme, screenshots, and OG image; deployed by `.github/workflows/docs.yml` |
 | `editors/` | Canonical editor assets: `clorraine.tmLanguage.json`, consumed by the demo toolkit and enforced against the EBNF by `make check` |
 | `examples/` | Small example programs, including the hosted-amiga acceptance programs under `examples/amiga/`, the target-side fault probes under `examples/robustness/`, and a compile-fail ownership sample |
 | `plans/` | CodeOps plans (one directory per feature) and `plans/00-roadmap.md`; flat layout |
-| `docs/`, `spikes/` | Documentation index, the C-to-Clorraine guide, findings/ergonomics notes, `docs/known-limitations.md`, and toolchain spike records; `RELEASE.md` and `THIRD_PARTY_NOTICES.md` sit at the root |
+| `docs/`, `spikes/` | Documentation index, the C-to-Clorraine guide, the Linux and Windows CLI guides (`docs/linux-cli.md`, `docs/windows-cli.md`), findings/ergonomics notes, `docs/known-limitations.md`, and toolchain spike records; `RELEASE.md` and `THIRD_PARTY_NOTICES.md` sit at the root |
 
 ## Testing
 
@@ -135,6 +138,13 @@ acceptance gate. `make check` and `make verify` remain authoritative.
 - `#[cfg(test)] mod tests` inside `compiler/src/` holds focused unit tests.
 - `tools/demo/test/*.spec.test.ts` and `*.impl.test.ts` follow the same split;
   `render.smoke.test.ts` is opt-in (`DEMO_E2E=1`, Chrome + ffmpeg).
+- The Windows installer suites `tools/setup/tests/install.{spec,impl}.test.ps1`
+  run in Windows PowerShell 5.1 on a Windows 11 x64 host, not in `make check`.
+  `tools/setup/windows-remote.sh push HOST DIR` copies a folder to that host
+  (never ROMs) and `run HOST -- COMMAND` runs a command in its signed-in desktop
+  session; the rc24 compiler does not start from an SSH logon. Windows
+  acceptance runs `tools/setup/acceptance.ps1` as a standard account and is
+  checked with `make acceptance-check`.
 - `tools/setup/tests/test_{cli,detect,fetch}.py` (Docker SDK) runs with `make setup-check`; the installer/producer shell suites run with `make dist-check`; `tools/vscode/test/`
   runs with `make vscode-check` and includes a packaged-client smoke test.
 - `site/` is checked with `make site-check`; the GitHub Pages workflow builds

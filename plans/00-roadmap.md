@@ -667,6 +667,7 @@
 | ↳ DEF-560 | libamiga legal review — user-owned | — | [Evidence](../tools/distribution/inputs/licence-review.md) | Deferred | ⏸️ | 2026-11-17 | user owns legalities; nonblocking local implementation; no licence-clearance claim or public promotion |
 
 | T-01 | Publish the v1.2.0 developer preview | — | [public-preview-v1.2.0](public-preview-v1.2.0/99-execution-plan.md) | Done | ✅ | 2026-11-25 | 27/27; exciting first run: banner, demo-scene Amiga hello, `clorraine new` starter with VS Code run button, KS2+ display fix; v1.2.0 prerelease recreated; docs/site frozen |
+| T-03 | Windows CLI and installer (Windows 11 x64) | — | [windows-cli](windows-cli/99-execution-plan.md) | Done | ✅ | 2026-11-27 | 75/75; PR #96 rebase-merged; `install.ps1`, Windows driver/LSP/extension, five-asset candidate, Windows acceptance record passed `make acceptance-check`; ships with the next release (`vX.Y.Z` in the docs); post-merge image rebuild pending (08-merge-notes) |
 | T-02 | Document the Linux installer on the website and in docs/ | — | [site-linux-installer-docs](site-linux-installer-docs/99-execution-plan.md) | Done | ✅ | 2026-11-25 | 10/10; the one-line installer is the only install path on the site and in docs/; developer preview; Windows/macOS on the way; live site verified |
 
 ## Batch N accounting (2026-10-19)

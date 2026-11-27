@@ -2,7 +2,9 @@
 
 > **Document**: 08-merge-notes.md
 > **Parent**: [Index](00-index.md)
-> **Status**: Draft — nothing here is filed, opened, or merged without the user's approval
+> **Status**: Merged as PR #96 (2026-11-27). Done: `AGENTS.md` and the roadmap. Open: the
+> shared `clorraine-sdk:dev` image rebuild (until then `make check` on `main` fails at the
+> Windows `cargo check` step), the release edits, and the decisions and follow-ups below.
 
 ## Before merging
 
