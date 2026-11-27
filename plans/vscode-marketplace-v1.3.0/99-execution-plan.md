@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-11-27 15:48
-> **Progress**: 25/55 tasks (45%)
+> **Progress**: 26/55 tasks (47%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -144,7 +144,7 @@ branch; only Phase 1 reaches `main` before the release (AR-40).
 **Reference**: 03-03 §Installers · AR-6, AR-7, AR-14, AR-15, AR-26, AR-27, AR-33, AR-43
 
 - [x] 4.1.1 [spec-author] Rewrite the VS Code cases from ST-22..ST-29 (Linux) — `tools/setup/tests/install.spec.test.sh`, fixtures in `install_fixtures.sh` ✅ (completed: 2026-11-27 15:48)
-- [~] 4.1.2 [spec-author] Rewrite the VS Code cases from ST-22..ST-29 (Windows) — `tools/setup/tests/install.spec.test.ps1` ⏳ (implemented: 2026-11-27 15:44)
+- [x] 4.1.2 [spec-author] Rewrite the VS Code cases from ST-22..ST-29 (Windows) — `tools/setup/tests/install.spec.test.ps1` ✅ (completed: 2026-11-27 15:48)
 - [ ] 4.1.3 Red phase: Linux suite locally; PowerShell suite on the Windows host (`windows-remote.sh push` + `run` in the desktop session); both fail on the new cases
 
 ### Step 4.2: Implementation

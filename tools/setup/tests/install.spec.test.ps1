@@ -150,10 +150,6 @@ function New-AssembledInstaller([string]$Dir, [string]$Version) {
         '@ARCHIVE_URL@' = 'https://example.invalid/' + (Get-ZipName $Version)
         '@ARCHIVE_BYTES@' = '1'
         '@ARCHIVE_SHA256@' = ('0' * 64)
-        '@VSIX_NAME@' = "clorraine-$Version.vsix"
-        '@VSIX_URL@' = "https://example.invalid/clorraine-$Version.vsix"
-        '@VSIX_BYTES@' = '1'
-        '@VSIX_SHA256@' = ('0' * 64)
         '@HELLO_AMIGA_SOURCE@' = "module demo.HelloAmiga;`nfunc main(): i32 { return 0; }"
     }
     foreach ($pin in $pins.Keys) { $text = $text.Replace($pin, $pins[$pin]) }
@@ -838,6 +834,157 @@ Test-Case 'should skip the PC hello with a GCC note for Clang only and the Windo
     $result = Invoke-Case -Installer $fixture.Installer -CaseRoot $root -Prelude $prelude -Arguments $arguments
     Assert-That ($result.Code -eq 0) "no compiler: exit $($result.Code): $($result.All)"
     Assert-That ($result.All.Contains('install GCC (for example w64devkit or MSYS2 UCRT64) or set CLORRAINE_CC')) $result.All
+}
+
+# --- VS Code extension -------------------------------------------------------
+
+# A fake VS Code: a compiled Code.exe behind the launcher shape the installer
+# runs directly, with code.cmd (or another launcher name) in its bin folder.
+# FAKE_EDITOR_LOG records every install and uninstall; FAKE_INSTALLED lists
+# the extension; FAKE_INSTALL_FAIL, FAKE_INSTALL_SLEEP (seconds), and
+# FAKE_UNINSTALL_FAIL shape the results.
+$script:FakeCodeExe = $null
+function New-FakeEditor([string]$CaseRoot, [string]$Launcher = 'code.cmd') {
+    if (-not $script:FakeCodeExe) {
+        $script:FakeCodeExe = Join-Path $SuiteRoot 'FakeCode.exe'
+        Add-Type -OutputType ConsoleApplication -OutputAssembly $script:FakeCodeExe -TypeDefinition @'
+using System;
+using System.IO;
+using System.Threading;
+public static class FakeCode {
+    static string Env(string name) { return Environment.GetEnvironmentVariable(name); }
+    public static int Main(string[] args) {
+        string verb = args.Length > 1 ? args[1] : "";
+        if (verb == "--version") { Console.WriteLine("1.90.0"); return 0; }
+        if (verb == "--list-extensions") {
+            if (Env("FAKE_INSTALLED") == "1") Console.WriteLine("openlorraine.clorraine");
+            return 0;
+        }
+        string log = Env("FAKE_EDITOR_LOG");
+        if (!string.IsNullOrEmpty(log)) File.AppendAllText(log, string.Join(" ", args, 1, args.Length - 1) + "\r\n");
+        if (verb == "--install-extension") {
+            string sleep = Env("FAKE_INSTALL_SLEEP");
+            if (!string.IsNullOrEmpty(sleep)) Thread.Sleep(int.Parse(sleep) * 1000);
+            return Env("FAKE_INSTALL_FAIL") == "1" ? 1 : 0;
+        }
+        if (verb == "--uninstall-extension") return Env("FAKE_UNINSTALL_FAIL") == "1" ? 1 : 0;
+        return 0;
+    }
+}
+'@
+    }
+    $vscode = Join-Path $CaseRoot 'vscode'
+    $out = Join-Path $vscode 'app\out'
+    $bin = Join-Path $vscode 'bin'
+    New-Item -ItemType Directory -Force -Path $out, $bin | Out-Null
+    Copy-Item -LiteralPath $script:FakeCodeExe -Destination (Join-Path $vscode 'Code.exe')
+    Set-Content -LiteralPath (Join-Path $out 'cli.js') -Value '// cli'
+    Set-Content -LiteralPath (Join-Path $bin $Launcher) -Encoding Ascii -Value @(
+        '@echo off', 'setlocal', 'set VSCODE_DEV=', 'set ELECTRON_RUN_AS_NODE=1',
+        '"%~dp0..\Code.exe" "%~dp0..\app\out\cli.js" %*', 'endlocal')
+    return $bin
+}
+
+# Quotes text as a single-quoted PowerShell string literal.
+function ConvertTo-Literal([string]$Text) { "'" + $Text.Replace("'", "''") + "'" }
+
+# Runs Install-VSCodeExtension non-interactively with the given options text,
+# the fake editor's bin folder as the only editor on PATH, and the given fake
+# settings; prints STATE=<state> and the summary. Returns the case result and
+# the editor calls the fake recorded.
+function Invoke-VSCodeCase([string]$CaseRoot, [string]$Bin, [string]$Options, [hashtable]$Fake = @{}) {
+    $installer = New-AssembledInstaller $CaseRoot '9.1.0'
+    $log = Join-Path $CaseRoot 'editor.log'
+    $local = Join-Path $CaseRoot 'localappdata'
+    New-Item -ItemType Directory -Force -Path $local | Out-Null
+    $lines = @(
+        ('$env:PATH = ' + (ConvertTo-Literal "$Bin;$env:SystemRoot\System32")),
+        ('$env:LOCALAPPDATA = ' + (ConvertTo-Literal $local)),
+        ('$env:FAKE_EDITOR_LOG = ' + (ConvertTo-Literal $log))
+    )
+    foreach ($name in $Fake.Keys) { $lines += ('$env:' + $name + ' = ' + (ConvertTo-Literal $Fake[$name])) }
+    $lines += '$script:Style = New-OutputStyle -VirtualTerminal $false -CodePage 437 -NoColor $true'
+    $lines += ('$state = Install-VSCodeExtension ' + $Options + ' $false')
+    $lines += '[Console]::Out.WriteLine("STATE=$state")'
+    $lines += 'Write-Summary ([pscustomobject]@{ Root = ''C:\root''; OnPath = $true; Toolchain = $null; Kickstart = $null; Host = ''skipped''; Guest = ''skipped''; VSCode = $state; Starter = $null })'
+    $lines += 'exit 0'
+    $result = Invoke-Case -Installer $installer -CaseRoot $CaseRoot -Body ($lines -join "`r`n")
+    # An if-expression unrolls an empty array to $null, so wrap the whole result.
+    $logged = @(if (Test-Path -LiteralPath $log) { Get-Content -LiteralPath $log })
+    return [pscustomobject]@{ Result = $result; Log = $logged }
+}
+
+Test-Case 'should not treat codium as VS Code' {
+    $root = New-CaseRoot
+    $bin = New-FakeEditor $root 'codium.cmd'
+    $case = Invoke-VSCodeCase $root $bin '@{ VSCode = $true }'
+    Assert-That ($case.Result.Code -eq 0) $case.Result.All
+    Assert-That ($case.Result.Out -match 'STATE=unavailable') $case.Result.All
+    Assert-That ($case.Log.Count -eq 0) "codium ran: $($case.Log -join '; ')"
+    Assert-That ($case.Result.All.Contains('VS Code was not found; install it, then run: code --install-extension openlorraine.clorraine')) $case.Result.All
+}
+
+Test-Case 'should only suggest -VSCode in a non-interactive run without it' {
+    $root = New-CaseRoot
+    $case = Invoke-VSCodeCase $root (New-FakeEditor $root) '@{}'
+    Assert-That ($case.Result.Out -match 'STATE=available') $case.Result.All
+    Assert-That ($case.Log.Count -eq 0) "editor changed: $($case.Log -join '; ')"
+    Assert-That ($case.Result.Out.Contains('VS Code detected; rerun with -VSCode to install the extension')) $case.Result.All
+    Assert-That ($case.Result.Out.Contains('VS Code    detected; rerun with -VSCode to install the extension')) $case.Result.All
+}
+
+Test-Case 'should install the extension from the Marketplace by its ID' {
+    $root = New-CaseRoot
+    $case = Invoke-VSCodeCase $root (New-FakeEditor $root) '@{ VSCode = $true }'
+    Assert-That ($case.Result.Out -match 'STATE=installed') $case.Result.All
+    Assert-That (($case.Log -join '|') -eq '--install-extension openlorraine.clorraine') "calls: $($case.Log -join '|')"
+    Assert-That ($case.Result.Out.Contains('VS Code    extension installed')) $case.Result.All
+}
+
+Test-Case 'should reinstall an installed extension from the Marketplace without -VSCode' {
+    $root = New-CaseRoot
+    $case = Invoke-VSCodeCase $root (New-FakeEditor $root) '@{}' @{ FAKE_INSTALLED = '1' }
+    Assert-That ($case.Result.Out -match 'STATE=updated') $case.Result.All
+    $expected = '--uninstall-extension openlorraine.clorraine|--install-extension openlorraine.clorraine'
+    Assert-That (($case.Log -join '|') -eq $expected) "calls: $($case.Log -join '|')"
+    Assert-That ($case.Result.Out.Contains('VS Code    extension updated from the Marketplace')) $case.Result.All
+}
+
+Test-Case 'should leave an installed extension alone with -NoVSCode' {
+    $root = New-CaseRoot
+    $case = Invoke-VSCodeCase $root (New-FakeEditor $root) '@{ NoVSCode = $true }' @{ FAKE_INSTALLED = '1' }
+    Assert-That ($case.Result.Out -match 'STATE=skipped') $case.Result.All
+    Assert-That ($case.Log.Count -eq 0) "editor changed: $($case.Log -join '; ')"
+    Assert-That ($case.Result.Out.Contains('VS Code    skipped')) $case.Result.All
+}
+
+Test-Case 'should explain a failed reinstall and carry on' {
+    $root = New-CaseRoot
+    $case = Invoke-VSCodeCase $root (New-FakeEditor $root) '@{ VSCode = $true }' @{ FAKE_INSTALLED = '1'; FAKE_INSTALL_FAIL = '1' }
+    Assert-That ($case.Result.Code -eq 0) $case.Result.All
+    Assert-That ($case.Result.Out -match 'STATE=failed') $case.Result.All
+    Assert-That ($case.Result.All.Contains('the Clorraine extension was removed but could not be reinstalled from the Marketplace; run: code --install-extension openlorraine.clorraine')) $case.Result.All
+    Assert-That ($case.Result.Out.Contains('VS Code    extension not installed; run: code --install-extension openlorraine.clorraine')) $case.Result.All
+}
+
+Test-Case 'should stop a hanging editor at the bound and carry on' {
+    $root = New-CaseRoot
+    $watch = [Diagnostics.Stopwatch]::StartNew()
+    $case = Invoke-VSCodeCase $root (New-FakeEditor $root) '@{ VSCode = $true }' @{ CLORRAINE_EDITOR_TIMEOUT = '1'; FAKE_INSTALL_SLEEP = '30' }
+    $watch.Stop()
+    Assert-That ($watch.Elapsed.TotalSeconds -lt 20) "took $([int]$watch.Elapsed.TotalSeconds)s"
+    Assert-That ($case.Result.Out -match 'STATE=failed') $case.Result.All
+    Assert-That ($case.Result.All.Contains('could not install the VS Code extension from the Marketplace; run: code --install-extension openlorraine.clorraine')) $case.Result.All
+    $left = @(Get-Process -Name Code -ErrorAction SilentlyContinue | Where-Object { $_.Path -and $_.Path.StartsWith($root, [StringComparison]::OrdinalIgnoreCase) })
+    Assert-That ($left.Count -eq 0) 'the editor process was left running'
+}
+
+Test-Case 'should carry no extension pins in the template or an assembled copy' {
+    $root = New-CaseRoot
+    foreach ($path in $Template, (New-AssembledInstaller $root '9.1.0')) {
+        $text = [IO.File]::ReadAllText($path)
+        Assert-That (-not ($text -match 'Vsix|VSIX|\.vsix')) "$path still names the VSIX"
+    }
 }
 
 # --- Summary -----------------------------------------------------------------
