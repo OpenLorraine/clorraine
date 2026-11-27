@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-27 14:47
-> **Progress**: 0/55 tasks (0%)
+> **Last Updated**: 2026-11-27 14:54
+> **Progress**: 1/55 tasks (1%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -53,13 +53,15 @@ branch; only Phase 1 reaches `main` before the release (AR-40).
 
 ## Phase 1: Publish workflow and version guard
 
+> **Phase baseline tree**: 78f9ab4ce37afde13047d5ff8fa2f2a913ff58e4
+> **Scope mode**: strict · expected modification set: `.github/workflows/publish-vscode.yml`, `tools/vscode/scripts/release-version.mjs`, `tools/vscode/test/{publish-workflow.spec,release-version.spec,release-version.impl}.test.ts`, this plan
 > **Reasoning**: xhigh — the only irreversible-publication surface; supply-chain and OIDC exposure
 
 ### Step 1.1: Branch and spec tests
 
 **Reference**: 03-02 · AR-5, AR-12, AR-13, AR-29, AR-30, AR-40..AR-42
 
-- [ ] 1.1.1 Confirm worktree `../clorraine-release` on `release-1.3.0` (created with the plan commit) is up to date with `origin/main`; install `tools/vscode` dependencies
+- [x] 1.1.1 Confirm worktree `../clorraine-release` on `release-1.3.0` (created with the plan commit) is up to date with `origin/main`; install `tools/vscode` dependencies ✅ (completed: 2026-11-27 14:54) — worktree at origin/main + plan commit; npm ci done
 - [ ] 1.1.2 [spec-author] Write spec tests from ST-1..ST-10 — `tools/vscode/test/publish-workflow.spec.test.ts`, `tools/vscode/test/release-version.spec.test.ts`
 - [ ] 1.1.3 Red phase: run the two spec files; they fail (no workflow, no script)
 
