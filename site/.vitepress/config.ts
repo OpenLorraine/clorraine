@@ -146,6 +146,8 @@ export default defineConfig({
           text: "Start here",
           items: [
             { text: "Quick start", link: "/guide/quick-start" },
+            { text: "Install on Linux", link: "/guide/quick-start#install-on-linux" },
+            { text: "Install on Windows", link: "/guide/quick-start#install-on-windows" },
             { text: "Status", link: "/status" },
             { text: "Roadmap", link: "/guide/roadmap" },
             { text: "Known limitations", link: "/guide/known-limitations" },
