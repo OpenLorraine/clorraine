@@ -62,6 +62,14 @@ The Windows acceptance run installed the candidate VSIX by hand with the install
 logic. A follow-up could use a pinned-matching VSIX found next to a local archive, on both
 platforms.
 
+## Follow-up: starter tasks and multi-file projects (all platforms)
+
+The `.vscode/tasks.json` that `clorraine new` writes passes only `main.clo`. A project that
+imports a second file builds through the editor's title-bar Run and Run in FS-UAE buttons (they
+ask the language server for the imported files), but the tasks fail, and the driver reports
+`E11102: 'message' is not exported from module 'check.message'` although the other file exports
+it: the message should say the module's file was not given.
+
 ## Decision for the user: encrypted ROMs on Linux
 
 On Windows `clorraine` now refuses an encrypted Cloanto ROM (header `AMIROMTYPE1`) that has no
