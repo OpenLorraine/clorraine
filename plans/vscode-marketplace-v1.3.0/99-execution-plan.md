@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-11-27 15:52
-> **Progress**: 28/55 tasks (50%)
+> **Progress**: 29/55 tasks (52%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -150,7 +150,7 @@ branch; only Phase 1 reaches `main` before the release (AR-40).
 ### Step 4.2: Implementation
 
 - [x] 4.2.1 Linux installer — `tools/setup/install.sh` (detection, bounded editor helper, flow, states, summary, help) ✅ (completed: 2026-11-27 15:52)
-- [~] 4.2.2 Windows installer — `tools/setup/install.ps1` (same, with `Invoke-Native` timeout and process-tree kill) ⏳ (implemented: 2026-11-27 15:50)
+- [x] 4.2.2 Windows installer — `tools/setup/install.ps1` (same, with `Invoke-Native` timeout and process-tree kill) ✅ (completed: 2026-11-27 15:52)
 - [ ] 4.2.3 Green phase: both suites pass on their hosts
 
 ### Step 4.3: Impl tests and gate

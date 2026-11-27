@@ -53,10 +53,8 @@ $script:ArchiveName = '@ARCHIVE_NAME@'
 $script:ArchiveUrl = '@ARCHIVE_URL@'
 $script:ArchiveBytes = '@ARCHIVE_BYTES@'
 $script:ArchiveSha256 = '@ARCHIVE_SHA256@'
-$script:VsixName = '@VSIX_NAME@'
-$script:VsixUrl = '@VSIX_URL@'
-$script:VsixBytes = '@VSIX_BYTES@'
-$script:VsixSha256 = '@VSIX_SHA256@'
+# The VS Code extension, installed from the Visual Studio Marketplace by ID.
+$script:ExtensionId = 'openlorraine.clorraine'
 
 # The registry key whose `Path` value is the user PATH; tests use a scratch key.
 $script:PathRegistryKey = 'HKCU:\Environment'
@@ -175,8 +173,9 @@ Options:
   -NoHello              do not run the hello programs
   -Starter DIR          create a starter Amiga project in DIR
   -NoStarter            do not offer a starter project
-  -VSCode               install the VS Code extension when detected
-  -NoVSCode             skip VS Code detection and install
+  -VSCode               install or update the VS Code extension from the
+                        Marketplace without asking
+  -NoVSCode             leave VS Code and its extensions unchanged
   -Uninstall            remove the active version link and the PATH entry
   -Purge                with -Uninstall, also remove versions, examples,
                         the downloaded FS-UAE, and the config
@@ -262,8 +261,10 @@ function ConvertTo-NativeArgument([string]$Value) {
 
 # Runs a program without a shell and returns its exit code and output. The
 # streams are read asynchronously so a chatty child cannot block on a full
-# pipe.
-function Invoke-Native([string]$File, [string[]]$Arguments = @(), [string]$WorkingDirectory = '', [hashtable]$Environment = @{}) {
+# pipe. With TimeoutSeconds above zero, a program still running at the bound
+# is stopped with its whole process tree and reported with TimedOut set and
+# exit code -1.
+function Invoke-Native([string]$File, [string[]]$Arguments = @(), [string]$WorkingDirectory = '', [hashtable]$Environment = @{}, [int]$TimeoutSeconds = 0) {
     $info = New-Object System.Diagnostics.ProcessStartInfo
     foreach ($name in $Environment.Keys) { $info.EnvironmentVariables[$name] = [string]$Environment[$name] }
     $info.FileName = $File
@@ -276,8 +277,14 @@ function Invoke-Native([string]$File, [string[]]$Arguments = @(), [string]$Worki
     $process = [System.Diagnostics.Process]::Start($info)
     $stdout = $process.StandardOutput.ReadToEndAsync()
     $stderr = $process.StandardError.ReadToEndAsync()
+    if ($TimeoutSeconds -gt 0 -and -not $process.WaitForExit($TimeoutSeconds * 1000)) {
+        # taskkill /T also stops the children, which may hold the output pipes.
+        & (Join-Path $env:SystemRoot 'System32\taskkill.exe') /T /F /PID $process.Id *> $null
+        $process.WaitForExit()
+        return [pscustomobject]@{ Code = -1; Out = $stdout.Result; Err = $stderr.Result; TimedOut = $true }
+    }
     $process.WaitForExit()
-    return [pscustomobject]@{ Code = $process.ExitCode; Out = $stdout.Result; Err = $stderr.Result }
+    return [pscustomobject]@{ Code = $process.ExitCode; Out = $stdout.Result; Err = $stderr.Result; TimedOut = $false }
 }
 
 # --- Paths and deletion ------------------------------------------------------
@@ -1492,13 +1499,23 @@ function Get-EditorCommand([string]$Launcher) {
 function Invoke-Editor([string]$Launcher, [string[]]$Arguments) {
     $command = Get-EditorCommand $Launcher
     if ($null -eq $command) { return $null }
-    return Invoke-Native $command.File ($command.Prefix + $Arguments) '' $command.Environment
+    return Invoke-Native $command.File ($command.Prefix + $Arguments) '' $command.Environment (Get-EditorTimeout)
 }
 
-# A working VS Code-family launcher (code.cmd, codium.cmd, code-insiders.cmd
-# on PATH or in the default per-user install), or $null.
+# Seconds an editor command may run before it is stopped. Installing the
+# extension talks to the Marketplace, and a stuck proxy must not hang the
+# installer; CLORRAINE_EDITOR_TIMEOUT overrides the bound with a positive
+# whole number of seconds.
+function Get-EditorTimeout {
+    $seconds = 0
+    if ([int]::TryParse([string]$env:CLORRAINE_EDITOR_TIMEOUT, [ref]$seconds) -and $seconds -gt 0) { return $seconds }
+    return 300
+}
+
+# A working VS Code launcher (code.cmd or code-insiders.cmd on PATH, or the
+# default per-user install), or $null.
 function Find-VSCode {
-    foreach ($name in 'code.cmd', 'codium.cmd', 'code-insiders.cmd') {
+    foreach ($name in 'code.cmd', 'code-insiders.cmd') {
         $command = Get-Command -Name $name -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
         if ($null -ne $command) { return $command.Source }
     }
@@ -1507,24 +1524,38 @@ function Find-VSCode {
     return $null
 }
 
-# Installs the pinned extension when VS Code is present and the person agrees
-# (or passed -VSCode). Returns installed, already-installed, available,
-# skipped, unavailable, or failed.
+# Installs the VS Code extension from the Marketplace when VS Code is present
+# and the person agrees (or passed -VSCode), or reinstalls it when it is
+# already there. Returns installed, updated, available, skipped,
+# unavailable, or failed; a failure never stops the install.
 function Install-VSCodeExtension([hashtable]$Options, [bool]$Interactive) {
     if ($Options['NoVSCode']) { return 'skipped' }
     $editor = Find-VSCode
     if (-not $editor) {
-        if ($Options['VSCode']) { Write-Warn "VS Code was not found; install it, then run: code --install-extension $script:VsixName" }
+        if ($Options['VSCode']) { Write-Warn "VS Code was not found; install it, then run: code --install-extension $script:ExtensionId" }
         return 'unavailable'
     }
     $listed = Invoke-Editor $editor @('--list-extensions')
     if ($null -eq $listed) {
-        Write-Warn "VS Code was found, but its launcher has an unexpected shape; run: code --install-extension $script:VsixName"
+        Write-Warn "VS Code was found, but its launcher has an unexpected shape; run: code --install-extension $script:ExtensionId"
         return 'failed'
     }
-    if (@($listed.Out -split "`r?`n" | Where-Object { $_.Trim() -ieq 'openlorraine.clorraine' }).Count -gt 0) {
-        Write-Ok 'the Clorraine extension is already installed in VS Code'
-        return 'already-installed'
+    if (@($listed.Out -split "`r?`n" | Where-Object { $_.Trim() -ieq $script:ExtensionId }).Count -gt 0) {
+        # Uninstalling first replaces an install from a release file, which VS
+        # Code pins and never updates, with a Marketplace install it keeps
+        # current; --force alone would keep the pin.
+        $removed = Invoke-Editor $editor @('--uninstall-extension', $script:ExtensionId)
+        if ($removed.Code -ne 0) {
+            Write-Warn "could not update the VS Code extension; run: code --install-extension $script:ExtensionId --force"
+            return 'failed'
+        }
+        $result = Invoke-Editor $editor @('--install-extension', $script:ExtensionId)
+        if ($result.Code -eq 0) {
+            Write-Ok 'updated the Clorraine extension from the Marketplace'
+            return 'updated'
+        }
+        Write-Warn "the Clorraine extension was removed but could not be reinstalled from the Marketplace; run: code --install-extension $script:ExtensionId"
+        return 'failed'
     }
     if (-not $Options['VSCode']) {
         if (-not $Interactive) {
@@ -1533,29 +1564,13 @@ function Install-VSCodeExtension([hashtable]$Options, [bool]$Interactive) {
         }
         if (-not (Read-YesNo '  Install the Clorraine extension in VS Code? [Y/n] ' $true)) { return 'skipped' }
     }
-    if ($script:VsixBytes -notmatch '^[0-9]+$' -or $script:VsixSha256 -notmatch '^[0-9a-fA-F]{64}$') {
-        Write-Warn 'the VS Code extension is not pinned in this installer; install it from the release'
-        return 'failed'
+    $result = Invoke-Editor $editor @('--install-extension', $script:ExtensionId)
+    if ($result.Code -eq 0) {
+        Write-Ok 'installed the Clorraine extension in VS Code'
+        return 'installed'
     }
-    $work = New-PrivateTemp 'vsix'
-    try {
-        $vsix = Join-Path $work $script:VsixName
-        try {
-            Invoke-Download $script:VsixUrl $vsix ([long]$script:VsixBytes) $script:VsixSha256 120
-        } catch {
-            Write-Warn ('could not download the VS Code extension: ' + (Get-SafeText $_.Exception.Message))
-            return 'failed'
-        }
-        $result = Invoke-Editor $editor @('--install-extension', $vsix)
-        if ($null -ne $result -and $result.Code -eq 0) {
-            Write-Ok 'installed the Clorraine extension in VS Code'
-            return 'installed'
-        }
-        Write-Warn "could not install the VS Code extension; run: code --install-extension $script:VsixName"
-        return 'failed'
-    } finally {
-        Remove-TreeSafe $work
-    }
+    Write-Warn "could not install the VS Code extension from the Marketplace; run: code --install-extension $script:ExtensionId"
+    return 'failed'
 }
 
 # The default starter folder: .\amiga-starter, or the first free
@@ -1625,9 +1640,9 @@ function Write-Summary($Summary) {
     Write-Line "  Hello      $hello"
     $editor = switch ($Summary.VSCode) {
         'installed' { 'extension installed' }
-        'already-installed' { 'extension already installed' }
-        'failed' { 'extension not installed' }
-        'available' { 'detected; rerun with -VSCode' }
+        'updated' { 'extension updated from the Marketplace' }
+        'failed' { "extension not installed; run: code --install-extension $script:ExtensionId" }
+        'available' { 'detected; rerun with -VSCode to install the extension' }
         'skipped' { 'skipped' }
         default { 'not found' }
     }
