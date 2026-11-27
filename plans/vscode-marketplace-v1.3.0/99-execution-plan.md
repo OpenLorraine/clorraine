@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-27 15:16
-> **Progress**: 11/55 tasks (20%)
+> **Last Updated**: 2026-11-27 15:21
+> **Progress**: 12/55 tasks (21%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -94,9 +94,9 @@ branch; only Phase 1 reaches `main` before the release (AR-40).
 
 ### Step 2.2: Implementation
 
-- [ ] 2.2.1 Listing files — `tools/vscode/{README.md,DEVELOPMENT.md,CHANGELOG.md,images/icon.png}` (03-01 item 6)
-- [ ] 2.2.2 Manifest, staging, and audit — `tools/vscode/{package.json,scripts/stage.mjs,scripts/audit_vsix.py}` (03-01 items 1, 7)
-- [ ] 2.2.3 Guide helpers, install-guide error at the three sites, `clorraine.driverPath`, drift notice — `tools/vscode/src/{guide.ts,extension.ts,actions.ts}` (03-01 items 2–5)
+- [x] 2.2.1 Listing files — `tools/vscode/{README.md,DEVELOPMENT.md,CHANGELOG.md,images/icon.png}` (03-01 item 6) ✅ (completed: 2026-11-27 15:21)
+- [~] 2.2.2 Manifest, staging, and audit — `tools/vscode/{package.json,scripts/stage.mjs,scripts/audit_vsix.py}` (03-01 items 1, 7) ⏳ (implemented: 2026-11-27 15:17)
+- [~] 2.2.3 Guide helpers, install-guide error at the three sites, `clorraine.driverPath`, drift notice — `tools/vscode/src/{guide.ts,extension.ts,actions.ts}` (03-01 items 2–5) ⏳ (implemented: 2026-11-27 15:18)
 - [ ] 2.2.4 Green phase: ST-11..ST-20 pass; update `manifest.test.ts` / `packaged.test.ts` only where they pin the intentionally changed manifest or file list
 
 ### Step 2.3: Impl tests and gate

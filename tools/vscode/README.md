@@ -1,173 +1,80 @@
 # Clorraine for VS Code
 
-This package adds Clorraine language support:
+Language support for [Clorraine](https://openlorraine.github.io/clorraine/), a
+systems programming language for Amiga-compatible computers:
 
-- compiler diagnostics from `clorraine-lsp`;
+- compiler diagnostics as you type, from the Clorraine language server;
 - hover, go to definition, completion, and document symbols;
-- the canonical TextMate grammar from `editors/clorraine.tmLanguage.json`;
-- Build, Run, and Run in FS-UAE commands for saved source files;
-- one `clorraine.profile` setting for language features and actions
-  (`hosted-amiga` by default).
+- syntax highlighting for `.clo` files;
+- **Build**, **Run**, and **Run in FS-UAE** for the active program, from the
+  editor title bar or the Command Palette.
 
-## Install the extension
+Linux x86_64 and Windows 11 x64; macOS is not supported yet.
 
-The extension needs compatible Clorraine tools; it does not contain a compiler
-or install a toolchain. Build the local VSIX with `make vscode-package` and
-install `build/vscode/clorraine-1.2.0.vsix`:
+## Requirements
 
-```sh
-code --install-extension build/vscode/clorraine-1.2.0.vsix
-```
+The extension needs the Clorraine command-line tools; it does not contain a
+compiler. Install them with the one-line installer:
 
-You can also use **Extensions: Install from VSIX...**. The CLI installer and
-candidate archive do not bundle or place the VSIX. Installing or updating the
-extension is an explicit action: the installer does not change VS Code or your
-shell configuration.
+- [Install on Linux](https://openlorraine.github.io/clorraine/guide/quick-start#install-on-linux)
+- [Install on Windows](https://openlorraine.github.io/clorraine/guide/quick-start#install-on-windows)
 
-Restart or reload the editor after installation. Grant workspace trust only
-for source folders you trust. In Restricted Mode, the extension does not start
-the language server, discover workspace tools, save files, or launch tasks.
+The installer also offers to install this extension and to create a starter
+project whose build task runs your program in FS-UAE (`Ctrl+Shift+B`).
+Running Amiga programs in FS-UAE needs FS-UAE and your own licensed Kickstart
+ROM; the installer explains both.
 
-### Tool discovery
+If the tools are missing, the extension says so and offers **Open install
+guide**. If the installed tools are older than the extension, it shows one
+notice per session; rerun the installer to update them.
 
-The language server is selected in this order:
-
-1. the `clorraine.lsp.path` setting;
-2. the `CLORRAINE_LSP` environment variable;
-3. `~/.local/bin/clorraine-lsp`;
-4. `target/debug/clorraine-lsp`, then `target/release/clorraine-lsp`, in trusted
-   workspace folders;
-5. executable files in absolute `PATH` directories.
-
-Driver discovery uses `clorraine.driver.path`, then
-`~/.local/bin/clorraine`, trusted workspace development builds, and `PATH`.
-The default installation therefore works when VS Code starts from a desktop
-launcher without Clorraine in its inherited `PATH`.
-
-All five path settings are machine-level settings. Set them in **User
-Settings**, not workspace or language-specific settings:
-
-| Setting | Use |
-|---|---|
-| `clorraine.lsp.path` | Language server executable; empty uses discovery above |
-| `clorraine.driver.path` | Build/run driver executable; empty uses discovery above |
-| `clorraine.toolchain.path` | Upstream Amiga toolchain root containing `bin/m68k-amigaos-gcc`; empty uses `CLORRAINE_TOOLCHAIN` or the CLI config |
-| `clorraine.fsUae.path` | Native Linux FS-UAE executable |
-| `clorraine.kickstart.path` | Locally licensed Kickstart ROM for the native emulator action |
-
-An explicit invalid executable setting is an error: it never falls back to
-another installation. Correct or clear the setting. Workspace and
-language-specific path overrides are ignored. For a custom installation root,
-set both tool paths to the corresponding executables under that root's `bin`
-directory; you need not edit `PATH`.
-
-The removed `clorraine.sdk.path` is read once when `toolchain.path` is empty.
-The action passes it to the CLI as `--toolchain` and shows a warning that the
-old SDK layout is no longer used; a second action does not warn again. Select
-the upstream root in `clorraine.toolchain.path` to clear the warning path.
-Keep paths literal, without surrounding shell quotes or `~` expansion.
-
-Development builds remain available with
-`make -C docker exec CMD="cargo build --workspace"` from the repository root.
-
-## Build and run saved sources
-
-Open a saved `.clo` entry file, then use the Command Palette:
+## Commands
 
 | Command | Result |
 |---|---|
-| **Clorraine: Build** | Compile the active entry and its saved dependencies |
-| **Clorraine: Run** | Build and run on the host, or through `vamos` for an Amiga profile (`vamos` must be on `PATH`) |
-| **Clorraine: Run in FS-UAE** | Build an Amiga program and start native Linux FS-UAE |
+| **Clorraine: Build** | Compile the active entry file and the saved files it imports |
+| **Clorraine: Run** | Build and run it: natively for `host`, or through `vamos` for an Amiga profile |
+| **Clorraine: Run in FS-UAE** | Build an Amiga program and run it in FS-UAE |
 
-Select `host`, `hosted-amiga`, or `hosted-amiga-13` using `clorraine.profile`.
-The same profile controls diagnostics and tasks. `freestanding` is the
-provisional LorraineOS target, not a native Linux run target. Run in FS-UAE
-accepts only the two Amiga profiles.
+The extension saves the active entry before building. Save any other changed
+files it imports yourself.
 
-The extension saves a dirty active entry before selecting sources. A cancelled
-or failed save stops the action. Save any dirty selected dependencies yourself
-and retry; the extension never saves unrelated documents. Switching or changing
-the entry during selection also stops the launch.
+## Settings
 
-Editing or saving a `.clo` file under the selected root while selection is
-pending also stops the action, even if that file is clean when selection ends.
-Save the sources and retry. This conservative check can include unrelated
-sources in the root; it does not freeze the filesystem against external edits.
+Path settings are machine settings: set them in **User Settings**. Leave them
+empty to use the installed tools.
 
-Source selection reads saved disk files under the entry's containing workspace
-folder, or its parent directory for a standalone file. It includes transitive
-imports, qualified user-module references and all files in selected modules.
-It excludes unrelated programs, hidden/generated directories and symlinked
-files/directories. Embedded standard-library sources stay compiler-owned.
-Live diagnostics still use unsaved editor contents; task compilation does not.
+| Setting | Use |
+|---|---|
+| `clorraine.profile` | Compiler profile for diagnostics and actions: `hosted-amiga` (default), `hosted-amiga-13`, `host`, or `freestanding` |
+| `clorraine.lsp.path` | Language server executable |
+| `clorraine.driver.path` | Clorraine driver executable |
+| `clorraine.toolchain.path` | Amiga toolchain root containing `bin/m68k-amigaos-gcc` |
+| `clorraine.fsUae.path` | FS-UAE executable for Run in FS-UAE |
+| `clorraine.kickstart.path` | Your licensed Kickstart ROM for Run in FS-UAE |
 
-The index permits at most 2,000 source files and the selected program at most
-256 files. Exact limits are allowed; overflow, unreadable sources, missing
-explicit imports and paths outside the selected root stop the action rather
-than return a partial program. Use a smaller containing source folder when the
-index limit is reached.
+An invalid path setting is reported as an error; the extension never falls
+back to a different installation.
 
-Tasks run the selected executable directly with a literal argument array,
-not through a shell. The task terminal shows output and process failures.
-VS Code still interprets task variables in process tasks. Paths containing the
-literal introducer `${` are therefore rejected in the executable, arguments
-and working directory. Rename the file/folder or change the tool path in User
-Settings and retry; adding quotes or backslashes does not escape this syntax.
-Other punctuation, spaces, Unicode and ordinary dollar signs remain literal.
-The working directory is the entry's containing root, including in a
-multi-folder workspace. The CLI still requires explicit source arguments; it
-does not discover dependencies on its own.
+## Restricted Mode
 
-### Compatible language server
+In an untrusted workspace the extension does not start the language server,
+look for tools, save files, or run tasks. Grant workspace trust only for
+source folders you trust.
 
-Actions require the server's saved-source selection capability version **1**:
-`capabilities.experimental.clorraineSourceFilesVersion`. The read-only
-`clorraine/sourceFiles` request accepts `{entryUri, rootUri}` file URIs and
-returns `{files: string[]}` with canonical absolute paths, entry first.
+## Links
 
-An older or incompatible server may provide language features but cannot
-provide these tasks. Install the matching compiler/editor distribution,
-correct `clorraine.lsp.path` or `CLORRAINE_LSP` if needed, and reload VS Code.
-The extension does not silently compile only the entry.
-
-### Native Linux FS-UAE
-
-Install FS-UAE separately and supply your own licensed media. Configure
-`clorraine.fsUae.path` and `clorraine.kickstart.path` in User Settings.
-If setting the toolchain explicitly, select the upstream root containing
-`bin/m68k-amigaos-gcc`, not an old `sdk/amiga` directory. These values are
-passed only to applicable actions.
-
-The native action uses the verified runner: it boots an A1200 with your
-licensed 512 KB Kickstart 3.1 A1200 ROM, runs the program through a compiled
-wrapper, and accepts the run only for rc 0 plus status `ok`. A failed or
-timed-out guest prints its output and retains the private run; the driver
-prints the retained path. FS-UAE 3.2.0 or newer is required. The A500 profile
-binary also runs on this recipe, but that is not a Kickstart 1.3 proof; the
-A500/KS1.3 gates remain in the Docker SDK.
-
-## Platform scope
-
-v1.2.0 supports the Linux desktop extension host only. WSL2, Remote-WSL and
-Windows extension hosts are outside this release. The extension makes no
-Windows tool-execution, path-sharing or automatic Windows emulator-launch
-claim.
-
-## Packaging
-
-From the repository root:
-
-```text
-make vscode-check
-```
-
-This builds the server in the pinned SDK container, type-checks the extension,
-runs the headless tests, packages `build/vscode/clorraine-<version>.vsix`, and
-audits the archive.
+- [Documentation](https://openlorraine.github.io/clorraine/)
+- [Known limitations](https://openlorraine.github.io/clorraine/guide/known-limitations)
+- [Report a problem](https://github.com/OpenLorraine/clorraine/issues)
+- [#clorraine on the AmigaDev Discord](https://discord.gg/7ckPjharmD)
 
 ## License
 
-Clorraine is licensed under the Apache License 2.0, with the Clorraine Output
-Exception. The packaged extension includes `LICENSE.txt`,
-`LICENSE-EXCEPTION.md`, `NOTICE`, and `TRADEMARKS.md`.
+Clorraine is licensed under the Apache License 2.0 with the Clorraine Output
+Exception; the package includes the license, the exception, the notice, and
+the trademark policy.
+
+Clorraine is an independent project. Amiga, AmigaOS, Kickstart, and Workbench
+are trademarks of Amiga Corporation. Not affiliated with or endorsed by Amiga
+Corporation or Hyperion Entertainment.
