@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-11-27 16:22
-> **Progress**: 42/55 tasks (76%)
+> **Progress**: 43/55 tasks (78%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -197,7 +197,7 @@ branch; only Phase 1 reaches `main` before the release (AR-40).
 - [x] 6.1.2 Site guide pages — `site/guide/{quick-start,known-limitations,roadmap}.md`, `site/status.md` ✅ (completed: 2026-11-27 16:20)
 - [x] 6.1.3 Site project pages and theme — `site/project/{brief,contributing}.md`, `site/.vitepress/theme/components/HomePage.vue`, `site/.vitepress/theme/Layout.vue`; sweep grep returns nothing ✅ (completed: 2026-11-27 16:20) — sweep grep empty; make site-check passed
 - [x] 6.1.4 Release text — `CHANGELOG.md`, `RELEASE-NOTES.md`, `RELEASE.md`, `tools/vscode/CHANGELOG.md` (1.3.0 entry final) ✅ (completed: 2026-11-27 16:22) — CHANGELOG 1.3.0, RELEASE-NOTES (checksums marker for 7.1.4), RELEASE.md runbook; retained-inputs guard updated (AR-49)
-- [ ] 6.1.5 Version bump to 1.3.0 — `compiler/Cargo.toml`, `Cargo.lock`, `tools/vscode/package.json`, `tools/vscode/package-lock.json`
+- [x] 6.1.5 Version bump to 1.3.0 — `compiler/Cargo.toml`, `Cargo.lock`, `tools/vscode/package.json`, `tools/vscode/package-lock.json` ✅ (completed: 2026-11-27 16:22) — Cargo.toml, Cargo.lock, package.json, package-lock.json (own entries only); guard accepts v1.3.0
 - [ ] 6.1.6 Docs/test pins that read the README or guides still pass (`docs_guide_spec_test`, `first_run_spec_test`, `windows_cli_spec_test`)
 - [ ] 6.1.7 Phase gate `make check IMAGE=clorraine-sdk:windows-cli`, `make vscode-check`, `make site-check`
 

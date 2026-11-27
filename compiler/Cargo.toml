@@ -2,7 +2,7 @@
 # server: one library with three thin command-line binaries.
 [package]
 name = "clc"
-version = "1.2.0"
+version = "1.3.0"
 edition = "2021"
 publish = false
 # The output exception is an additional permission; see LICENSE-EXCEPTION.md.
