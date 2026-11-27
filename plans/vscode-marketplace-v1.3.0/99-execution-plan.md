@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-27 14:54
-> **Progress**: 1/55 tasks (1%)
+> **Last Updated**: 2026-11-27 14:55
+> **Progress**: 2/55 tasks (3%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -62,7 +62,7 @@ branch; only Phase 1 reaches `main` before the release (AR-40).
 **Reference**: 03-02 · AR-5, AR-12, AR-13, AR-29, AR-30, AR-40..AR-42
 
 - [x] 1.1.1 Confirm worktree `../clorraine-release` on `release-1.3.0` (created with the plan commit) is up to date with `origin/main`; install `tools/vscode` dependencies ✅ (completed: 2026-11-27 14:54) — worktree at origin/main + plan commit; npm ci done
-- [ ] 1.1.2 [spec-author] Write spec tests from ST-1..ST-10 — `tools/vscode/test/publish-workflow.spec.test.ts`, `tools/vscode/test/release-version.spec.test.ts`
+- [x] 1.1.2 [spec-author] Write spec tests from ST-1..ST-10 — `tools/vscode/test/publish-workflow.spec.test.ts`, `tools/vscode/test/release-version.spec.test.ts` ✅ (completed: 2026-11-27 14:55)
 - [ ] 1.1.3 Red phase: run the two spec files; they fail (no workflow, no script)
 
 ### Step 1.2: Implementation
@@ -192,13 +192,13 @@ branch; only Phase 1 reaches `main` before the release (AR-40).
 
 **Reference**: 03-05 §Docs sweep, §Release text, §Version bump · AR-34, AR-36, AR-37, AR-26
 
-- [ ] 6.1 Repository docs — `README.md`, `docs/{README,linux-cli,windows-cli,known-limitations}.md`, `AGENTS.md`, `plans/windows-cli/08-merge-notes.md` (03-05 §Docs sweep)
-- [ ] 6.2 Site guide pages — `site/guide/{quick-start,known-limitations,roadmap}.md`, `site/status.md`
-- [ ] 6.3 Site project pages and theme — `site/project/{brief,contributing}.md`, `site/.vitepress/theme/components/HomePage.vue`, `site/.vitepress/theme/Layout.vue`; sweep grep returns nothing
-- [ ] 6.4 Release text — `CHANGELOG.md`, `RELEASE-NOTES.md`, `RELEASE.md`, `tools/vscode/CHANGELOG.md` (1.3.0 entry final)
-- [ ] 6.5 Version bump to 1.3.0 — `compiler/Cargo.toml`, `Cargo.lock`, `tools/vscode/package.json`, `tools/vscode/package-lock.json`
-- [ ] 6.6 Docs/test pins that read the README or guides still pass (`docs_guide_spec_test`, `first_run_spec_test`, `windows_cli_spec_test`)
-- [ ] 6.7 Phase gate `make check IMAGE=clorraine-sdk:windows-cli`, `make vscode-check`, `make site-check`
+- [ ] 6.1.1 Repository docs — `README.md`, `docs/{README,linux-cli,windows-cli,known-limitations}.md`, `AGENTS.md`, `plans/windows-cli/08-merge-notes.md` (03-05 §Docs sweep)
+- [ ] 6.1.2 Site guide pages — `site/guide/{quick-start,known-limitations,roadmap}.md`, `site/status.md`
+- [ ] 6.1.3 Site project pages and theme — `site/project/{brief,contributing}.md`, `site/.vitepress/theme/components/HomePage.vue`, `site/.vitepress/theme/Layout.vue`; sweep grep returns nothing
+- [ ] 6.1.4 Release text — `CHANGELOG.md`, `RELEASE-NOTES.md`, `RELEASE.md`, `tools/vscode/CHANGELOG.md` (1.3.0 entry final)
+- [ ] 6.1.5 Version bump to 1.3.0 — `compiler/Cargo.toml`, `Cargo.lock`, `tools/vscode/package.json`, `tools/vscode/package-lock.json`
+- [ ] 6.1.6 Docs/test pins that read the README or guides still pass (`docs_guide_spec_test`, `first_run_spec_test`, `windows_cli_spec_test`)
+- [ ] 6.1.7 Phase gate `make check IMAGE=clorraine-sdk:windows-cli`, `make vscode-check`, `make site-check`
 
 **Verify (gate)**: `make check && make vscode-check && make site-check`
 
@@ -210,16 +210,16 @@ branch; only Phase 1 reaches `main` before the release (AR-40).
 
 **Reference**: 03-05 §Release procedure · AR-10, AR-17, AR-19, AR-20, AR-28, AR-31, AR-39, AR-40
 
-- [ ] 7.1 Confirm the user holds other pushes to `main`; rebase `release-1.3.0` onto `origin/main`; `make verify` with the Windows-capable image on the private Xvfb display
-- [ ] 7.2 **approval** Push tag `v1.3.0`; dispatch `publish-vscode` from the tag with `dry_run=true` and check the summary
-- [ ] 7.3 **approval** Dispatch from the tag with `dry_run=false`; record run ID and SHA-256; confirm the gallery lists 1.3.0
-- [ ] 7.4 `make dist` and `make dist-verify`; record the four asset hashes in `RELEASE-NOTES.md` (checksums section)
-- [ ] 7.5 Linux acceptance with `PUBLISH_RUN`/`PUBLISH_SHA256`; user confirms the editor; rerun with `EDITOR_CONFIRMED=1`; `make acceptance-check`
-- [ ] 7.6 **approval** Windows acceptance: create the standard test account over `ssh winbox`, push the candidate, run `acceptance.ps1` in the desktop session, user confirms UAC and the editor, `make acceptance-check`, remove the account and files
-- [ ] 7.7 **approval** `gh release create v1.3.0 --prerelease` with the four assets, `SHA256SUMS`, and `RELEASE-NOTES.md` as the body
-- [ ] 7.8 **approval** Push the release commit to `main` (fast-forward); delete `origin/release-1.3.0`; confirm the site shows v1.3.0; fresh installs from the published release on Linux and Windows
-- [ ] 7.9 **approval** Close #38, #57, #59, #60, #65 with notes; open the Open VSX follow-up issue (AR-39)
-- [ ] 7.10 Draft the AmigaDev announcement for the user; update roadmap row T-05 and this plan; remove the worktree
+- [ ] 7.1.1 Confirm the user holds other pushes to `main`; rebase `release-1.3.0` onto `origin/main`; `make verify` with the Windows-capable image on the private Xvfb display
+- [ ] 7.1.2 **approval** Push tag `v1.3.0`; dispatch `publish-vscode` from the tag with `dry_run=true` and check the summary
+- [ ] 7.1.3 **approval** Dispatch from the tag with `dry_run=false`; record run ID and SHA-256; confirm the gallery lists 1.3.0
+- [ ] 7.1.4 `make dist` and `make dist-verify`; record the four asset hashes in `RELEASE-NOTES.md` (checksums section)
+- [ ] 7.1.5 Linux acceptance with `PUBLISH_RUN`/`PUBLISH_SHA256`; user confirms the editor; rerun with `EDITOR_CONFIRMED=1`; `make acceptance-check`
+- [ ] 7.1.6 **approval** Windows acceptance: create the standard test account over `ssh winbox`, push the candidate, run `acceptance.ps1` in the desktop session, user confirms UAC and the editor, `make acceptance-check`, remove the account and files
+- [ ] 7.1.7 **approval** `gh release create v1.3.0 --prerelease` with the four assets, `SHA256SUMS`, and `RELEASE-NOTES.md` as the body
+- [ ] 7.1.8 **approval** Push the release commit to `main` (fast-forward); delete `origin/release-1.3.0`; confirm the site shows v1.3.0; fresh installs from the published release on Linux and Windows
+- [ ] 7.1.9 **approval** Close #38, #57, #59, #60, #65 with notes; open the Open VSX follow-up issue (AR-39)
+- [ ] 7.1.10 Draft the AmigaDev announcement for the user; update roadmap row T-05 and this plan; remove the worktree
 
 **Verify (gate)**: `make verify`; both acceptance records pass `make acceptance-check`
 
