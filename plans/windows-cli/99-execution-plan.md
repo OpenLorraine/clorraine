@@ -2,7 +2,7 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-27 02:31
+> **Last Updated**: 2026-11-27 02:50
 > **Progress**: 49/75 tasks (65%)
 > **CodeOps Artifact Schema**: 1
 
@@ -329,12 +329,12 @@ on Linux in this worktree; Windows runs go through the remote helper (AR-5, AR-2
 
 - [x] 9.2.1 Remove `Clorraine Test` and `%USERPROFILE%\clorraine-spike` on the Windows host (AR-49, AR-50) ✅ (2026-11-27 02:31; `Clorraine Test` and its profile deleted; acceptance rc24 uninstalled (user: remove it); `C:\ProgramData\Clorraine`, `C:\ClorraineAcceptance`, `clorraine-spike`, and the helper's `clorraine-remote` removed; the licensed ROM and rom.key kept in `%USERPROFILE%\amiga\roms`)
 - [x] 9.2.2 Draft the Clang follow-up issue text and the merge notes (image rebuild, `AGENTS.md` and roadmap edits per AR-37); file or open nothing without the user's approval; the release notes replace `vX.Y.Z` in the Windows install commands with the release tag (AR-63) ✅ (2026-11-27 00:05; [08-merge-notes.md](08-merge-notes.md): image rebuild, AGENTS.md and roadmap edits, release edits, the gate note, and the Clang issue draft; nothing filed)
-- [ ] 9.2.3 Rebase on `main`, rerun `make check IMAGE=clorraine-sdk:windows-cli`, and push the branch with the git-commit skill in push mode
+- [x] 9.2.3 Rebase on `main`, rerun `make check IMAGE=clorraine-sdk:windows-cli`, and push the branch with the git-commit skill in push mode ✅ (2026-11-27 02:50; rebased onto origin/main 9cef1491 (one conflict: docs/known-limitations.md, Windows becomes section 17); `make verify` on the rebased branch: `verify: all legs passed`, 173 suite results, 0 failed, the new fault-cleanup gate included; FS-UAE captures on a private Xvfb display)
 - [x] 9.2.4 Ask the user to approve opening the pull request ✅ (2026-11-27 02:31; approved by the user; opened after the rebased `make verify`)
 
 **Deliverables**:
 - [x] A validated Windows acceptance record and a passing `make verify`
-- [ ] The branch ready for review; nothing published
+- [x] The branch ready for review; nothing published
 
 **Verify (gate)**: `make verify`; `make acceptance-check EVIDENCE=… CANDIDATE=…`
 
