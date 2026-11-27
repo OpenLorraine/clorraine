@@ -17,7 +17,7 @@ baseline `e24a8752` had the same defects at the lines its findings cite.
   `cl_open_workbench_window` (`:1949-1950`).
 - **Exit registry.** Every owned handle has a record; the exit hook releases them newest first
   (`:6950-7019`). `cl_own_ports_hold` (`:3409-3420`) walks the registry by release function.
-  Layers (`:6758,6781`), regions (`optional.c:992`), guides (`optional_net.c:215`), guide
+  Layers (`:6781`, the only layer constructor), regions (`optional.c:992`), guides (`optional_net.c:215`), guide
   messages (`optional_net.c:276`), and clipboards (`optional_services.c:742`) are registered.
 - **Screen text.** `cl_text_draw` (`:6695-6713`) sets the font and pen on `&screen->RastPort`,
   then `Move`/`Text`, and restores the font. Screens come only from a tagless `OpenScreen`
@@ -25,7 +25,8 @@ baseline `e24a8752` had the same defects at the lines its findings cite.
   `SetSoftStyle`.
 - **Layers and regions.** `cl_layer` (`:6562-6570`) holds the `Layer`, its own `Layer_Info`, sizes,
   and its record. `cl_layer_free` (`:6789-6813`) calls `DeleteLayer`, then `DisposeLayerInfo`.
-  `cl_layer_begin_update`/`end_update` (`:6911-6929`) keep no state. Regions (hosted-amiga only):
+  `cl_layer_begin_update`/`end_update` (`:6911-6929`) keep no state; `end_update` always calls
+  `EndUpdate(layer, TRUE)`, which unlocks the layer (layers.doc). Regions (hosted-amiga only):
   `cl_free_region` (`optional.c:999-1011`) disposes; `cl_layer_set_clip`/`clear_clip`
   (`:1093-1113`) install the region or NULL and ignore the result.
 - **AmigaGuide.** `cl_guide` and `cl_guide_message` (`optional_net.c:153-164`); `cl_guide_close`
@@ -45,6 +46,7 @@ baseline `e24a8752` had the same defects at the lines its findings cite.
 | `compiler/runtime/shim_hosted_amiga_optional_services.c` | clipboard | finish the read |
 | `stdlib/std.amiga.{text,intuition,workbench,regions,amigaguide,clipboard}.clo` | doc comments | AR-16 |
 | `docker/scripts/a1200-addons-smoke.sh` | A1200/KS3.1 gate | six probes, end marker, settle |
+| `docker/scripts/a600-addons-smoke.sh` | A600/KS2.05 gate | the IFF clipboard probe after the existing legs |
 | `docker/scripts/a500-fault-cleanup-smoke.sh` | A500/KS1.3 gate | text-clip probe, capture compare |
 | `docs/known-limitations.md` | limits | §4, §5, colour-font clip limit |
 
@@ -94,6 +96,7 @@ probe showed no failure (memory not reused); the guide half was not attempted.
 | Risk | Likelihood | Impact | Mitigation |
 | ---- | ---------- | ------ | ---------- |
 | The NULL skip read does not end the read on the 3.1 device | Low | High | ST-5/ST-6 red/green; AR-10 reopen trigger |
+| The 2.04 device mishandles a NULL-data read | Low | High | ST-5 also runs on the A600/KS2.05 gate (AR-13) |
 | The clipped text differs from the unclipped rendering | Med | Med | ST-10 capture comparison; AR-4 reopen trigger |
 | The superset box misses ink pixels | Low | High | union of every field reading (AR-5); impl test of the box rules |
 | A new A1200 probe hangs and hides later probes | Med (red phase) | Low | probes run after the existing legs, each writes its own file (AR-13, AR-14) |

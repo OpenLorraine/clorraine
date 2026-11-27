@@ -5,9 +5,11 @@
 
 ## Overview
 
-Target evidence runs on three legs, with no new gate script (AR-13):
+Target evidence runs on four legs, with no new gate script (AR-13):
 - `vamos`, both hosted profiles, with Intuition switched off — the no-Intuition path;
 - `sdk-a1200-addons` (A1200/KS3.1, Workbench 3.1 `Libs`/`Devs`/`Fonts`) — the hosted-amiga probes;
+- `sdk-a600-addons` (A600/KS2.05, Workbench 2.04 `Devs`) — the IFF clipboard probe on the 2.0
+  device;
 - `sdk-a500-fault-cleanup` (A500/KS1.3, Workbench 1.3.5 HDF, DF1 capture ADF) — the 1.3 text clip.
 
 ## Probes
@@ -20,7 +22,7 @@ and inputs are owned by [07](07-testing-strategy.md).
 | `alert-first.clo` | vamos, both profiles | `showAlert` with no screen | ST-1 |
 | `pubscreen-first.clo` | vamos (hosted-amiga) | `savePublicScreen` with no screen | ST-2 |
 | `pubscreen-wb.clo` | A1200 | `savePublicScreen` first, unknown name then `Workbench` | ST-4 |
-| `clip-iff.clo` | A1200 | IFF clip write, short-buffer read, write, long-buffer read | ST-5 |
+| `clip-iff.clo` | A1200, A600 | IFF clip writes with a write after each of three reads: part of the clip, exactly the clip, a larger buffer | ST-5 |
 | `clip-raw.clo` | A1200 | the verifier's raw write/read/write/read trace | ST-6 |
 | `region-free.clo` | A1200 | region freed while installed; layer freed with a clip | ST-7 |
 | `guide-late.clo` | A1200 | getter and reply after `closeAmigaGuide` | ST-8 |
@@ -50,22 +52,47 @@ It skips without the SDK toolchain, like the R1 suite.
   fails with its name.
 - **Assigns:** the existing `wb_assigns` (`CLIPS:` → `CNEXT:clips`) serves the clipboard probes.
 
+## A600 leg: `sdk-a600-addons`
+
+- **Build:** the `sdk-a600-addons` recipe also builds `clip-iff.clo` with
+  `clorraine build --release --profile hosted-amiga`.
+- **Install and run:** the script copies it to `CNEXT:` and appends one startup-sequence line after
+  the existing legs, `CNEXT:clip-iff >CNEXT:clipiff.txt`. The existing `wb_assigns` provide `CLIPS:`
+  and the Workbench 2.04 `Devs` provide `clipboard.device`.
+- **Completion and check:** after the existing `asl-done.txt` wait, the gate waits for
+  `clipiff.txt` (bounded at 60 s), then for the HD tree to stay unchanged for 3 s (bounded at
+  30 s), the AR-14 settle rule. `clipiff.txt` must hold the ST-5 line; a missing file fails with its
+  name. The existing checks are unchanged.
+- This leg guards the NULL-data reads on the 2.0 device; its red phase is recorded but not required
+  (AR-13).
+
 ## A500 leg: `sdk-a500-fault-cleanup`
 
 - `text-clip` is added as the last case, built for `hosted-amiga-13` with the other probes, with the
-  `chip` column set (the temporary raster must be freed).
+  `chip` column set (the temporary raster must be freed). The case list builds every probe from
+  `examples/robustness/fault-cleanup/`; the entry for `text-clip` names its source
+  `examples/robustness/crash-safety/text-clip.clo`, and only the build and install steps read that
+  path.
 - The probe writes its capture with `saveScreen` to `DF1:text.cscr`. After the run the gate unpacks
-  it with the existing `xdftool` step, converts it with `docker/scripts/cscr2png.py` (no scale),
-  and, for each clipped instance listed in [07 §ST-10](07-testing-strategy.md#a500-leg--sdk-a500-fault-cleanup),
+  it with the existing `xdftool` step, converts it with `docker/scripts/cscr2png.py` (no scale) on
+  the host, and, for each clipped instance listed in [07 §ST-10](07-testing-strategy.md#a500-leg--sdk-a500-fault-cleanup),
   compares the window around it with the reference window shifted by the instance's offset, using
-  ImageMagick `convert -crop` and `compare -metric AE`; every metric must be 0, and the reference
-  window must hold at least one pixel in the text pen. `convert`/`compare` join the gate's host-tool
-  check.
+  ImageMagick `convert -crop` and `compare -metric AE`; every metric must be 0. The reference window
+  must hold at least two colours (text and background), a check that does not depend on how the
+  capture decodes the palette. `python3`, `convert`, and `compare` join the gate's host-tool check.
+- **Title bar:** I3 and I5 sit in the screen's title-bar rows. `clear` paints over the bar, and the
+  probe opens no window and makes no other Intuition call, so Intuition has no reason to redraw it.
+  If it does, the comparison fails visibly and names the instance.
+- **`chip` column:** this is the first `chip`-checked case that opens an Intuition screen and writes
+  a DF1 file. If the green run shows a `chip` or `mem` difference, rerun a local, uncommitted
+  contrast of the probe without the clipped and off-screen calls. If the contrast also differs, the
+  difference comes from Intuition or DOS: set the column to `-` for `text-clip` and record why in
+  the execution plan. Otherwise the temporary raster leaks, which is a defect to fix.
 
 ## Make wiring
 
-No new target. `sdk-a1200-addons` and `sdk-a500-fault-cleanup` are already in `make verify`; their
-`AGENTS.md` and Makefile descriptions gain the new probes (AR-13).
+No new target. `sdk-a1200-addons`, `sdk-a600-addons`, and `sdk-a500-fault-cleanup` are already in
+`make verify`; their `AGENTS.md` and Makefile descriptions gain the new probes (AR-13).
 
 ## Docs
 
@@ -77,8 +104,8 @@ No new target. `sdk-a1200-addons` and `sdk-a500-fault-cleanup` are already in `m
 | `stdlib/std.amiga.regions.clo` | freeing an installed region unclips its layers first; freeing a layer unclips it first | AR-16 |
 | `stdlib/std.amiga.amigaguide.clo` | closing replies held messages; their getters then read 0 and their reply frees only the handle | AR-16 |
 | `stdlib/std.amiga.clipboard.clo` (`clipboardRead`) | the read is finished, so later writes are not held off | AR-16 |
-| `docs/known-limitations.md` | §4 Clipboard runtime proof becomes write/read/write/read on A1200/KS3.1; §5 clipboard bullet updated; a colour-font clip limit line | AR-16 |
-| `AGENTS.md` | the two gate rows name the new probes | AR-13 |
+| `docs/known-limitations.md` | §4 Clipboard runtime proof becomes IFF write/read pairs on A1200/KS3.1 and A600/KS2.05; §5 clipboard bullet updated; a colour-font clip limit line | AR-16 |
+| `AGENTS.md` | the three gate rows name the new probes | AR-13 |
 
 No `spec/` file changes (AR-12).
 

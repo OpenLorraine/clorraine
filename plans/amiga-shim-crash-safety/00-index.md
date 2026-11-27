@@ -1,7 +1,7 @@
 # Amiga Shim Crash-Safety Implementation Plan
 
 > **Feature**: Fix the hosted-amiga shim paths that crash or hang a real Amiga: Intuition opened on demand, screen text clipped, the clipboard read finished, borrowed clip regions and guide messages tracked
-> **Status**: Planning Complete
+> **Status**: Plan Preflighted (2026-11-27; [preflight report](00-preflight-report.md))
 > **Created**: 2026-11-27
 > **Implements**: none (standalone plan; no RD) — closes DEF-585, DEF-587, DEF-588, DEF-593 and theme issue #44 (findings #57, #59, #60, #65)
 > **CodeOps Artifact Schema**: 1
@@ -19,12 +19,13 @@ The plan fixes each in the shim with no change to the stdlib signatures or the f
 (AR-12): the two Intuition entries open the base on demand (AR-2); `drawText` keeps its current
 path for text that fits and clips at the pixel edge otherwise (AR-3..AR-5); the clipboard read
 ends with the device's documented read-past-the-end (AR-10, AR-11); freeing a region uninstalls it
-from its layers, freeing a layer uninstalls its region, and closing a guide replies the messages
-the program still holds (AR-6..AR-9). It builds on the exit registry from
-`amiga-fault-exit-cleanup`.
+from its layers, freeing a layer ends an open update and uninstalls its region, and closing a
+guide replies the messages the program still holds (AR-6..AR-9). It builds on the exit registry
+from `amiga-fault-exit-cleanup`.
 
-Evidence runs on three legs: `vamos` with Intuition switched off, the A1200/KS3.1 add-ons gate,
-and the A500/KS1.3 fault-cleanup gate (AR-13).
+Evidence runs on four legs: `vamos` with Intuition switched off, the A1200/KS3.1 add-ons gate,
+one clipboard probe in the A600/KS2.05 add-ons gate, and the A500/KS1.3 fault-cleanup gate
+(AR-13).
 
 ## Minimum-Sufficient Baseline
 
@@ -32,8 +33,8 @@ and the A500/KS1.3 fault-cleanup gate (AR-13).
 clip screen text, finish the clipboard read protocol, track borrowed clip regions and guide
 messages (issue #44).
 **Smallest viable design:** Local fixes inside the existing shim functions, reusing `cl_lib_open`,
-the exit registry and its walk-by-release-function precedent, and the two existing FS-UAE gates
-for target evidence.
+the exit registry and its walk-by-release-function precedent, and the existing FS-UAE gates
+for target evidence (two extended, plus one probe line in `sdk-a600-addons`).
 **Excluded machinery:** new gate scripts; a test-only C fixture that inspects layer state; a
 per-region layer list; a full-depth copy-back renderer (AR-4, AR-7, AR-13).
 **Approved complexity:** None.
@@ -88,6 +89,7 @@ closeAmigaGuide(guide);      // held messages are replied; their getters now rea
 | Intuition base | opened on demand through `cl_lib_open` (AR-2) |
 | `drawText` off the screen | pixel-edge clip; fits → unchanged path; fully outside → nothing (AR-3..AR-5) |
 | Region freed while installed | uninstalled from every layer, then disposed (AR-6, AR-7) |
+| Open update | ended only when its layer is freed (AR-8) |
 | Guide closed with held messages | replied at close; handles orphaned (AR-9) |
 | Clipboard read | skip read plus one read past the end (AR-10) |
 | Spec | unchanged (AR-12) |
@@ -98,7 +100,7 @@ closeAmigaGuide(guide);      // held messages are replied; their getters now rea
 use the correctness reviewer plus the existing `amiga-platform-reviewer` (required for every
 `std.amiga.*`, hosted-amiga shim, and FS-UAE gate diff, AGENTS.md §CodeOps).
 
-_Detection evidence: the change surface is hosted-amiga shims, `std.amiga.*` doc comments, two
+_Detection evidence: the change surface is hosted-amiga shims, `std.amiga.*` doc comments, three
 FS-UAE gate scripts, and Rust spec/impl tests; `amiga-platform-reviewer` covers the Kickstart
 1.3–3.1 availability matrix and gate mechanics; no ownership, IR, codegen, or language-rule
 change, so the memory-safety, emission-integrity, and semantics specialists are not triggered._
@@ -113,7 +115,8 @@ change, so the memory-safety, emission-integrity, and semantics specialists are 
   - `compiler/runtime/shim_hosted_amiga_optional_net.c` (AmigaGuide)
   - `compiler/runtime/shim_hosted_amiga_optional_services.c` (clipboard read)
   - `stdlib/std.amiga.{text,intuition,workbench,regions,amigaguide,clipboard}.clo` (doc comments)
-  - `docker/scripts/a1200-addons-smoke.sh`, `docker/scripts/a500-fault-cleanup-smoke.sh`, `Makefile`
+  - `docker/scripts/a1200-addons-smoke.sh`, `docker/scripts/a600-addons-smoke.sh`,
+    `docker/scripts/a500-fault-cleanup-smoke.sh`, `Makefile`
   - `docs/known-limitations.md`, pins in `compiler/tests/amiga_*_impl_test.rs` only where shim text intentionally changes
 - Created:
   - `compiler/tests/amiga_crash_safety_{spec,impl}_test.rs`

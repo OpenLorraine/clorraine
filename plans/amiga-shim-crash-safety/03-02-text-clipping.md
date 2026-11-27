@@ -18,37 +18,42 @@ else draws nothing (AR-3).
 
 ### Proposed Changes
 
-`cl_text_draw` keeps its null checks and font save/restore and gains a classification step:
+`cl_text_draw` keeps its null checks and font save/restore. It runs `SetFont` and `SetAPen` first,
+as today, and then a classification step. The order matters: V36+ `SetFont` may rewrite a legacy
+font's spacing arrays (graphics.doc SetFont NOTES), so the box is read from the font after
+`SetFont`. `SetFont` also clears any soft style (SetFont FUNCTION), so `AlgoStyle` is 0 and the
+box has no bold or italic terms (AR-5, PF-004).
 
-1. **Range** (AR-5): `x` or `y` outside -32768..32767, or `count` above 32767 → draw nothing.
+1. **Range** (AR-5): `x` or `y` outside -32768..32767, or `count` above 32767 → draw nothing. An
+   empty text (`count` 0) draws nothing.
 2. **Visible rectangle** (AR-5): `0..W-1` by `0..H-1`, with `W = min(screen->Width,
    BitMap->BytesPerRow * 8)` and `H = min(screen->Height, BitMap->Rows)` of the `RastPort`'s bitmap.
-3. **Superset box** (AR-5): walk the characters from the pen position `x`, computing for each a
-   box that contains every pixel `Text()` can touch for it:
-   - glyph index: `c - tf_LoChar` for `tf_LoChar <= c <= tf_HiChar`, else the default glyph
+3. **Superset box** (AR-5): walk the characters from the pen position `p = x`. For each, compute
+   a box that contains every pixel `Text()` can touch for it:
+   - glyph index `i`: `c - tf_LoChar` for `tf_LoChar <= c <= tf_HiChar`, else the default glyph
      `tf_HiChar - tf_LoChar + 1`;
-   - left edge: the smaller of the pen position and the pen position plus `tf_CharKern[i]` when
-     `tf_CharKern` is non-NULL;
-   - right edge: the larger of (left + `tf_CharLoc[i]` bit width), (pen + `tf_CharSpace[i]` when
-     non-NULL), and (pen + `tf_XSize`); algorithmic bold (`rp->AlgoStyle & FSF_BOLD`) adds
-     `tf_BoldSmear`, italic (`FSF_ITALIC`) adds `tf_YSize`;
-   - advance: `tf_CharSpace[i]` (or `tf_XSize`) plus `tf_CharKern[i]` when present, plus
-     `rp->TxSpacing`; an `FPF_REVPATH` font advances leftwards.
-   - vertical: `y - tf_Baseline` to `y - tf_Baseline + tf_YSize - 1`.
+   - `k` = `tf_CharKern[i]` (0 when `tf_CharKern` is NULL); `s` = `tf_CharSpace[i]` (`tf_XSize`
+     when `tf_CharSpace` is NULL); `w` = the `tf_CharLoc[i]` bit width; advance
+     `a = k + s + rp->TxSpacing`, signed `d = a`, or `d = -a` for an `FPF_REVPATH` font, which
+     advances leftwards;
+   - columns: from `min(p, p + k, p + d)` to `max(p + k + w, p + d, p + tf_XSize) - 1`. The glyph
+     image is drawn at `p + k`; the JAM2 background runs to the next pen position `p + d`;
+   - the next pen position is `p + d`;
+   - rows: `y - tf_Baseline` to `y - tf_Baseline + tf_YSize - 1`.
    All arithmetic is `LONG`. The string's box is the union.
-4. **Classify:** fully inside → today's path, unchanged. Fully outside → nothing.
+4. **Classify:** fully inside → today's `Move`/`Text`, unchanged. Fully outside → nothing.
    Colour font (`tf_Style & FSF_COLORFONT`) and not fully inside → nothing (AR-5).
 5. **Clip path** (AR-4), for a partly visible plain font:
    - cull to the run of characters whose boxes meet `0..W-1` horizontally; its box `R` is the
      union of their boxes; a run wider than `W + 512`, or wider than 1008 px when
      `GfxBase->LibNode.lib_Version < 36`, draws nothing;
    - allocate a two-plane `BitMap` of `R`'s size (`AllocMem(MEMF_CHIP | MEMF_CLEAR)` for each plane,
-     `InitBitMap`) and a temporary `RastPort` (`InitRastPort`) on it; copy the screen `RastPort`'s
-     font, `DrawMode`, `AlgoStyle`, and `TxSpacing`; set APen 3, BPen 2;
+     `InitBitMap`) and a temporary `RastPort` (`InitRastPort`) on it; `SetFont` it to the same font
+     and copy the screen `RastPort`'s `DrawMode` and `TxSpacing`; set APen 3, BPen 2;
    - `Move` to the run's first pen position relative to `R`, `Text()` the run;
    - visible sub-rectangle `V = R ∩ visible`; with `S` = the screen `RastPort`:
      - mode without `COMPLEMENT`: `BltTemplate(plane 1, V)` onto `S` in JAM1 with `S`'s BPen, then
-       `BltTemplate(plane 0, V)` in JAM1 with `S`'s APen;
+       `BltTemplate(plane 0, V)` in JAM1 with `S`'s APen (the call's `pen`);
      - mode with `COMPLEMENT`: `BltTemplate(plane 0, V)` in `COMPLEMENT`;
      the `S` pens and mode are restored afterwards;
    - `WaitBlit()`, then free the planes. Any allocation failure draws nothing.
@@ -76,6 +81,7 @@ for the visible part (AR-4).
 | Error Case | Handling Strategy | AR Ref |
 | ---------- | ----------------- | ------ |
 | Coordinates or count out of range | draw nothing | AR-5 |
+| Empty text | draw nothing | AR-5 |
 | Box fully outside | draw nothing | AR-3 |
 | Partly visible colour font | draw nothing | AR-5 |
 | Run too wide for the raster rule | draw nothing | AR-5 |
@@ -84,5 +90,7 @@ for the visible part (AR-4).
 ## Testing Requirements
 
 - Spec: ST-9 (A1200, the verifier's hang), ST-10 (A500 capture comparison and `chip` equality).
-- Impl: the classification order; the default-glyph rule; `LONG` arithmetic; `WaitBlit` before the
-  frees; the colour-font rule; that the fully inside path is the old call sequence.
+- Impl: `SetFont` before the box walk; the classification order; the default-glyph rule; the
+  box edges (`p + k + w` and `p + d` on the right, `min(p, p + k, p + d)` on the left); `LONG`
+  arithmetic; `WaitBlit` before the frees; the colour-font rule; that the fully inside path is the
+  old call sequence.

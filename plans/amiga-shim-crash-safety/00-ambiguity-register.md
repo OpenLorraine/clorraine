@@ -1,7 +1,7 @@
 ## Ambiguity Register: amiga-shim-crash-safety
 
 > **Status**: ✅ GATE PASSED — all 16 items resolved (AR-1 by the user's invocation; AR-2..AR-16 delegated by `--auto-design`, provenance below; no reserved or complexity row)
-> **Last Updated**: 2026-11-27 03:20
+> **Last Updated**: 2026-11-27 08:36 (preflight refinements of AR-5, AR-8, AR-10, AR-13, AR-16; see §Preflight refinements)
 
 Planning target: theme issue #44 (remediation roadmap R5) — findings ASM-WS5-002 (#59, DEF-587),
 ASM-WS5-004 (#57, DEF-585), ASM-WS5-016 (#60, DEF-588), ASM-WS5-006 (#65, DEF-593).
@@ -21,15 +21,15 @@ sequencing. Reserved: product scope, public API changes, spec changes, complexit
 | 2 | Technical | How `showAlert` and `savePublicScreen` get an Intuition base | open on demand through `cl_lib_open` / open at startup / a new helper | AI — delegated: open on demand through the existing `cl_lib_open` in the two entries | ✅ Resolved |
 | 3 | Behavioral | What `drawText` does with a text box partly or fully outside the screen | draw nothing unless fully inside / drop whole glyphs / clip at the pixel edge | AI — delegated: clip at the pixel edge; fully outside draws nothing | ✅ Resolved |
 | 4 | Technical | How the pixel-edge clip is drawn on Kickstart 1.3 | one-plane mask + `BltTemplate` / two-plane render + two `BltTemplate`s / copy-back bitmap / temporary layer | AI — delegated: two-plane render of the culled run, then `BltTemplate`s | ✅ Resolved |
-| 5 | Edge cases | `drawText` limits: the box rule, coordinate range, count range, screen bounds, colour fonts, styles | exact metrics / conservative superset; per limit below | AI — delegated: conservative superset box and the limit set in the notes | ✅ Resolved |
+| 5 | Edge cases | `drawText` limits: the box rule, coordinate range, count range, screen bounds, colour fonts, styles | exact metrics / conservative superset; per limit below | AI — delegated: conservative superset box and the limit set in the notes (box rule refined by preflight PF-004) | ✅ Resolved |
 | 6 | Behavioral | `freeRegion` on an installed region; freeing a layer with an installed region | uninstall then dispose / defer the dispose / copy the region | AI — delegated: uninstall from every layer, then dispose; a layer installs NULL before `DeleteLayer` | ✅ Resolved |
 | 7 | Technical | How the region code finds the layers that hold it | per-region list + function pointer / walk the registry and read `Layer.ClipRegion` | AI — delegated: walk the registry for layer records and compare `ClipRegion` | ✅ Resolved |
-| 8 | Edge cases | Uninstall or delete while a layer is between `layerBeginUpdate` and `layerEndUpdate` | end the update first / accept the layers BUGS case | AI — delegated: the layer records an open update; uninstall and delete end it first | ✅ Resolved |
+| 8 | Edge cases | Uninstall or delete while a layer is between `layerBeginUpdate` and `layerEndUpdate` | end the update first / accept the layers BUGS case | AI — delegated: the layer records an open update; only freeing the layer ends it first; a region's uninstall and set/clear clip leave it open (refined by preflight PF-003) | ✅ Resolved |
 | 9 | Behavioral | `closeAmigaGuide` with messages the program still holds | reply at close and orphan the handles / keep the context open / reply on receipt | AI — delegated: reply each held message, then close; orphans read 0 and their reply only frees the handle | ✅ Resolved |
 | 10 | Technical | How `clipboardRead` finishes the read | read on until 0 (RKM loop) / skip read with `io_Data` NULL then one past-the-end read | AI — delegated: the autodoc's skip read, then exactly one read issued past the end | ✅ Resolved |
 | 11 | Behavioral | `clipboardRead`'s result when a finishing read fails, and the retry scope | return the data read / return -1 / retry the whole read | AI — delegated: return the caller-buffer count; finishing errors are ignored; retries stay on the first read | ✅ Resolved |
 | 12 | Scope | Do the new behaviours change the frozen spec? | a conforming refinement of undefined or misuse paths / a spec change needing a ruling | AI — delegated: conforming refinement, no spec change, docs outside `spec/` updated | ✅ Resolved |
-| 13 | Technical | Where the target evidence runs, and what makes each probe red | new gates / extend `sdk-a500-fault-cleanup` and `sdk-a1200-addons` | AI — delegated: extend both gates; probe oracles in the notes | ✅ Resolved |
+| 13 | Technical | Where the target evidence runs, and what makes each probe red | new gates / extend `sdk-a500-fault-cleanup` and `sdk-a1200-addons` | AI — delegated: extend both gates, plus one clipboard probe line in `sdk-a600-addons`; probe oracles in the notes (refined by preflight PF-001, PF-002, PF-005, PF-006) | ✅ Resolved |
 | 14 | Technical | How the extended A1200 gate knows its probes finished | file exists + 1 s / end marker + settle / tree unchanged | AI — delegated: an end-marker file written last, then the bounded settle | ✅ Resolved |
 | 15 | Non-functional | Size acceptance | bench-compare only / bench-compare plus a recorded delta for API users / none | AI — delegated: bench-compare with empty `REQUIRE` plus recorded `.text` deltas for `gui` and `scroller` | ✅ Resolved |
 | 16 | Feature gaps | Which user-facing docs change | doc comments and known-limitations / none | AI — delegated: the six stdlib doc comments and `docs/known-limitations.md` | ✅ Resolved |
@@ -100,7 +100,7 @@ status text vanishes); whole-glyph truncation (edge glyphs pop instead of slidin
 scroller). Challenger: Agree. Strongest counterargument: more code than truncation (AR-4 bounds
 it). Confidence: High. Reopen trigger: the user prefers truncation.
 
-**AR-4:** Eligibility: algorithm. Decision: for a partly visible box, cull to the run of
+**AR-4:** *(The `AlgoStyle` copy below is dropped by §Preflight refinements AR-5.)* Eligibility: algorithm. Decision: for a partly visible box, cull to the run of
 characters whose superset boxes (AR-5) meet the visible span; `Text()` that run into a cleared
 two-plane chip raster through a temporary `RastPort` that copies the screen `RastPort`'s font,
 `DrawMode`, `AlgoStyle`, and `TxSpacing`, with APen 3 and BPen 2. Plane 1 then marks every pixel
@@ -120,7 +120,7 @@ Strongest counterargument: two blits per clipped call cost time in a scroller; o
 calls pay it, and fully inside calls are unchanged. Confidence: Medium-high. Reopen trigger: the
 A500 capture comparison (ST-10) shows a visible difference from the reference.
 
-**AR-5:** Eligibility: algorithm, failure design. Decision:
+**AR-5:** *(The box rule is superseded by §Preflight refinements AR-5.)* Eligibility: algorithm, failure design. Decision:
 - **Box:** a conservative superset of every pixel `Text()` can touch: per character, the union of
   the readings of `tf_CharKern` (when non-NULL), `tf_CharSpace` (when non-NULL) or `tf_XSize`,
   `tf_CharLoc` width, and `rp->TxSpacing`; codes outside `tf_LoChar..tf_HiChar` use the default
@@ -169,7 +169,7 @@ calls the helper, so section GC drops it. Rejected: the intrusive list (state ca
 the registry; the coupling already exists for ports. Confidence: Medium-high. Reopen trigger: a
 layer kind that is not registered.
 
-**AR-8:** Eligibility: failure design. Decision: `cl_layer` records that `layerBeginUpdate`
+**AR-8:** *(Superseded by §Preflight refinements AR-8: only `freeLayer` ends an open update.)* Eligibility: failure design. Decision: `cl_layer` records that `layerBeginUpdate`
 returned TRUE; `layerEndUpdate` clears it; the uninstall in AR-6/AR-7 and `cl_layer_free` call
 `EndUpdate(layer, FALSE)` first when the flag is set. Evidence: layers BUGS: InstallClipRegion
 while updating "may erraneously insert cliprects… discouraged"; `cl_layer_begin_update` keeps no
@@ -189,7 +189,7 @@ the last reply (the guide window stays after close; weak red test); replying on 
 would reply nothing). Challenger: Agree on behaviour, mechanism B adopted. Confidence: Medium-high.
 Reopen trigger: AmigaGuide rejects a reply at close.
 
-**AR-10:** Eligibility: algorithm following the device protocol. Decision: after the caller's
+**AR-10:** *(Kept, with an added reopen trigger, by §Preflight refinements AR-10.)* Eligibility: algorithm following the device protocol. Decision: after the caller's
 `CMD_READ` succeeds, save `io_Actual`; if it differs from `io_Length`, `io_Offset` is already past
 the end, so issue one `CMD_READ` with `io_Data` NULL and `io_Length` 1; otherwise issue one skip
 `CMD_READ` with `io_Data` NULL and `io_Length` 0x7FFFFFFF (which leaves the offset past the end),
@@ -260,3 +260,64 @@ of `drawText` (`std.amiga.text`), `showAlert` (`std.amiga.intuition`), `savePubl
 `closeAmigaGuide`/getters/`replyGuideMessage` (`std.amiga.amigaguide`), and `clipboardRead`
 (`std.amiga.clipboard`); update `docs/known-limitations.md` §4 (the clipboard runtime proof) and
 §5 (the clipboard-read bullet), and add the colour-font clip limit. Confidence: High.
+
+### Preflight refinements (2026-11-27)
+
+Resolved by `preflight amiga-shim-crash-safety --auto-design` ([00-preflight-report](00-preflight-report.md)).
+Each entry: Authority: AI — delegated by --auto-design · Policy version: 1 · Root invocation ID:
+ad-pf-r5-20261127. One blind challenger reviewed the four majors; its verdicts are cited.
+
+**AR-5 (PF-004).** The per-character box is corrected. With pen `p`, kern `k` (0 when
+`tf_CharKern` is NULL), space `s` (`tf_CharSpace[i]`, or `tf_XSize` when NULL), glyph width `w`
+(`tf_CharLoc[i]` size), and signed advance `d = k + s + rp->TxSpacing` (negated for an
+`FPF_REVPATH` font), the box columns are `min(p, p + k, p + d)` to
+`max(p + k + w, p + d, p + tf_XSize) - 1`. The old rule measured the ink from `min(p, p + k)`,
+which misses `k` columns when `k > 0`, and it left out `p + d`, the edge of the JAM2 background. The metrics are read after `SetFont`: V36+ `SetFont` may rewrite a legacy
+font's spacing arrays (graphics.doc SetFont NOTES). `SetFont` also "clears the effect of any
+previous soft styles" (SetFont FUNCTION), so `AlgoStyle` is 0 and the bold and italic terms are
+dropped, along with the `AlgoStyle` copy. An empty text draws nothing. Rejected: `TextExtent` on
+V36+ (the cull still needs per-character boxes; off by one before V47); a fixed margin (unproven,
+and it still sizes the raster from the weak edge). Challenger: converged (option a, with the
+SetFont order and the dead style terms). Confidence: Medium-high. Reopen trigger: ST-10 shows a
+missed ink pixel.
+
+**AR-8 (PF-003).** Only freeing a layer, by the program or at exit, ends an open update
+(`EndUpdate(layer, FALSE)`) before it installs NULL and calls `DeleteLayer`. `freeRegion`'s walk
+installs NULL without ending the update, and `layerSetClipRegion`/`layerClearClipRegion` are
+unchanged. The flag is set on every `layerBeginUpdate` call, whatever `BeginUpdate` returned,
+and `layerEndUpdate` clears it; `layerEndUpdate` still calls `EndUpdate(layer, TRUE)` as today.
+Evidence: EndUpdate "The layer is then unlocked" (layers.doc). If the runtime ended the update,
+the program's later `layerEndUpdate` would unlock a layer it no longer holds, a crash path this
+plan would add. Ending the update inside set/clear clip would also change what a valid program's
+update block does. BeginUpdate BUGS: a FALSE result still needs `EndUpdate(l, FALSE)`, so
+`freeLayer` covers that case too. The pairing fix for the program-facing call stays with its
+own plan. Accepted: the walk installs NULL during an open update, a case the autodoc
+discourages. Its documented effect is a cliprect layout glitch on low memory for the rest of
+that update; the program's own `layerEndUpdate` then ends the update normally. Challenger:
+converged (option a, with the flag set on every call). Confidence: Medium-high. Reopen trigger:
+the region probe shows damage after an update.
+
+**AR-10 (PF-001).** The finishing sequence is unchanged. After the skip read, `io_Actual` is
+always below `io_Length`, so `io_Offset` is "beyond EOF" (clipboard.doc CMD_READ RESULTS). The
+one-byte read is then the read past the end that the autodoc defines as the end signal. A stop
+rule after a zero-count skip read was considered and rejected: in the exact-fit case that skip
+read starts at the end, not past it, so stopping there may leave the read open. ST-5 now writes
+after each of three reads (part of the clip, exactly the clip, and a buffer larger than the
+clip), so every end-of-read path has an oracle. Challenger: diverged from the reviewer's first
+pick (the stop rule), and the reviewer adopted the challenger's position. Confidence: Medium.
+Added reopen trigger: the write after the exact-fit read hangs (then stop the sequence after a
+skip read that returns 0, and re-run ST-5).
+
+**AR-13 (PF-001, PF-002, PF-005, PF-006).** ST-5 also runs in `sdk-a600-addons`
+(A600/KS2.05 with the Workbench 2.04 `clipboard.device`, `a600-addons-smoke.sh:80-81`), so the
+NULL-data reads are proven on the 2.0 device too. That gate's red is not required: it guards the
+2.0 device, and the A1200 leg carries the red. The clipboard release notes say the device
+before 45.1 assumed every clip is IFF (`ReleaseNotes/clipboard-RelNotes:22-24`), so an IFF clip
+reads back there. ST-7 waits for the blitter before its checksums. Its layer-free half, and the
+update ending in `freeLayer`, are guards with no red oracle; impl tests cover them. The ST-10
+gate details are fixed in 03-04: the `chip` column fallback, `python3`, the probe path, the
+pen check, and the title-bar assumption. Confidence: Medium-high. Reopen trigger: the 2.04
+device reads an IFF clip differently from 3.1 (then stop for a ruling per AR-10).
+
+**AR-16 (PF-002).** `docs/known-limitations.md` §4 and §5 name both clipboard baselines:
+A1200/KS3.1 and A600/KS2.05.

@@ -2,7 +2,7 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-27 03:40
+> **Last Updated**: 2026-11-27 08:36 (preflight fixes applied; no task started)
 > **Progress**: 0/39 tasks (0%)
 > **CodeOps Artifact Schema**: 1
 
@@ -109,15 +109,15 @@ Rules for every task:
 
 **Reference**: [07](07-testing-strategy.md) ST-5, ST-6 · AR-10, AR-11, AR-13
 
-- [ ] 2.1.1 [spec-author] Write the ST-5 and ST-6 probes and their A1200 gate checks (they run after `pubscreen-wb`; Phase 3 inserts its probes before them and Phase 4 appends `text-offscreen` last) — `examples/robustness/crash-safety/clip-{iff,raw}.clo`, `docker/scripts/a1200-addons-smoke.sh`, `Makefile`
-- [ ] 2.1.2 Red phase: `make sdk-a1200-addons`; record ST-5/ST-6 failing (the second write never returns; `done.txt` missing) with the other checks reporting as before
+- [ ] 2.1.1 [spec-author] Write the ST-5 and ST-6 probes and their A1200 gate checks (they run after `pubscreen-wb`; Phase 3 inserts its probes before them and Phase 4 appends `text-offscreen` last), and the ST-5 run in the A600 gate (build, install, one startup line after the existing legs, the `clipiff.txt` wait and check) — `examples/robustness/crash-safety/clip-{iff,raw}.clo`, `docker/scripts/a1200-addons-smoke.sh`, `docker/scripts/a600-addons-smoke.sh`, `Makefile`
+- [ ] 2.1.2 Red phase: `make sdk-a1200-addons` and `make sdk-a600-addons`; record ST-5/ST-6 failing on the A1200 (a write after a read never returns; `done.txt` missing) with the other checks reporting as before, and record ST-5's base outcome on the A600 (a guard, red not required)
 
 ### Step 2.2: Implementation
 
 **Reference**: [03-01 §Clipboard read](03-01-intuition-and-clipboard.md#clipboard-read) · AR-10, AR-11
 
 - [ ] 2.2.1 Finish the read after the caller's `CMD_READ` (saved count, skip read, one past-the-end read) — `compiler/runtime/shim_hosted_amiga_optional_services.c`
-- [ ] 2.2.2 Green phase: ST-5, ST-6 pass; if either still hangs, mark `[!]` and follow the AR-10 reopen trigger before any other change
+- [ ] 2.2.2 Green phase: ST-5 (A1200 and A600) and ST-6 pass; if any write still hangs or the A600 reads differ from the A1200 reads, mark `[!]` and follow the AR-10 reopen triggers before any other change
 
 ### Step 2.3: Implementation tests and hardening
 
@@ -125,7 +125,7 @@ Rules for every task:
 - [ ] 2.3.2 Phase gate: `make check`, `make sdk-a1200-addons`, `make sdk-a600-addons`
 
 **Deliverables**:
-- [ ] ST-5, ST-6 green on A1200/KS3.1
+- [ ] ST-5, ST-6 green on A1200/KS3.1; ST-5 green on A600/KS2.05
 
 **Verify (gate)**: `make check && make sdk-a1200-addons && make sdk-a600-addons`
 
@@ -142,15 +142,15 @@ Rules for every task:
 
 - [ ] 3.1.1 [spec-author] Write the ST-7 and ST-8 probes and their A1200 gate checks — `examples/robustness/crash-safety/{region-free,guide-late}.clo`, `docker/scripts/a1200-addons-smoke.sh`, `Makefile`
 - [ ] 3.1.2 [spec-author] Add the `cl_res_each` half of ST-3 (hello and a program with no region or guide link no `cl_res_each`; `region-free` links it) — `compiler/tests/amiga_crash_safety_spec_test.rs`
-- [ ] 3.1.3 Red phase: `make sdk-a1200-addons` and the spec test; record ST-7 (checksums differ or crash), ST-8 (stale type or crash), and ST-3's new half failing
+- [ ] 3.1.3 Red phase: `make sdk-a1200-addons` and the spec test; record ST-7 (checksums differ or crash), ST-8 (stale type or crash), and ST-3's new half failing; ST-7's layer-free half is a guard (07 §Red-phase expectations)
 
 ### Step 3.2: Implementation
 
 **Reference**: [03-03](03-03-borrowed-objects.md) · AR-6..AR-9
 
 - [ ] 3.2.1 Add `cl_res_each` next to `cl_own_ports_hold` — `compiler/runtime/shim_hosted_amiga.c`
-- [ ] 3.2.2 Add the layer update flag and `cl_layer_unclip`; call it from `cl_layer_free` before `DeleteLayer` — `compiler/runtime/shim_hosted_amiga.c`
-- [ ] 3.2.3 Unclip every holding layer in `cl_free_region`; end an open update in set/clear clip — `compiler/runtime/shim_hosted_amiga_optional.c`
+- [ ] 3.2.2 Add the layer update flag (set on every `layerBeginUpdate`, cleared by `layerEndUpdate`, which still calls `EndUpdate(layer, TRUE)`) and `cl_layer_unclip`; in `cl_layer_free`, end an open update with `EndUpdate(layer, FALSE)`, then unclip, before `DeleteLayer` — `compiler/runtime/shim_hosted_amiga.c`
+- [ ] 3.2.3 Unclip every holding layer in `cl_free_region` (no `EndUpdate`); leave set/clear clip unchanged — `compiler/runtime/shim_hosted_amiga_optional.c`
 - [ ] 3.2.4 Link each guide message to its guide; reply and orphan held messages in `cl_guide_close` — `compiler/runtime/shim_hosted_amiga_optional_net.c`
 - [ ] 3.2.5 Green phase: ST-7, ST-8, ST-3 (this half) pass; the existing legs still pass
 
@@ -176,7 +176,7 @@ Rules for every task:
 **Reference**: [07](07-testing-strategy.md) ST-9, ST-10, ST-3 (the `cl_text_draw_clipped` part) · AR-3..AR-5, AR-13
 
 - [ ] 4.1.1 [spec-author] Write the ST-9 probe and its A1200 gate check (last in the startup-sequence) — `examples/robustness/crash-safety/text-offscreen.clo`, `docker/scripts/a1200-addons-smoke.sh`, `Makefile`
-- [ ] 4.1.2 [spec-author] Write the ST-10 probe and its A500 gate case: build for `hosted-amiga-13`, `chip` column, the capture unpack, `cscr2png.py`, and the window comparisons — `examples/robustness/crash-safety/text-clip.clo`, `docker/scripts/a500-fault-cleanup-smoke.sh`
+- [ ] 4.1.2 [spec-author] Write the ST-10 probe and its A500 gate case per 03-04 §A500 leg: build for `hosted-amiga-13` from the `crash-safety/` source path, `chip` column, the capture unpack, `cscr2png.py` on the host, the window comparisons, the two-colour reference check, and `python3`/`convert`/`compare` in the host-tool check — `examples/robustness/crash-safety/text-clip.clo`, `docker/scripts/a500-fault-cleanup-smoke.sh`
 - [ ] 4.1.3 [spec-author] Add the `cl_text_draw_clipped` half of ST-3 — `compiler/tests/amiga_crash_safety_spec_test.rs`
 - [ ] 4.1.4 Red phase: `make sdk-a1200-addons`, `make sdk-a500-fault-cleanup`, the spec test; record ST-9 failing (hang), ST-3's new half failing, and ST-10's base outcome with the AR-13 justification
 
@@ -184,9 +184,9 @@ Rules for every task:
 
 **Reference**: [03-02](03-02-text-clipping.md) · AR-3..AR-5
 
-- [ ] 4.2.1 Add the range checks, the visible rectangle, the superset box walk, and the classification to `cl_text_draw`; fully inside keeps the old sequence — `compiler/runtime/shim_hosted_amiga.c`
+- [ ] 4.2.1 Add, after `SetFont`/`SetAPen`, the range and empty-text checks, the visible rectangle, the superset box walk (03-02 step 3), and the classification to `cl_text_draw`; fully inside keeps the old sequence — `compiler/runtime/shim_hosted_amiga.c`
 - [ ] 4.2.2 Add `cl_text_draw_clipped`: the culled run, the two-plane raster, the template blits, `WaitBlit`, the frees — `compiler/runtime/shim_hosted_amiga.c`
-- [ ] 4.2.3 Green phase: ST-9, ST-10, ST-3 pass; if ST-10 shows a pixel difference, mark `[!]` and follow the AR-4 reopen trigger
+- [ ] 4.2.3 Green phase: ST-9, ST-10, ST-3 pass; if ST-10 shows a pixel difference, mark `[!]` and follow the AR-4/AR-5 reopen triggers; a `chip` or `mem` difference follows the 03-04 `chip` column rule
 
 ### Step 4.3: Implementation tests and hardening
 
@@ -210,8 +210,8 @@ Rules for every task:
 **Reference**: [03-04 §Docs, §Bench evidence](03-04-gates-and-docs.md#docs) · AR-15, AR-16
 
 - [ ] 5.1.1 Update the doc comments per 03-04 §Docs — `stdlib/std.amiga.{text,intuition,workbench,regions,amigaguide,clipboard}.clo`
-- [ ] 5.1.2 Update `docs/known-limitations.md` §4 and §5 and add the colour-font clip limit — `docs/known-limitations.md`
-- [ ] 5.1.3 Update the `sdk-a1200-addons` and `sdk-a500-fault-cleanup` rows and the Makefile comments — `AGENTS.md`, `Makefile`, `site/project/verification.md` if it names the probes
+- [ ] 5.1.2 Update `docs/known-limitations.md` §4 and §5 (clipboard proof on A1200/KS3.1 and A600/KS2.05) and add the colour-font clip limit — `docs/known-limitations.md`
+- [ ] 5.1.3 Update the `sdk-a1200-addons`, `sdk-a600-addons`, and `sdk-a500-fault-cleanup` rows and the Makefile comments — `AGENTS.md`, `Makefile`, `site/project/verification.md` if it names the probes
 - [ ] 5.1.4 Bench evidence: `make bench-base COMMIT=<the commit before task 1.1.1>`, `make bench`, `make bench-compare` (empty `REQUIRE`), and the release `.text` of `gui` and `scroller` (`hosted-amiga-13`) at base and head; record them here and in 07
 - [ ] 5.1.5 Plan gate: `make verify`
 

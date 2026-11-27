@@ -51,7 +51,10 @@ After the caller's `CMD_READ` succeeds (AR-10, AR-11):
 2. Unless `got != length` (the offset is then already past the end): issue a skip read —
    `CMD_READ`, `io_Data = NULL`, `io_Length = 0x7FFFFFFF`, offset and clip ID untouched.
 3. Issue exactly one finishing read — `CMD_READ`, `io_Data = NULL`, `io_Length = 1`, offset and
-   clip ID untouched. The device sees `io_Offset` past the end and ends the read session.
+   clip ID untouched. The device sees `io_Offset` past the end and ends the read session. This
+   holds after a skip read that returned 0 bytes too (a caller buffer exactly the clip size):
+   the skip read always returns less than its `io_Length`, so it leaves `io_Offset` "beyond EOF"
+   (clipboard.doc CMD_READ RESULTS), and only the read after it is past the end.
 4. Return `got`. Errors of steps 2–3 do not change the result.
 
 The `CBD_CURRENTREADID` step and the bounded retry of the caller's read stay as they are
@@ -66,10 +69,12 @@ only for `CBERR_OBSOLETEID`. A small static helper (`cl_clipboard_finish_read`) 
 | Obsolete ID | bounded retry of the caller read, as today | AR-11 |
 | Skip or finishing read fails | ignored; return the caller count | AR-11 |
 | Zero-length caller buffer (`got == length == 0`) | skip read + finishing read | AR-10 |
-| The fix does not end the hold-off on the 3.1 device | reopen AR-10 (zero `io_ClipID` first read; spec ruling if needed) | AR-10 |
+| Caller buffer exactly the clip size (the skip read returns 0) | skip read + finishing read | AR-10 |
+| The fix does not end the hold-off on the 3.1 or 2.04 device | reopen AR-10 (zero `io_ClipID` first read; after an exact fit, stop after the zero-count skip read; spec ruling if needed) | AR-10 |
 
 ## Testing Requirements
 
-- Spec: ST-1, ST-2 (`vamos`), ST-4 (A1200), ST-5, ST-6 (A1200) in [07](07-testing-strategy.md).
+- Spec: ST-1, ST-2 (`vamos`), ST-4 (A1200), ST-5 (A1200 and A600), ST-6 (A1200) in
+  [07](07-testing-strategy.md).
 - Impl: the Intuition open precedes the first Intuition call in both entries; the version check;
   the finishing sequence (saved count, skip read, one NULL read, no offset reset).
