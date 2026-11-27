@@ -82,3 +82,9 @@ in `THIRD_PARTY_NOTICES.md`.
 Use [GitHub Issues](https://github.com/OpenLorraine/clorraine/issues) for
 technical questions. For licensing enquiries, see the
 [project brief](/project/brief#contact).
+
+To chat with other users and the maintainer, join the
+[#clorraine channel on the AmigaDev Discord](https://discord.gg/7ckPjharmD).
+AmigaPorts, the maintainers of the m68k-amigaos-gcc toolchain, run the server
+and host the channel; the server's rules apply. Report bugs on GitHub so they
+are tracked.

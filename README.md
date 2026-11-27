@@ -82,6 +82,7 @@ Everything below goes deeper than this page:
 - [C to Clorraine guide](docs/c-to-clorraine.md)
 - [Examples](examples/)
 - [All releases](https://github.com/OpenLorraine/clorraine/releases)
+- [#clorraine on the AmigaDev Discord](https://discord.gg/7ckPjharmD)
 
 ## License
 

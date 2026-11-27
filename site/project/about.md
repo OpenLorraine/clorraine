@@ -85,6 +85,7 @@ remain MIT.
 ## Links
 
 - [OpenLorraine on GitHub](https://github.com/OpenLorraine/clorraine)
+- [#clorraine on the AmigaDev Discord](https://discord.gg/7ckPjharmD)
 - [Project brief](/project/brief)
 - [Verification](/project/verification)
 - [Roadmap](/guide/roadmap)

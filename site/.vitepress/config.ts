@@ -236,6 +236,11 @@ export default defineConfig({
     },
     socialLinks: [
       { icon: "github", link: "https://github.com/OpenLorraine/clorraine" },
+      {
+        icon: "discord",
+        link: "https://discord.gg/7ckPjharmD",
+        ariaLabel: "Clorraine channel on the AmigaDev Discord",
+      },
     ],
     footer: {
       message:
