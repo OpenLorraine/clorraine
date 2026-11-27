@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-27 16:36
-> **Progress**: 45/55 tasks (81%)
+> **Last Updated**: 2026-11-27 17:28
+> **Progress**: 46/55 tasks (83%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -211,7 +211,7 @@ branch; only Phase 1 reaches `main` before the release (AR-40).
 
 **Reference**: 03-05 §Release procedure · AR-10, AR-17, AR-19, AR-20, AR-28, AR-31, AR-39, AR-40
 
-- [ ] 7.1.1 Confirm the user holds other pushes to `main`; rebase `release-1.3.0` onto `origin/main`; `make verify` with the Windows-capable image on the private Xvfb display
+- [x] 7.1.1 Confirm the user holds other pushes to `main`; rebase `release-1.3.0` onto `origin/main`; `make verify` with the Windows-capable image on the private Xvfb display ✅ (completed: 2026-11-27 17:28) ✅ (completed: 2026-11-27 17:28; `make verify` all legs passed on 68419c7e; no rebase needed)
 - [ ] 7.1.2 **approval** Push tag `v1.3.0`; dispatch `publish-vscode` from the tag with `dry_run=true` and check the summary
 - [ ] 7.1.3 **approval** Dispatch from the tag with `dry_run=false`; record run ID and SHA-256; confirm the gallery lists 1.3.0
 - [ ] 7.1.4 `make dist` and `make dist-verify`; record the four asset hashes in `RELEASE-NOTES.md` (checksums section)
