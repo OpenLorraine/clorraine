@@ -1,0 +1,89 @@
+# Gates and docs: Amiga shim crash-safety
+
+> **Document**: 03-04-gates-and-docs.md
+> **Parent**: [Index](00-index.md)
+
+## Overview
+
+Target evidence runs on three legs, with no new gate script (AR-13):
+- `vamos`, both hosted profiles, with Intuition switched off — the no-Intuition path;
+- `sdk-a1200-addons` (A1200/KS3.1, Workbench 3.1 `Libs`/`Devs`/`Fonts`) — the hosted-amiga probes;
+- `sdk-a500-fault-cleanup` (A500/KS1.3, Workbench 1.3.5 HDF, DF1 capture ADF) — the 1.3 text clip.
+
+## Probes
+
+All probes live in `examples/robustness/crash-safety/` and print one result line. Expected lines
+and inputs are owned by [07](07-testing-strategy.md).
+
+| Probe | Leg | Exercises | ST |
+|---|---|---|---|
+| `alert-first.clo` | vamos, both profiles | `showAlert` with no screen | ST-1 |
+| `pubscreen-first.clo` | vamos (hosted-amiga) | `savePublicScreen` with no screen | ST-2 |
+| `pubscreen-wb.clo` | A1200 | `savePublicScreen` first, unknown name then `Workbench` | ST-4 |
+| `clip-iff.clo` | A1200 | IFF clip write, short-buffer read, write, long-buffer read | ST-5 |
+| `clip-raw.clo` | A1200 | the verifier's raw write/read/write/read trace | ST-6 |
+| `region-free.clo` | A1200 | region freed while installed; layer freed with a clip | ST-7 |
+| `guide-late.clo` | A1200 | getter and reply after `closeAmigaGuide` | ST-8 |
+| `text-offscreen.clo` | A1200 | the verifier's 200 off-screen `drawText` calls | ST-9 |
+| `text-clip.clo` | A500 (`hosted-amiga-13`) | clipped text at each edge vs. a fully inside reference; `saveScreen` to `DF1:` | ST-10 |
+
+## `vamos` leg
+
+`compiler/tests/amiga_crash_safety_spec_test.rs` builds ST-1/ST-2 with the R1 spec test's build
+helper pattern (`clc`, then `m68k-amigaos-gcc -Wall -Wextra -Werror` for `nix20` and `nix13`) and
+runs `vamos -O intuition.library=mode:off <binary>`. It asserts stdout, exit 0, and no line
+matching the R1 leak pattern (`can't expunge|mem_alloc:WARNING:\s+orphan|shutdown: can't expunge`).
+It skips without the SDK toolchain, like the R1 suite.
+
+## A1200 leg: `sdk-a1200-addons`
+
+- **Build:** the `sdk-a1200-addons` recipe also builds the six A1200 probes with
+  `clorraine build --release --profile hosted-amiga`.
+- **Install and run:** the script copies them to `CNEXT:` and appends to the startup-sequence,
+  after the three existing legs, one line per probe redirected to its own file
+  (`pub.txt`, `clipiff.txt`, `clipraw.txt`, `region.txt`, `guidelate.txt`, `text.txt`), then
+  `echo done >CNEXT:done.txt` (AR-14). The clipboard probes run after the region and guide probes,
+  and `text-offscreen` runs last, because a red-phase hang there stops the rest.
+- **Completion:** wait for `done.txt` (bounded at 240 s), then for the HD tree to stay unchanged
+  for 3 s (bounded at 30 s), then stop FS-UAE (AR-14). The existing three checks and the
+  Workbench-start check stay; each new file is checked against its expected line; a missing file
+  fails with its name.
+- **Assigns:** the existing `wb_assigns` (`CLIPS:` → `CNEXT:clips`) serves the clipboard probes.
+
+## A500 leg: `sdk-a500-fault-cleanup`
+
+- `text-clip` is added as the last case, built for `hosted-amiga-13` with the other probes, with the
+  `chip` column set (the temporary raster must be freed).
+- The probe writes its capture with `saveScreen` to `DF1:text.cscr`. After the run the gate unpacks
+  it with the existing `xdftool` step, converts it with `docker/scripts/cscr2png.py` (no scale),
+  and, for each clipped instance listed in [07 §ST-10](07-testing-strategy.md#a500-leg--sdk-a500-fault-cleanup),
+  compares the window around it with the reference window shifted by the instance's offset, using
+  ImageMagick `convert -crop` and `compare -metric AE`; every metric must be 0, and the reference
+  window must hold at least one pixel in the text pen. `convert`/`compare` join the gate's host-tool
+  check.
+
+## Make wiring
+
+No new target. `sdk-a1200-addons` and `sdk-a500-fault-cleanup` are already in `make verify`; their
+`AGENTS.md` and Makefile descriptions gain the new probes (AR-13).
+
+## Docs
+
+| File | Content | AR |
+|---|---|---|
+| `stdlib/std.amiga.text.clo` (`drawText`) | text is clipped to the screen; fully outside or out-of-range draws nothing; a partly visible colour-font string draws nothing | AR-16 |
+| `stdlib/std.amiga.intuition.clo` (`showAlert`) | works with no screen; no-op when Intuition cannot be opened | AR-16 |
+| `stdlib/std.amiga.workbench.clo` (`savePublicScreen`) | works with no screen; false when Intuition V36 is not available | AR-16 |
+| `stdlib/std.amiga.regions.clo` | freeing an installed region unclips its layers first; freeing a layer unclips it first | AR-16 |
+| `stdlib/std.amiga.amigaguide.clo` | closing replies held messages; their getters then read 0 and their reply frees only the handle | AR-16 |
+| `stdlib/std.amiga.clipboard.clo` (`clipboardRead`) | the read is finished, so later writes are not held off | AR-16 |
+| `docs/known-limitations.md` | §4 Clipboard runtime proof becomes write/read/write/read on A1200/KS3.1; §5 clipboard bullet updated; a colour-font clip limit line | AR-16 |
+| `AGENTS.md` | the two gate rows name the new probes | AR-13 |
+
+No `spec/` file changes (AR-12).
+
+## Bench evidence
+
+The closing phase runs `make bench-base COMMIT=<plan base>`, `make bench`, `make bench-compare`
+(empty `REQUIRE`), and records the release `.text` of `examples/amiga/gui.clo`
+(`hosted-amiga-13`) and `examples/amiga/scroller.clo` (`hosted-amiga-13`) at base and head (AR-15).
