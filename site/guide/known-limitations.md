@@ -51,10 +51,16 @@ edge cases and their workarounds, is
   `std.amiga.exec.createTask` may use arithmetic, module-level scalars, and
   `reportTaskResult`; it must not call DOS, Intuition, `std.io`, allocate, drop an
   owning value, or block. Use a message port and a DOS process for that work.
-- **Some optional services are narrower than their APIs.** Clipboard proves the
-  write/update path; serial, parallel, and printer prove typed open/close;
-  datatypes proves parsing but not visible `DTM_DRAW` rendering; network proves
-  a TCP echo through `tcpEcho`. The full list is in the authoritative document.
+- **Some optional services are narrower than their APIs.** Clipboard opens its
+  unit for each read or write, and a read can still hold off later writes while
+  another program keeps the unit open; serial, parallel, and printer prove typed
+  open/close; datatypes proves parsing but not visible `DTM_DRAW` rendering;
+  network proves a TCP echo through `tcpEcho`. The full list is in the
+  authoritative document.
+- **Screen text is clipped by the runtime.** `drawText` on a screen clips at
+  the screen edge itself. A color font that does not fit draws nothing, and so
+  does text whose visible part is far wider than the screen or that cannot get
+  its small chip-memory raster.
 - **The NDK is not redistributed.** The SDK image builds from public upstream
   sources and verifies downloaded inputs.
 
