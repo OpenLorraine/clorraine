@@ -6,8 +6,9 @@
 # candidate.
 #
 # Usage (Windows PowerShell 5.1, a one-time process-scope policy bypass):
-#   curl.exe -fsSLo clorraine-install.ps1 <release>/install.ps1
-#   powershell -ExecutionPolicy Bypass -File .\clorraine-install.ps1
+#   powershell -ExecutionPolicy ByPass -c "irm <release>/install.ps1 | iex"
+# or, after downloading and checking install.ps1 against SHA256SUMS:
+#   powershell -ExecutionPolicy Bypass -File .\install.ps1
 #
 # The installer is per-user: the CLI goes to
 # %LOCALAPPDATA%\Programs\Clorraine\versions\<version>-<sha12>, a `current`
@@ -182,7 +183,7 @@ Options:
   -Help                 show this help
 
 Run it with a one-time bypass of the execution policy:
-  powershell -ExecutionPolicy Bypass -File .\clorraine-install.ps1
+  powershell -ExecutionPolicy Bypass -File .\install.ps1
 "@
 }
 

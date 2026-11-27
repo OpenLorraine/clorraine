@@ -123,8 +123,9 @@ When VS Code (`code` or `code-insiders`) is found and you agree, or pass
 Visual Studio Marketplace, which keeps it up to date. If the extension is
 already installed, the installer reinstalls it from the Marketplace; this also
 moves an extension installed by the v1.2.0 installer, which VS Code never
-updated, onto automatic updates. The step waits at most five minutes, and on
-any failure it prints the command to run yourself,
+updated, onto automatic updates. Each VS Code command is stopped after five
+minutes (`CLORRAINE_EDITOR_TIMEOUT` sets other seconds), and on any failure the
+installer prints the command to run yourself,
 `code --install-extension openlorraine.clorraine`, and carries on. VS Code
 (Microsoft's build) is the supported editor; VSCodium and other editors that
 use Open VSX cannot install the extension yet.

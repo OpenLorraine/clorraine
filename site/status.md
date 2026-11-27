@@ -27,7 +27,7 @@ statement here disagrees with a release note, the release note wins.
 | `hosted-amiga-13` profile | <StatusBadge state="ready" label="Usable" /> | A500/Kickstart 1.3 builds and FS-UAE runs |
 | `freestanding` profile | <StatusBadge state="ready" label="Provisional" /> | Freestanding build and run legs |
 | Linux x86_64 installer | <StatusBadge state="preview" label="Developer preview" /> | [One-line install](/guide/quick-start): CLI, rc24 toolchain, FS-UAE run, and a starter project; `v1.3.0` prerelease |
-| Language server | <StatusBadge state="ready" label="Installed" /> | `clorraine-lsp`, installed by the Linux installer |
+| Language server | <StatusBadge state="ready" label="Installed" /> | `clorraine-lsp`, installed by the Linux and Windows installers |
 | VS Code extension | <StatusBadge state="preview" label="Developer preview" /> | On the [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=openlorraine.clorraine), installed by both installers; Run in FS-UAE button; not on Open VSX |
 | Windows 11 x64 installer | <StatusBadge state="preview" label="Developer preview" /> | [PowerShell install](/guide/quick-start#install-on-windows): CLI, rc24 toolchain, FS-UAE, and a starter project; `v1.3.0` prerelease |
 | macOS | <StatusBadge state="planned" label="On the way" /> | v1.3.0 supports Linux x86_64 and Windows 11 x64 |

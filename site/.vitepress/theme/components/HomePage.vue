@@ -84,7 +84,7 @@ import { withBase } from "vitepress";
     <section class="cl-section" id="install">
       <div class="cl-wrap cl-split">
         <div class="cl-split__copy">
-          <p class="cl-eyebrow">Install on Linux · developer preview</p>
+          <p class="cl-eyebrow">Install on Linux or Windows · developer preview</p>
           <h2>From one command to your own Amiga program.</h2>
           <p>
             The installer sets up the CLI and the Amiga toolchain, finds FS-UAE

@@ -5,8 +5,9 @@ description: "The clc, clorraine, and clorraine-lsp command-line surface."
 
 # Command line
 
-The Linux installer installs three binaries into `~/.local/bin` (or the prefix
-you choose):
+The installers put three binaries on your `PATH`: in `~/.local/bin` on Linux and
+in `%LOCALAPPDATA%\Programs\Clorraine\current\bin` on Windows (`.exe`), or under
+the prefix you choose:
 
 | Binary | Purpose |
 |---|---|
@@ -129,8 +130,10 @@ user-facing driver.
 ## `clorraine-lsp`
 
 The language server speaks LSP over stdio. It provides diagnostics, hover, go to
-definition, completion, and document symbols. The Linux installer installs it as
-`~/.local/bin/clorraine-lsp`; point an LSP client at that path. The VS Code
+definition, completion, and document symbols. The installers install it as
+`~/.local/bin/clorraine-lsp` on Linux and
+`%LOCALAPPDATA%\Programs\Clorraine\current\bin\clorraine-lsp.exe` on Windows;
+point an LSP client at that path. The VS Code
 extension, which the installer also installs, is the reference client and finds
 it automatically.
 

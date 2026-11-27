@@ -1,6 +1,6 @@
-# Known Limitations (v1.2)
+# Known Limitations (v1.3)
 
-This document records the accepted limitations of Clorraine v1.0 through v1.2. It is deliberately short: a new
+This document records the accepted limitations of Clorraine v1.0 through v1.3. It is deliberately short: a new
 accepted limitation must be added here and to the production-readiness ambiguity register before
 release.
 
@@ -226,7 +226,7 @@ C-hook trampoline surfaces.
 | LSP navigation | Rename, formatting, references, and workspace symbols are not implemented. | Use the implemented hover, definition, completion, and document-symbol features. |
 | LSP workspace | The index reads at most 2000 `*.clo` files, and one request analyzes at most 256 files. | Open the file directly or keep unrelated programs in separate roots. |
 | LSP analysis | A file is parsed and type-checked on each request; there is no incremental cache. | Small workspaces are the intended scope. |
-| Installer integrity | The Linux installer verifies the CLI archive and the VS Code extension against pinned SHA-256 values, and the rc24 toolchain download against its pinned size and SHA-256. The installer script itself is checked only if you check it. | Verify `install.sh` against the release `SHA256SUMS` before running it. |
+| Installer integrity | The Linux and Windows installers verify the CLI archive against its pinned size and SHA-256, and the rc24 toolchain download against its pinned size and SHA-256. The VS Code extension is installed from the Visual Studio Marketplace by its ID, so it is trusted through the Marketplace and VS Code, not through a pinned hash. The installer script itself is checked only if you check it. | Verify `install.sh` or `install.ps1` against the release `SHA256SUMS` before running it. |
 | VS Code tests | The extension tests need Node.js 22+ on the host and are not part of `make check` or the host CI job. | Run `make vscode-check`. |
 | `--doc` | It documents top-level declarations only; struct fields, enum members, and nested items have no separate entries. Related links resolve a type through the referring module’s imports, then the first input module that declares it; an aliased or qualified reference to a same-named type in another module can point to the wrong page. | Read the source for member-level detail; use unambiguous type names across input modules. |
 

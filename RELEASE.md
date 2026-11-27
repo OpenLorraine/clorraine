@@ -54,12 +54,17 @@ legs of `make verify` on a private Xvfb display.
 6. **Publish the extension.** Dispatch again from the tag with `dry_run`
    unticked. Record the run ID and the VSIX SHA-256 from its summary, and
    check that the Marketplace lists `openlorraine.clorraine` `X.Y.Z`.
-7. **Candidate.** `make dist` and `make dist-verify`; copy the asset table
-   from `build/dist/SHA256SUMS` into `RELEASE-NOTES.md`.
-8. **Linux acceptance.** Check the language server and Build/Run in VS Code
-   with this release, then run
-   `make acceptance CANDIDATE=build/dist TOOLCHAIN_ARCHIVE=… KICKSTART=… PUBLISH_RUN=… PUBLISH_SHA256=… EDITOR_CONFIRMED=1`
-   and `make acceptance-check EVIDENCE=… CANDIDATE=build/dist`.
+7. **Candidate.** `make dist` and `make dist-verify`. Write the asset table
+   from `build/dist/SHA256SUMS` into a working copy of `RELEASE-NOTES.md` in
+   place of its `PENDING-CHECKSUMS` line, for `--notes-file` in step 10. Do not
+   commit it: the tag and `main` keep the placeholder, and the published body
+   has the table.
+8. **Linux acceptance.** Run
+   `make acceptance CANDIDATE=build/dist TOOLCHAIN_ARCHIVE=… KICKSTART=… PUBLISH_RUN=… PUBLISH_SHA256=…`.
+   It writes the evidence and stops for the in-person check: install the
+   candidate for yourself (`sh build/dist/install.sh --archive build/dist/clorraine-X.Y.Z-x86_64-linux.tar.gz --checksums build/dist/SHA256SUMS --vscode`),
+   check the language server and Build/Run in VS Code, then rerun with
+   `EDITOR_CONFIRMED=1` and run `make acceptance-check EVIDENCE=… CANDIDATE=build/dist`.
 9. **Windows acceptance.** On a Windows 11 x64 host with VS Code, as a standard
    account in the signed-in desktop session, with rc24 not yet registered:
    `powershell -NoProfile -ExecutionPolicy Bypass -File tools\setup\acceptance.ps1 -Candidate DIR -Kickstart ROM -Output FILE -PublishRun ID -PublishSha256 HEX`;
@@ -76,7 +81,8 @@ legs of `make verify` on a private Xvfb display.
 
 ## When a step fails
 
-- **Before step 6:** fix on the release branch and restart at step 3.
+- **Before step 6:** delete the `vX.Y.Z` tag on GitHub and locally (nothing has
+  been published under it), fix on the release branch, and restart at step 3.
 - **After step 6:** a Marketplace version cannot be published twice and a
   published tag is never moved. Fix on the branch, bump to the next patch
   version, and restart at step 2 with the new tag.

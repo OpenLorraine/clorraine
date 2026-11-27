@@ -54,7 +54,7 @@ every A500 gate.
 
 ## Emulator workflow
 
-The [Linux installer](/guide/quick-start) sets up an emulated Amiga 1200 with
+The [installer](/guide/quick-start) sets up an emulated Amiga 1200 with
 Kickstart 3.1 in FS-UAE. Build a program and boot it there with:
 
 ```sh

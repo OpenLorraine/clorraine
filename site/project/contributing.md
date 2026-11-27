@@ -26,7 +26,7 @@ Open issues at
 ## Developer setup
 
 To use Clorraine, install the developer preview with the
-[Linux installer](/guide/quick-start).
+[Linux or Windows installer](/guide/quick-start).
 
 Instructions for building Clorraine itself and for the full Amiga test setup are
 being reworked and will return here. Until then, start from the

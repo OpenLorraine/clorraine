@@ -67,7 +67,7 @@ These pages walk through the smallest programs and the language surface:
 
 ## Running an example
 
-Install Clorraine with the [Linux installer](/guide/quick-start), save an
+Install Clorraine with the [installer](/guide/quick-start), save an
 example's source as a `.clo` file, and run it:
 
 ```sh

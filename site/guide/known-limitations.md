@@ -1,6 +1,6 @@
 ---
 title: Known limitations
-description: "The accepted limitations of Clorraine v1.2, summarised for users and linked to the authoritative list."
+description: "The accepted limitations of Clorraine v1.3, summarised for users and linked to the authoritative list."
 ---
 
 # Known limitations

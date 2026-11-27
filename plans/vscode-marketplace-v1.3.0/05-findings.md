@@ -21,6 +21,14 @@
 | RV-014 | 5 | MINOR | tools/setup/acceptance.py | fixed |
 | RV-015 | 5 | MINOR | Makefile | fixed |
 | RV-016 | 5 | MINOR | tools/setup/acceptance.sh | fixed |
+| RV-017 | 6 | MAJOR | docs/known-limitations.md | fixed |
+| RV-018 | 6 | MINOR | docs | fixed |
+| RV-019 | 6 | MINOR | RELEASE.md | fixed |
+| RV-020 | 6 | MINOR | RELEASE.md | fixed |
+| RV-021 | 6 | MINOR | RELEASE.md | fixed |
+| RV-022 | 6 | MINOR | site | fixed |
+| RV-023 | 6 | MINOR | tools/setup/install.ps1 | fixed |
+| RV-024 | 6 | MINOR | tools/assessment/template | accepted |
 
 Phase 1 review: correctness reviewer and security auditor dispatched as `general` agents
 (catalog roles unavailable in this session); no critical or major findings; both minor findings
@@ -58,3 +66,16 @@ run must be ASCII digits; `make dist` clears assets from an earlier candidate; e
 point at the install logs. Gate: `make check` passed (4,529 Rust tests plus the setup, dist, bench,
 and fuzz suites); a real `make dist` wrote exactly four assets and a four-line SHA256SUMS, and
 `make dist-verify` passed.
+
+Phase 6 review: correctness reviewer (`general` agent), docs-focused; security auditor skipped
+(documentation and a version bump). One major finding, fixed under --auto-design as a documentation
+correction: the known-limitations "Installer integrity" row still claimed the extension was checked
+against a pinned hash; it now says the CLI archive and rc24 are pinned and the extension is trusted
+through the Marketplace and VS Code. Minor fixes: the five-minute bound applies per VS Code command;
+RELEASE.md keeps the asset table out of the tagged commit, deletes and re-pushes a tag only before the
+publish, and orders the Linux acceptance as run, in-person check, rerun; remaining "Linux installer"
+wording and v1.2 headers; the Windows installer's help and header use the documented commands.
+Accepted: the assessment template's "shipped v1.2.0" sentence is outside this plan's scope.
+Gate: make check (4,529 Rust tests), make vscode-check (224), make site-check; after the fixes
+make dist-check, make site-check, the docs tests, the retained-inputs guard, and the Windows spec
+suite (37/37) passed again.
