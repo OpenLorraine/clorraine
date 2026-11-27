@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-27 15:54
-> **Progress**: 32/55 tasks (58%)
+> **Last Updated**: 2026-11-27 16:03
+> **Progress**: 33/55 tasks (60%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -170,7 +170,7 @@ branch; only Phase 1 reaches `main` before the release (AR-40).
 
 **Reference**: 03-04 · AR-6, AR-28, AR-34, AR-44
 
-- [ ] 5.1.1 [spec-author] Write/rewrite spec tests from ST-29..ST-36 — `tools/setup/tests/{dist.spec.test.sh,windows-dist.spec.test.sh,acceptance_spec.py,acceptance_windows_spec.py}`
+- [x] 5.1.1 [spec-author] Write/rewrite spec tests from ST-29..ST-36 — `tools/setup/tests/{dist.spec.test.sh,windows-dist.spec.test.sh,acceptance_spec.py,acceptance_windows_spec.py}` ✅ (completed: 2026-11-27 16:03)
 - [ ] 5.1.2 Red phase: run those suites; the new cases fail
 
 ### Step 5.2: Implementation

@@ -2,7 +2,7 @@
 # Windows candidate producer contract.
 #
 # These cases run the packaging script on fixture Linux and Windows stage
-# trees. They cover the five-asset candidate, the Windows zip layout, the
+# trees. They cover the four-asset candidate, the Windows zip layout, the
 # Windows stage checks (exact file set, PE32+ x86-64 executables that carry
 # the version), the assembled install.ps1, and verification, without Docker,
 # Node, Windows, or the network.
@@ -11,13 +11,11 @@ set -u
 
 . "$(dirname "$0")/install_fixtures.sh"
 
-# Builds both stage trees, a fake VSIX, and an output directory.
+# Builds both stage trees and an output directory.
 fixture() {
     root="$(new_root)"
     stage="$(make_stage "$root")"
     wstage="$(make_windows_stage "$root")"
-    vsix="$root/clorraine-1.2.0.vsix"
-    printf 'fake vsix\n' >"$vsix"
     output="$root/dist"
     mkdir -p "$output"
 }
@@ -31,21 +29,21 @@ run_package() {
 # Builds the candidate from the fixture and prints the status.
 build() {
     run_package "$package_script" --stage "$stage" --windows-stage "$wstage" --output "$output" \
-        --version 1.2.0 --vsix "$vsix" "$@"
+        --version 1.2.0 "$@"
 }
 
 zip_name=clorraine-1.2.0-x86_64-windows.zip
 
-# The build writes five assets and one SHA256SUMS line for each.
-build_writes_five_assets_under_one_checksum_file() {
+# The build writes four assets and one SHA256SUMS line for each.
+build_writes_four_assets_under_one_checksum_file() {
     fixture
     check_status 0 "$(build)" "package build"
     local name
-    for name in clorraine-1.2.0-x86_64-linux.tar.gz "$zip_name" clorraine-1.2.0.vsix install.sh install.ps1; do
+    for name in clorraine-1.2.0-x86_64-linux.tar.gz "$zip_name" install.sh install.ps1; do
         check_exists "$output/$name" "$name"
         check_contains "$output/SHA256SUMS" "  $name" "checksum line for $name"
     done
-    if [ "$(wc -l <"$output/SHA256SUMS")" -eq 5 ]; then pass; else fail "SHA256SUMS has $(wc -l <"$output/SHA256SUMS") lines"; fi
+    if [ "$(wc -l <"$output/SHA256SUMS")" -eq 4 ]; then pass; else fail "SHA256SUMS has $(wc -l <"$output/SHA256SUMS") lines"; fi
     if ( cd "$output" && sha256sum -c --status SHA256SUMS ); then pass; else fail "SHA256SUMS does not match the files"; fi
 }
 
@@ -105,7 +103,7 @@ the_assembled_powershell_installer_is_complete() {
 }
 
 # Verification passes on the candidate and names a changed zip.
-verify_checks_all_five_assets() {
+verify_checks_all_four_assets() {
     fixture
     check_status 0 "$(build)" "package build"
     check_status 0 "$(run_package "$package_script" --verify --output "$output" --version 1.2.0)" "verify"
@@ -120,10 +118,10 @@ PY
     check_contains "$root/stderr" "$zip_name" "changed-zip message"
 }
 
-build_writes_five_assets_under_one_checksum_file
+build_writes_four_assets_under_one_checksum_file
 the_windows_zip_has_the_exact_layout
 a_windows_stage_with_a_missing_or_extra_file_fails
 a_windows_executable_that_is_not_the_release_fails
 the_assembled_powershell_installer_is_complete
-verify_checks_all_five_assets
+verify_checks_all_four_assets
 finish

@@ -20,7 +20,7 @@ sys.path.insert(0, str(HERE.parent))
 import acceptance  # noqa: E402
 
 ARCHIVE_NAME = "clorraine-1.2.0-x86_64-linux.tar.gz"
-VSIX_NAME = "clorraine-1.2.0.vsix"
+PUBLISH_SHA256 = "ab" * 32
 HELLO = "Hello, Amiga, from Clorraine!"
 
 
@@ -43,10 +43,8 @@ class AcceptanceSpecTests(unittest.TestCase):
         self.candidate = Path(self.scratch.name) / "candidate"
         self.candidate.mkdir()
         self.archive = self.candidate / ARCHIVE_NAME
-        self.vsix = self.candidate / VSIX_NAME
         self.installer = self.candidate / "install.sh"
         self.archive.write_bytes(b"archive fixture bytes\n")
-        self.vsix.write_bytes(b"vsix fixture bytes\n")
         self.installer.write_bytes(b"installer fixture bytes\n")
         self.evidence = self._valid_record()
 
@@ -55,7 +53,6 @@ class AcceptanceSpecTests(unittest.TestCase):
 
     def _valid_record(self) -> dict:
         archive_bytes = self.archive.read_bytes()
-        vsix_bytes = self.vsix.read_bytes()
         hello_bytes = HELLO.encode()
         return {
             "version": "1.2.0",
@@ -68,11 +65,13 @@ class AcceptanceSpecTests(unittest.TestCase):
                 "bytes": len(archive_bytes),
             },
             "installer": {"sha256": digest(self.installer.read_bytes())},
-            "vsix": {
-                "name": VSIX_NAME,
-                "sha256": digest(vsix_bytes),
-                "bytes": len(vsix_bytes),
+            "extension": {
+                "id": "openlorraine.clorraine",
+                "version": "1.2.0",
+                "publish_run": "46013860719",
+                "vsix_sha256": PUBLISH_SHA256,
             },
+            "manual": {"editor_build_run": True},
             "toolchain": {
                 "tag": "v16.2-rc24",
                 "sha256": "b93b070ac47d2f01d126f57c03a8405f71fb470c8397b0bda51041217d25c100",
@@ -145,11 +144,42 @@ class AcceptanceSpecTests(unittest.TestCase):
             "archive name",
         )
 
-    def test_wrong_vsix_name_is_rejected(self) -> None:
-        self.reject(
-            lambda record: record["vsix"].update(name="anything.vsix"),
-            "vsix name",
-        )
+    def test_extension_version_other_than_the_candidates_is_rejected(self) -> None:
+        record = json.loads(json.dumps(self.evidence))
+        record["extension"]["version"] = "1.1.2"
+        with self.assertRaises(acceptance.AcceptanceError) as caught:
+            acceptance.check(record, self.candidate)
+        self.assertIn("extension version 1.1.2 does not match candidate 1.2.0", str(caught.exception))
+
+    def test_wrong_extension_id_is_rejected(self) -> None:
+        self.reject(lambda record: record["extension"].update(id="other.clorraine"), "extension id")
+
+    def test_non_numeric_publish_run_is_rejected(self) -> None:
+        self.reject(lambda record: record["extension"].update(publish_run="run-1"), "publish run")
+
+    def test_malformed_published_vsix_hash_is_rejected(self) -> None:
+        self.reject(lambda record: record["extension"].update(vsix_sha256="ab"), "published hash")
+
+    def test_legacy_vsix_key_is_rejected(self) -> None:
+        record = json.loads(json.dumps(self.evidence))
+        record["vsix"] = {"name": "clorraine-1.2.0.vsix", "sha256": "0" * 64, "bytes": 1}
+        with self.assertRaises(acceptance.AcceptanceError) as caught:
+            acceptance.check(record, self.candidate)
+        self.assertIn("vsix", str(caught.exception))
+
+    def test_missing_extension_is_rejected(self) -> None:
+        record = json.loads(json.dumps(self.evidence))
+        record.pop("extension")
+        with self.assertRaises(acceptance.AcceptanceError) as caught:
+            acceptance.check(record, self.candidate)
+        self.assertIn("extension", str(caught.exception))
+
+    def test_missing_editor_confirmation_is_rejected(self) -> None:
+        record = json.loads(json.dumps(self.evidence))
+        record["manual"]["editor_build_run"] = False
+        with self.assertRaises(acceptance.AcceptanceError) as caught:
+            acceptance.check(record, self.candidate)
+        self.assertIn("manual.editor_build_run must be true", str(caught.exception))
 
     def test_symlink_candidate_file_is_rejected(self) -> None:
         target = self.candidate / "real-archive"
@@ -215,11 +245,6 @@ class AcceptanceSpecTests(unittest.TestCase):
             lambda record: record["negative"].update(status="ok", rc=0),
             "negative",
         )
-
-    def test_missing_vsix_is_rejected(self) -> None:
-        self.vsix.unlink()
-        with self.assertRaises(acceptance.AcceptanceError):
-            acceptance.check(self.evidence, self.candidate)
 
     def test_candidate_archive_mismatch_is_rejected(self) -> None:
         self.archive.write_bytes(self.archive.read_bytes() + b"x")

@@ -9,13 +9,11 @@ set -u
 
 . "$(dirname "$0")/install_fixtures.sh"
 
-# Builds a stage tree, a fake VSIX, and an output directory.
+# Builds the stage trees and an output directory.
 fixture() {
     root="$(new_root)"
     stage="$(make_stage "$root")"
     wstage="$(make_windows_stage "$root")"
-    vsix="$root/clorraine-1.2.0.vsix"
-    printf 'fake vsix\n' >"$vsix"
     output="$root/dist"
     mkdir -p "$output"
 }
@@ -26,15 +24,16 @@ run_package() {
     printf '%s\n' "$?"
 }
 
-# The build produces the five candidate assets and their checksums.
+# The build produces the four candidate assets and their checksums; the VS
+# Code extension comes from the Marketplace, not the release.
 build_creates_the_expected_assets() {
     fixture
     local status
-    status="$(run_package "$package_script" --stage "$stage" --windows-stage "$wstage" --output "$output" --version 1.2.0 --vsix "$vsix")"
+    status="$(run_package "$package_script" --stage "$stage" --windows-stage "$wstage" --output "$output" --version 1.2.0)"
     check_status 0 "$status" "package build"
     local archive="$output/clorraine-1.2.0-x86_64-linux.tar.gz"
     check_exists "$archive" "archive"
-    check_exists "$output/clorraine-1.2.0.vsix" "vsix"
+    check_absent "$output/clorraine-1.2.0.vsix" "no VSIX asset"
     check_exists "$output/install.sh" "installer"
     check_exists "$output/SHA256SUMS" "checksums"
 
@@ -51,14 +50,16 @@ build_creates_the_expected_assets() {
     else
         pass
     fi
-    for name in clorraine-1.2.0-x86_64-linux.tar.gz clorraine-1.2.0-x86_64-windows.zip clorraine-1.2.0.vsix install.sh install.ps1; do
+    for name in clorraine-1.2.0-x86_64-linux.tar.gz clorraine-1.2.0-x86_64-windows.zip install.sh install.ps1; do
         check_contains "$output/SHA256SUMS" "$name" "checksum coverage for $name"
     done
     check_contains "$output/install.sh" "VERSION='1.2.0'" "installer version pin"
     check_contains "$output/install.sh" "ARCHIVE_BYTES='$(wc -c <"$archive")'" "installer size pin"
     check_contains "$output/install.sh" "ARCHIVE_SHA256='$(sha256sum "$archive" | awk '{print $1}')'" "installer hash pin"
-    check_contains "$output/install.sh" "VSIX_BYTES='$(wc -c <"$output/clorraine-1.2.0.vsix")'" "VSIX size pin"
-    check_contains "$output/install.sh" "VSIX_SHA256='$(sha256sum "$output/clorraine-1.2.0.vsix" | awk '{print $1}')'" "VSIX hash pin"
+    if [ "$(wc -l <"$output/SHA256SUMS")" -eq 4 ]; then pass; else fail "SHA256SUMS has $(wc -l <"$output/SHA256SUMS") lines"; fi
+    check_not_contains "$output/SHA256SUMS" ".vsix" "no VSIX checksum"
+    check_not_contains "$output/install.sh" "VSIX" "no VSIX pins in install.sh"
+    check_not_contains "$output/install.ps1" "Vsix" "no VSIX pins in install.ps1"
 
     status="$(run_package "$package_script" --verify --output "$output" --version 1.2.0)"
     check_status 0 "$status" "verify"
@@ -71,12 +72,10 @@ a_version_mismatch_fails() {
     mv "$stage" "$root/stage/clorraine-1.2.0-x86_64-linux"
     stage="$root/stage/clorraine-1.2.0-x86_64-linux"
     wstage="$(make_windows_stage "$root")"
-    vsix="$root/clorraine-1.2.0.vsix"
-    printf 'fake vsix\n' >"$vsix"
     output="$root/dist"
     mkdir -p "$output"
     local status
-    status="$(run_package "$package_script" --stage "$stage" --windows-stage "$wstage" --output "$output" --version 1.2.0 --vsix "$vsix")"
+    status="$(run_package "$package_script" --stage "$stage" --windows-stage "$wstage" --output "$output" --version 1.2.0)"
     check_status 1 "$status" "version mismatch"
     check_contains "$root/stderr" "version" "version-mismatch message"
     check_absent "$output/clorraine-1.2.0-x86_64-linux.tar.gz" "no archive after a version mismatch"
@@ -87,7 +86,7 @@ an_extra_file_fails() {
     fixture
     printf 'extra\n' >"$stage/bin/extra"
     local status
-    status="$(run_package "$package_script" --stage "$stage" --windows-stage "$wstage" --output "$output" --version 1.2.0 --vsix "$vsix")"
+    status="$(run_package "$package_script" --stage "$stage" --windows-stage "$wstage" --output "$output" --version 1.2.0)"
     check_status 1 "$status" "extra file"
     check_contains "$root/stderr" "unexpected file" "extra-file message"
 }
@@ -97,7 +96,7 @@ a_forbidden_file_fails() {
     fixture
     printf 'not a real toolchain\n' >"$stage/toolchain.tar.xz"
     local status
-    status="$(run_package "$package_script" --stage "$stage" --windows-stage "$wstage" --output "$output" --version 1.2.0 --vsix "$vsix")"
+    status="$(run_package "$package_script" --stage "$stage" --windows-stage "$wstage" --output "$output" --version 1.2.0)"
     check_status 1 "$status" "forbidden file"
     check_contains "$root/stderr" "unexpected file" "forbidden-file message"
 }
@@ -106,42 +105,44 @@ a_forbidden_file_fails() {
 a_stale_installer_pin_fails() {
     fixture
     local status
-    status="$(run_package "$package_script" --stage "$stage" --windows-stage "$wstage" --output "$output" --version 1.2.0 --vsix "$vsix")"
+    status="$(run_package "$package_script" --stage "$stage" --windows-stage "$wstage" --output "$output" --version 1.2.0)"
     check_status 0 "$status" "package before pin change"
     sed -i "s/ARCHIVE_SHA256='[0-9a-f]*'/ARCHIVE_SHA256='0000000000000000000000000000000000000000000000000000000000000000'/" "$output/install.sh"
-    ( cd "$output" && sha256sum clorraine-1.2.0-x86_64-linux.tar.gz clorraine-1.2.0-x86_64-windows.zip clorraine-1.2.0.vsix install.sh install.ps1 >SHA256SUMS )
+    ( cd "$output" && sha256sum clorraine-1.2.0-x86_64-linux.tar.gz clorraine-1.2.0-x86_64-windows.zip install.sh install.ps1 >SHA256SUMS )
     status="$(run_package "$package_script" --verify --output "$output" --version 1.2.0)"
     check_status 1 "$status" "stale pin"
     check_contains "$root/stderr" "pin" "stale-pin message"
 }
 
-# A stale VSIX pin fails verification after a successful build.
-a_stale_vsix_pin_fails() {
+# The VSIX option is gone: an old build command fails instead of shipping a
+# VSIX nobody installs.
+a_vsix_option_is_rejected() {
     fixture
+    printf 'fake vsix\n' >"$root/clorraine-1.2.0.vsix"
     local status
-    status="$(run_package "$package_script" --stage "$stage" --windows-stage "$wstage" --output "$output" --version 1.2.0 --vsix "$vsix")"
-    check_status 0 "$status" "package before VSIX pin change"
-    sed -i "s/VSIX_SHA256='[0-9a-f]*'/VSIX_SHA256='0000000000000000000000000000000000000000000000000000000000000000'/" "$output/install.sh"
-    ( cd "$output" && sha256sum clorraine-1.2.0-x86_64-linux.tar.gz clorraine-1.2.0-x86_64-windows.zip clorraine-1.2.0.vsix install.sh install.ps1 >SHA256SUMS )
-    status="$(run_package "$package_script" --verify --output "$output" --version 1.2.0)"
-    check_status 1 "$status" "stale VSIX pin"
-    check_contains "$root/stderr" "VSIX_SHA256" "stale-VSIX message"
+    status="$(run_package "$package_script" --stage "$stage" --windows-stage "$wstage" --output "$output" --version 1.2.0 --vsix "$root/clorraine-1.2.0.vsix")"
+    check_status 1 "$status" "--vsix rejected"
+    check_contains "$root/stderr" "unknown option '--vsix'" "unknown-option message"
+    check_absent "$output/clorraine-1.2.0-x86_64-linux.tar.gz" "no archive after a rejected option"
 }
 
-# A missing VSIX is a producer error, not a silent partial candidate.
-a_missing_vsix_fails() {
+# A VSIX left in the output directory fails verification by name.
+a_stray_vsix_fails_verification() {
     fixture
     local status
-    status="$(run_package "$package_script" --stage "$stage" --windows-stage "$wstage" --output "$output" --version 1.2.0 --vsix "$root/missing.vsix")"
-    check_status 1 "$status" "missing vsix"
-    check_contains "$root/stderr" "VSIX" "missing-vsix message"
+    status="$(run_package "$package_script" --stage "$stage" --windows-stage "$wstage" --output "$output" --version 1.2.0)"
+    check_status 0 "$status" "package before the stray VSIX"
+    printf 'old vsix\n' >"$output/clorraine-1.2.0.vsix"
+    status="$(run_package "$package_script" --verify --output "$output" --version 1.2.0)"
+    check_status 1 "$status" "stray VSIX"
+    check_contains "$root/stderr" "clorraine-1.2.0.vsix" "stray-VSIX message"
 }
 
 # The release README uses repository URLs, not paths absent from the archive.
 release_readme_has_no_local_links() {
     fixture
     local status
-    status="$(run_package "$package_script" --stage "$stage" --windows-stage "$wstage" --output "$output" --version 1.2.0 --vsix "$vsix")"
+    status="$(run_package "$package_script" --stage "$stage" --windows-stage "$wstage" --output "$output" --version 1.2.0)"
     check_status 0 "$status" "package for README check"
     local archive="$output/clorraine-1.2.0-x86_64-linux.tar.gz"
     local extracted="$root/extracted"
@@ -161,12 +162,12 @@ release_readme_has_no_local_links() {
 the_installer_embeds_the_amiga_hello() {
     fixture
     local status
-    status="$(run_package "$package_script" --stage "$stage" --windows-stage "$wstage" --output "$output" --version 1.2.0 --vsix "$vsix")"
+    status="$(run_package "$package_script" --stage "$stage" --windows-stage "$wstage" --output "$output" --version 1.2.0)"
     check_status 0 "$status" "package with the Amiga hello"
     check_contains "$output/install.sh" "module demo.HelloIntro;" "embedded intro"
     check_not_contains "$output/install.sh" "@HELLO_AMIGA_SOURCE@" "placeholder replaced"
     sed -i 's/^module demo.HelloIntro;$/module demo.Other;/' "$output/install.sh"
-    ( cd "$output" && sha256sum clorraine-1.2.0-x86_64-linux.tar.gz clorraine-1.2.0-x86_64-windows.zip clorraine-1.2.0.vsix install.sh install.ps1 >SHA256SUMS )
+    ( cd "$output" && sha256sum clorraine-1.2.0-x86_64-linux.tar.gz clorraine-1.2.0-x86_64-windows.zip install.sh install.ps1 >SHA256SUMS )
     status="$(run_package "$package_script" --verify --output "$output" --version 1.2.0)"
     check_status 1 "$status" "installer without the intro"
     check_contains "$root/stderr" "Amiga hello" "missing-intro message"
@@ -178,7 +179,7 @@ a_version_mismatch_fails
 an_extra_file_fails
 a_forbidden_file_fails
 a_stale_installer_pin_fails
-a_stale_vsix_pin_fails
-a_missing_vsix_fails
+a_vsix_option_is_rejected
+a_stray_vsix_fails_verification
 release_readme_has_no_local_links
 finish

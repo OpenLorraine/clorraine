@@ -27,7 +27,6 @@ import acceptance_spec  # noqa: E402
 
 VERSION = "1.2.0"
 ZIP_NAME = f"clorraine-{VERSION}-x86_64-windows.zip"
-VSIX_NAME = f"clorraine-{VERSION}.vsix"
 HELLO = "Hello, Amiga, from Clorraine!"
 RC24_SETUP_BYTES = 48_065_003
 RC24_SETUP_SHA256 = "9dd6973539bb2d514fc1b1e6c0a107cac6f30a9c4076cf4014cbe13013c95512"
@@ -45,10 +44,8 @@ class WindowsAcceptanceSpecTests(unittest.TestCase):
         self.candidate = Path(self.scratch.name) / "candidate"
         self.candidate.mkdir()
         self.archive = self.candidate / ZIP_NAME
-        self.vsix = self.candidate / VSIX_NAME
         self.installer = self.candidate / "install.ps1"
         self.archive.write_bytes(b"windows zip fixture bytes\n")
-        self.vsix.write_bytes(b"vsix fixture bytes\n")
         self.installer.write_bytes(b"powershell installer fixture bytes\n")
         self.evidence = self._valid_record()
 
@@ -57,7 +54,6 @@ class WindowsAcceptanceSpecTests(unittest.TestCase):
 
     def _valid_record(self) -> dict:
         archive_bytes = self.archive.read_bytes()
-        vsix_bytes = self.vsix.read_bytes()
         corpus = [
             {"name": name, "profile": "hosted-amiga", "status": "ok",
              "output_sha256": acceptance_spec.expected_corpus(name)}
@@ -73,8 +69,8 @@ class WindowsAcceptanceSpecTests(unittest.TestCase):
                         "bytes": len(archive_bytes)},
             "installer": {"name": "install.ps1",
                           "sha256": digest(self.installer.read_bytes())},
-            "vsix": {"name": VSIX_NAME, "sha256": digest(vsix_bytes),
-                     "bytes": len(vsix_bytes)},
+            "extension": {"id": "openlorraine.clorraine", "version": VERSION,
+                          "publish_run": "46013860719", "vsix_sha256": "cd" * 32},
             "toolchain": {"tag": "v16.2-rc24", "sha256": RC24_SETUP_SHA256,
                           "bytes": RC24_SETUP_BYTES},
             "kickstart": {
@@ -137,6 +133,13 @@ class WindowsAcceptanceSpecTests(unittest.TestCase):
 
     def test_should_reject_an_unknown_platform(self) -> None:
         self.assert_rejected(lambda record: record.update(platform="macos"), "platform")
+
+    # The extension installed from the Marketplace must be the candidate's version.
+    def test_should_reject_an_extension_from_another_release(self) -> None:
+        self.assert_rejected(lambda record: record["extension"].update(version="1.1.2"), "extension version")
+
+    def test_should_reject_a_record_with_the_old_vsix_entry(self) -> None:
+        self.assert_rejected(lambda record: record.update(vsix={"name": ZIP_NAME, "sha256": "0" * 64, "bytes": 1}), "vsix")
 
     # The record's version must be the candidate's archive version.
     def test_should_reject_a_version_other_than_the_candidates(self) -> None:
