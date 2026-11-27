@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-27 14:56
-> **Progress**: 6/55 tasks (10%)
+> **Last Updated**: 2026-11-27 15:00
+> **Progress**: 7/55 tasks (12%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -73,7 +73,7 @@ branch; only Phase 1 reaches `main` before the release (AR-40).
 
 ### Step 1.3: Impl tests, landing, dry run
 
-- [ ] 1.3.1 Write impl tests — `tools/vscode/test/release-version.impl.test.ts`; phase gate `make vscode-check`
+- [x] 1.3.1 Write impl tests — `tools/vscode/test/release-version.impl.test.ts`; phase gate `make vscode-check` ✅ (completed: 2026-11-27 15:00) — 8 impl tests; make vscode-check passed (203 tests + audit + packaged client); workflow audit call fixed to --vsix
 - [ ] 1.3.2 **approval** Fast-forward `main` to the branch head (plan docs + Phase 1 only) and push (AR-40)
 - [ ] 1.3.3 **approval** Dispatch `publish-vscode` from `main` with `dry_run=true`; build and audit pass, publish job skipped; record the run ID here
 

@@ -61,7 +61,7 @@ jobs:
       - name: Audit
         env:
           VERSION: ${{ steps.version.outputs.version }}
-        run: python3 tools/vscode/scripts/audit_vsix.py "build/vscode/clorraine-$VERSION.vsix"
+        run: python3 tools/vscode/scripts/audit_vsix.py --vsix "build/vscode/clorraine-$VERSION.vsix"
       - name: Hash
         id: hash
         env:
