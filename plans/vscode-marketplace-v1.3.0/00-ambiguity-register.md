@@ -1,6 +1,6 @@
 ## Ambiguity Register: VS Code Marketplace extension and the v1.3.0 release
 
-> **Status**: ✅ GATE PASSED — all 45 items resolved (39 user decisions, 6 delegated under --auto-design)
+> **Status**: ✅ GATE PASSED — all 46 items resolved (40 user decisions, 6 delegated under --auto-design)
 > **Last Updated**: 2026-11-27 14:47
 > **Source**: GitHub issue #38 (Publish the VS Code extension), revised by the decisions below
 
@@ -51,6 +51,7 @@
 | 43 | Technical | How the installer tests exercise the 300 s editor timeout (AR-33) without waiting 300 s | Environment override read only by the installer (`CLORRAINE_EDITOR_TIMEOUT`, seconds) / no test | Authority: AI — delegated by --auto-design (see AR-43 note) | ✅ Resolved |
 | 44 | Data & state | What `acceptance-check` does with a record that still carries the old `vsix` key | Reject as an unknown key / ignore it | Authority: AI — delegated by --auto-design (see AR-44 note) | ✅ Resolved |
 | 45 | Technical | Small mechanisms surfaced while writing the specs: `virtualWorkspaces`, the guide action on an invalid explicit setting, the Linux manual-confirmation key and rerun flag, stale-VSIX rejection in `dist-verify`, the uninstall-failure message | As recorded in 03-01, 03-03, 03-04 / alternatives in the note | Authority: AI — delegated by --auto-design (see AR-45 note) | ✅ Resolved |
+| 46 | UX & presentation (runtime) | How the Windows install command is documented | Today: `curl.exe -fsSLo … ; powershell -ExecutionPolicy Bypass -File …` / a one-liner like Codex's `powershell -ExecutionPolicy ByPass -c "irm <url> \| iex"` | User: "we should do something like what codex does … the URL would be from our repo". Primary command everywhere (README, docs/windows-cli.md, site quick start, release notes): `powershell -ExecutionPolicy ByPass -c "irm https://github.com/OpenLorraine/clorraine/releases/download/v1.3.0/install.ps1 \| iex"`. Delegated details (see AR-46 note): the versioned release URL (v1.3.0 is a pre-release, so `releases/latest` would not reach it); options and scripted installs keep the download-verify-`-File` form, which is unchanged | ✅ Resolved |
 
 ## Coverage Map
 
@@ -172,4 +173,23 @@ Hardening: in-context
 Policy version: 1
 Root invocation ID: ad-20261127-vsmkt
 Reopen triggers: the user objects to any of (a)–(e)
+```
+
+**AR-46 (runtime, user decision with delegated details):** Verified on the Windows test host
+(PowerShell 5.1.26100) before adopting it: `install.ps1` is ASCII without a BOM, so `irm` decodes
+it unchanged; it parses as an in-memory script block with no errors; `iex` loads it; and a script
+block bound with `-Help` prints usage and exits 0. The script never reads its own path. Its final
+`exit` ends only the child `powershell -c` process and passes the installer's exit code to the
+caller, so the documented command keeps the `powershell … -c` wrapper; pasting only
+`irm … | iex` into an open PowerShell window would close that window when the installer ends.
+
+```text
+Authority: AI — delegated by --auto-design (details only; the command style is the user's)
+Eligibility: documentation presentation inside the user's instruction; no installer behaviour change
+Decision: versioned release-asset URL; keep the "verify the download first" section and the `-File` form for options and scripted installs
+Rejected alternatives: `releases/latest/download/…` (v1.3.0 is a pre-release; v1.1.2 is Latest); a copy on the GitHub Pages site (a second copy to keep byte-identical); passing options through `[scriptblock]::Create((irm …))` (works, but harder to read than the existing `-File` form)
+Confidence: High
+Policy version: 1
+Root invocation ID: ad-20261127-vsmkt
+Reopen triggers: a stable release becomes Latest and the docs should track it; the user wants options in the one-liner
 ```

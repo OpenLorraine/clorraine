@@ -22,6 +22,12 @@ Update (current-release claims):
   `docs/known-limitations.md` §17, `site/guide/quick-start.md`, `site/status.md`,
   `site/guide/known-limitations.md`, `site/guide/roadmap.md`, `site/project/brief.md`,
   `site/project/contributing.md`, and the two theme components.
+- **Windows install command (AR-46)**: the primary command in `README.md`, `docs/windows-cli.md`,
+  `site/guide/quick-start.md`, and `RELEASE-NOTES.md` becomes
+  `powershell -ExecutionPolicy ByPass -c "irm https://github.com/OpenLorraine/clorraine/releases/download/v1.3.0/install.ps1 | iex"`;
+  the "verify the download first" section and the `-File` form for options and scripted installs
+  stay; `docs/windows-cli.md` notes that the `powershell -c` wrapper is needed (the installer's
+  final `exit` would otherwise close an open PowerShell window).
 - **Extension**: replace "not in a marketplace" and "installed from the release" with the
   Marketplace install (`code --install-extension openlorraine.clorraine`, link to
   `https://marketplace.visualstudio.com/items?itemName=openlorraine.clorraine`) in
