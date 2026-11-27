@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-27 11:40
-> **Progress**: 34/39 tasks (87%)
+> **Last Updated**: 2026-11-27 12:23 (plan complete)
+> **Progress**: 39/39 tasks (100%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -231,22 +231,33 @@ existing cases passed.
 
 ## Phase 5: Closeout
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill)_
+> **Phase baseline tree**: e39c20c6218e456d3854e46e7376f3642799fd53 (scope mode strict)
 > **Reasoning**: medium — docs, measurement, and the full gate.
 
 ### Step 5.1: Docs, evidence, and the plan gate
 
 **Reference**: [03-04 §Docs, §Bench evidence](03-04-gates-and-docs.md#docs) · AR-15, AR-16
 
-- [ ] 5.1.1 Update the doc comments per 03-04 §Docs — `stdlib/std.amiga.{text,intuition,workbench,regions,amigaguide,clipboard}.clo`
-- [ ] 5.1.2 Update `docs/known-limitations.md` §4 and §5 (clipboard proof on A1200/KS3.1 and A600/KS2.05, the other-opener limit and the per-operation reload) and add the colour-font clip limit; update the SDK-WBK-006 registry row and regenerate coverage (`make sdk-registry`) — `docs/known-limitations.md`, `docs/amiga-sdk/registry.tsv`, `docs/amiga-sdk/coverage.md`
-- [ ] 5.1.3 Update the `sdk-a1200-addons`, `sdk-a600-addons`, and `sdk-a500-fault-cleanup` rows and the Makefile comments — `AGENTS.md`, `Makefile`, `site/project/verification.md` if it names the probes
-- [ ] 5.1.4 Bench evidence: `make bench-base COMMIT=<the commit before task 1.1.1>`, `make bench`, `make bench-compare` (empty `REQUIRE`), and the release `.text` of `gui` and `scroller` (`hosted-amiga-13`) at base and head; record them here and in 07
-- [ ] 5.1.5 Plan gate: `make verify`
+- [x] 5.1.1 Update the doc comments per 03-04 §Docs — `stdlib/std.amiga.{text,intuition,workbench,regions,amigaguide,clipboard}.clo` ✅ (completed: 2026-11-27 12:23; review wording fixes applied; `make check` 4534 tests)
+- [x] 5.1.2 Update `docs/known-limitations.md` §4 and §5 (clipboard proof on A1200/KS3.1 and A600/KS2.05, the other-opener limit and the per-operation reload) and add the colour-font clip limit; update the SDK-WBK-006 registry row and regenerate coverage (`make sdk-registry`) — `docs/known-limitations.md`, `docs/amiga-sdk/registry.tsv`, `docs/amiga-sdk/coverage.md` ✅ (completed: 2026-11-27 12:23; review wording fixes applied; `make check` 4534 tests)
+- [x] 5.1.3 Update the `sdk-a1200-addons`, `sdk-a600-addons`, and `sdk-a500-fault-cleanup` rows and the Makefile comments — `AGENTS.md`, `Makefile`, `site/project/verification.md` if it names the probes ✅ (completed: 2026-11-27 12:23; review wording fixes applied; `make check` 4534 tests)
+- [x] 5.1.4 Bench evidence: `make bench-base COMMIT=<the commit before task 1.1.1>`, `make bench`, `make bench-compare` (empty `REQUIRE`), and the release `.text` of `gui` and `scroller` (`hosted-amiga-13`) at base and head; record them here and in 07 ✅ (completed: 2026-11-27 11:46; see the bench evidence below)
+- [x] 5.1.5 Plan gate: `make verify` ✅ (completed: 2026-11-27 12:23; `make verify IMAGE=clorraine-sdk:windows-cli` with DISPLAY on a private Xvfb: `verify: all legs passed`; the review's wording-only fixes then re-checked with `make check`)
+
+**Bench evidence (2026-11-27 11:46)**: `make bench-base COMMIT=f4f5fbf4` (the commit before task 1.1.1),
+`make bench`, `make bench-compare` with an empty `REQUIRE`: passed; every benchmark's m68k
+instruction count and `.text` are unchanged (+0.0%), and only the advisory generated-C size grows
+4.4% (the larger shim source; section GC drops it). Release `.text` on `hosted-amiga-13` (`-O2`,
+section GC, measured unstripped; the strip does not change `.text`):
+
+| Program | Base | Head | Delta |
+|---|---|---|---|
+| `examples/amiga/gui.clo` (a `drawText` user; links `cl_text_draw_clipped`) | 40972 | 42720 | +1748 B (+4.3%) |
+| `examples/amiga/scroller.clo` (a layer user) | 30492 | 30556 | +64 B (+0.2%) |
 
 **Deliverables**:
-- [ ] `make verify` green; bench comparison within the 1% guard; deltas recorded
-- [ ] Docs updated
+- [x] `make verify` green; bench comparison within the 1% guard; deltas recorded
+- [x] Docs updated
 
 **Verify (gate)**: `make verify`
 

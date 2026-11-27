@@ -130,11 +130,11 @@
 - None; real `vamos`, real Kickstart ROMs under FS-UAE.
 
 ## Verification Checklist
-- [ ] All ST-cases defined with concrete input/output pairs
-- [ ] Every ST case traces to a requirement, spec doc, or AR entry
-- [ ] Specification tests written BEFORE implementation
-- [ ] Specification tests verified to FAIL before implementation (red phase), with the listed guards justified
-- [ ] All specification tests pass after implementation (green phase)
-- [ ] Implementation tests written for edge cases and internals
-- [ ] `make verify` passes; bench evidence recorded
-- [ ] No regressions in existing tests
+- [x] All ST-cases defined with concrete input/output pairs
+- [x] Every ST case traces to a requirement, spec doc, or AR entry
+- [x] Specification tests written BEFORE implementation
+- [x] Specification tests verified to FAIL before implementation (red phase), with the listed guards justified
+- [x] All specification tests pass after implementation (green phase)
+- [x] Implementation tests written for edge cases and internals
+- [x] `make verify` passes; bench evidence recorded (bench-compare passed, benchmarks +0.0%; release `.text` `gui` +1748 B, `scroller` +64 B on `hosted-amiga-13`; 99 §Phase 5)
+- [x] No regressions in existing tests

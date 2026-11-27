@@ -71,16 +71,16 @@ acceptance gate. `make check` and `make verify` remain authoritative.
 | `make sdk-a500-assets` | Build the ILBM viewer for `hosted-amiga-13` in release mode, see the held image frame on the A500/KS1.3 run, and compare the DOS/asset report line |
 | `make sdk-a500-gui` | Build the Intuition GUI demo for `hosted-amiga-13`, drive it headlessly on Xvfb with the Amiga-key shortcuts, and compare its native screen capture and report line |
 | `make sdk-a500-exec` | Build the Exec demo for `hosted-amiga-13`, boot it on the A500/KS1.3, and compare the report line and the 620x22 line golden |
-| `make sdk-a500-fault-cleanup` | Build the fault-cleanup probes and the test-only walker for `hosted-amiga-13`, boot A500/KS1.3 with the Workbench 1.3.5 HDF and a per-run capture ADF in DF1, send Ctrl-C with `xdotool` to the two break probes, and assert that each probe leaves the walker's system state unchanged |
+| `make sdk-a500-fault-cleanup` | Build the fault-cleanup probes and the test-only walker for `hosted-amiga-13`, boot A500/KS1.3 with the Workbench 1.3.5 HDF and a per-run capture ADF in DF1, send Ctrl-C with `xdotool` to the two break probes, and assert that each probe leaves the walker's system state unchanged; the last case, the `text-clip` crash-safety probe, also checks free chip memory and compares its six edge-clipped text copies with a reference in the native capture |
 | `make sdk-advanced-build` | Build the Workbench and services demos plus the two test-only Workbench fixtures |
 | `make sdk-a600-services` | Build the advanced demos/fixtures, boot A600/KS2.05, start the ROM Workbench, and assert the Workbench and services report lines |
 | `make sdk-a1200-workbench` | Build the advanced demos/fixtures, boot A1200/KS3.1, assert the report lines, and compare the native Workbench capture and AppIcon crop goldens |
 | `make sdk-bundle9-build` | Build the release Bundle 9 hosted-amiga demos |
 | `make sdk-a500-diskfont` | Build the diskfont demo for `hosted-amiga-13`, boot A500/KS1.3 with the Workbench 1.3.5 HDF, and assert `diskfont: ok h 12` |
-| `make sdk-a600-addons` | Boot A600/KS2.05, assert the Exec/args/services/intuition lines, drive the ASL requester on Xvfb, and compare the intuition capture |
+| `make sdk-a600-addons` | Boot A600/KS2.05, assert the Exec/args/services/intuition lines, drive the ASL requester on Xvfb, compare the intuition capture, then run the `clip-iff` crash-safety probe on the 2.04 clipboard device and wait for the startup-sequence's `done.txt` |
 | `make sdk-a600-ks31-addons` | Boot A600/KS3.1 and assert `ll: ok v 40` and `nv: ok n 23 size 30` |
 | `make sdk-a1200-ks30-addons` | Boot A1200/KS3.0, assert `pool: ok 1` and `boopsi: ok val 42`, and compare the BOOPSI capture |
-| `make sdk-a1200-addons` | Boot A1200/KS3.1 with Workbench and the host echo peer, and assert the datatypes, network, and AmigaGuide lines |
+| `make sdk-a1200-addons` | Boot A1200/KS3.1 with Workbench and the host echo peer, assert the datatypes, network, and AmigaGuide lines, then run the six crash-safety probes from `examples/robustness/crash-safety/` (`clip-raw` before `clip-iff`, while the clipboard unit is still empty; `text-offscreen` last) and wait for the startup-sequence's `done.txt` |
 | `make sdk-a1200-rtg` | Boot A1200/KS3.1 with Picasso96 and FS-UAE UAEGFX, assert the 32-bit RTG report and PPM capture, and write `docs/amiga-sdk/a1200-rtg.png` |
 | `make sdk-a4000-rtg-piv` | Boot A4000/KS3.1 with Picasso96, the emulated Picasso IV Zorro III card, and the 7.4 flash ROM, assert the 24-bit RTG report and PPM capture, and write `docs/amiga-sdk/a4000-rtg-piv.png` |
 | `cargo test --workspace` | Rust tests; run inside the container via `make check` |

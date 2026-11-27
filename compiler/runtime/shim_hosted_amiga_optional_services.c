@@ -698,10 +698,11 @@ LONG cl_rexx_arg(void *handle_void, LONG index, APTR buffer, ULONG length)
 /* ------------------------------------------------------------------------- */
 
 /* A clipboard handle keeps its request and reply port, but holds the device
- * open only for the length of one write or read. On the clipboard.device of
- * Kickstart 2.0 to 3.1, a read that returns no data (an empty unit, a clip the
- * device could not keep, or any read at or past the end of a clip) holds off
- * every later write on the unit until all of its openers have closed it. Each
+ * open only for the length of one write or read. On the Workbench 2.04 and 3.1
+ * clipboard.device, a read that returns no data (an empty unit, a clip the
+ * device could not keep, or a read that starts at or past the end of a clip)
+ * holds off every later write on the unit until all of its openers have
+ * closed it. Each
  * operation therefore opens the unit, does its requests, and closes it again,
  * so that state ends with the call that caused it, and no read is ever issued
  * past the end of a clip. */

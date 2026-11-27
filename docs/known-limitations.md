@@ -48,7 +48,7 @@ The Bundle 9 services are runtime-proven at these baselines:
 | Commodities | A600/KS2.05 | Broker open, duplicate rejection, close, reopen |
 | Locale | A600/KS2.05 | Default locale language, country, GMT, format |
 | ARexx | A600/KS2.05 | Typed message create/send/receive/reply/reclaim |
-| Clipboard | A600/KS2.05 | Whole-clip write and `CMD_UPDATE` |
+| Clipboard | A600/KS2.05 and A1200/KS3.1 | Whole-clip write and `CMD_UPDATE`; IFF read of part of a clip, exactly the clip, and a larger buffer, each followed by a write that returns (both baselines); a raw write, read, and write on an empty unit (A1200) |
 | Serial/parallel/printer | A600/KS2.05 | Typed open and close; data paths are impl-tested |
 | Nonvolatile | A600/KS3.1 | 23-byte store/get/delete round-trip |
 
@@ -59,9 +59,16 @@ These are deliberate boundaries, not hidden gaps:
 - **BOOPSI** uses the native Intuition `strgclass` (2.0+). The licensed 3.0/3.1
   `colorwheel.gadget` loads but its color attributes did not round-trip in
   probes, so the module does not claim them. The runtime gate runs on A1200/KS3.0.
-- **Clipboard read** is implemented and pinned, but the gate proves only the
-  write/update path; the 2.05 clipboard device returned no data on read in the
-  probe environment.
+- **Clipboard** handles open their unit only for each write or read. On the
+  2.04 and 3.1 `clipboard.device`, a read that returns no data, or one that
+  starts at or past the end of a clip, holds off every later write on the unit
+  until all of its openers have closed it, so `clipboardRead` issues one read
+  from the start of the clip and never a further read past its end. While
+  another program keeps the unit open, a read of an empty unit, or of a clip
+  that is not an IFF form (those devices' reads return no data for it), still
+  holds off writes until that program closes the unit. Each operation may load `clipboard.device` from `DEVS:` again after a
+  low-memory expunge; on a floppy-only system that can show a volume
+  requester. The 3.1.4 and later device (45.x) is untested.
 - **Serial and parallel I/O** are typed and bounded, but the runtime gate proves
   open/close only; their data paths are implementation-tested. **Printer**
   proves open/close only and does not claim output or a `PRD_RAWWRITE` result
@@ -339,3 +346,21 @@ toolchain, FS-UAE, the VS Code extension, and a starter project; see
   containing a comma are not supported.
 - **Signing.** The binaries and scripts are not code-signed; SmartScreen or
   Defender may ask before the first run.
+
+## 18. Screen text clipping
+
+`drawText` draws on a screen's own RastPort, which has no layer to clip it, so
+the runtime measures every character from the font and clips at the screen's
+edge itself. Text that fits takes the plain `Text()` call; text partly outside
+is rendered into a small chip-memory raster and copied for the visible part.
+
+- A **color font** (`FSF_COLORFONT`) that does not fit on the screen completely
+  draws nothing.
+- Text whose visible run is wider than the screen plus 512 pixels, or wider
+  than 1008 pixels on graphics.library before V36, draws nothing; so does a
+  clipped draw when the raster cannot be allocated in chip memory, and a string
+  whose pen position would move more than 2^28 pixels.
+- The measurement follows the font's own kerning and spacing tables, as
+  `Text()` does. It is proven on Kickstart 1.3 with the ROM topaz font only;
+  right-to-left (`FPF_REVPATH`) and kerned disk fonts are measured by the same
+  rule but have no target run.

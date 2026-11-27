@@ -2,13 +2,25 @@
 //!
 //! This module belongs to `hosted-amiga`; the host, `hosted-amiga-13`, and
 //! freestanding profiles reject it with `E11200`. A `Clipboard` owns one
-//! `IOClipReq` and a private reply port. `clipboardWrite` writes the whole
-//! clip and sends `CMD_UPDATE`; `clipboardRead` reads at most the caller's
-//! buffer. Obsolete clip IDs are retried a bounded number of times.
+//! `IOClipReq` and a private reply port, and opens its unit only for the
+//! length of each write or read. `clipboardWrite` writes the whole clip and
+//! sends `CMD_UPDATE`; `clipboardRead` issues one read of at most the
+//! caller's buffer from the start of the clip, and never a further read past
+//! its end. Obsolete clip IDs are retried a bounded number of times.
+//!
+//! On the Workbench 2.04 and 3.1 clipboard.device, a read that returns no
+//! data, or one that starts at or past the end of a clip, holds off every
+//! later write on the unit until all of its openers have closed it. Closing
+//! the unit after each operation ends that state, so while no other program
+//! has the unit open, a program's own reads never hold off its writes. While
+//! another program keeps the unit open, a read of an empty unit (or of a clip
+//! that is not an IFF form, for which those devices' reads return no data)
+//! still holds off writes until that program closes the unit. The 3.1.4 and
+//! later device is untested.
 
 module std.amiga.clipboard;
 
-/// An open clipboard unit. The generated drop closes it.
+/// A clipboard unit, opened for each operation. The generated drop frees it.
 export handle Clipboard freedBy cl_clipboard_close;
 
 ffi stdclipboard {
@@ -21,12 +33,14 @@ ffi stdclipboard {
     func cl_clipboard_clear(borrow clipboard: Clipboard): bool;
 }
 
-/// Opens a clipboard unit, or returns null.
+/// Checks that the clipboard unit can be opened and returns a handle that
+/// opens it for each operation, or null.
 export func openClipboard(unit: i32): Clipboard? {
     return cl_clipboard_open(unit);
 }
 
-/// Closes a clipboard unit exactly once.
+/// Frees the handle exactly once; the unit is not held open between
+/// operations.
 export func closeClipboard(take clipboard: Clipboard): void {
     cl_clipboard_close(clipboard);
 }
@@ -39,7 +53,8 @@ export func clipboardWrite(borrow clipboard: Clipboard,
     }
 }
 
-/// Reads at most `len(buf)` bytes and returns the count, or -1.
+/// Reads at most `len(buf)` bytes from the start of the current clip and
+/// returns the count, or -1. An empty `buf` reads nothing and returns 0.
 export func clipboardRead(borrow clipboard: Clipboard,
                           borrow buf: u8[]): i32 {
     unsafe {

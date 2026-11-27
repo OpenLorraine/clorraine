@@ -150,7 +150,10 @@ export func replyAppMessage(take message: AppMessage): void {
 /// Captures a public screen by name to a native `CSCR` file.
 ///
 /// The capture is the Amiga screen bitmap, independent of the host window.
-/// Returns false for a null/unknown screen or an unwritable path.
+/// Returns false for a null/unknown screen or an unwritable path. The capture
+/// may be the program's first Intuition call: the runtime opens
+/// intuition.library for it, and returns false when version 36 or later
+/// cannot be opened.
 export func savePublicScreen(name: cstring, path: cstring): bool {
     return cl_save_public_screen(name, path);
 }

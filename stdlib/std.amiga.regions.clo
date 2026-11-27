@@ -3,8 +3,11 @@
 //! This module belongs to `hosted-amiga`; the host, `hosted-amiga-13`, and
 //! freestanding profiles reject it with `E11200`. A `Region` owns a
 //! graphics.library region. `layerSetClipRegion` borrows the region: clear the
-//! clip before freeing the region or closing the layer. `layerBeginUpdate` /
-//! `layerEndUpdate` in `std.amiga.layers` remain the damage protocol.
+//! clip before freeing the region or closing the layer. If a program does
+//! not, freeing the region first removes it from every layer that has it
+//! installed (the layer then draws unclipped), and freeing a layer first
+//! removes its clip region. `layerBeginUpdate` / `layerEndUpdate` in
+//! `std.amiga.layers` remain the damage protocol.
 
 module std.amiga.regions;
 
@@ -45,6 +48,10 @@ export func newRegion(): Region? {
 }
 
 /// Disposes a region exactly once.
+///
+/// Every layer that still has the region installed as its clip is unclipped
+/// first, so it never clips through a disposed region. An update the program
+/// has begun on such a layer stays open for its own `layerEndUpdate`.
 export func freeRegion(take region: Region): void {
     cl_free_region(region);
 }
@@ -85,7 +92,8 @@ export func regionIsEmpty(borrow region: Region): bool {
 /// Installs `region` as the layer's clip region.
 ///
 /// The layer borrows the region. Clear the clip before freeing the region or
-/// closing the layer.
+/// closing the layer; if a program does not, freeing the region removes it
+/// from the layer first, and freeing the layer removes the clip first.
 export func layerSetClipRegion(borrow layer: Layer,
                                borrow region: Region): void {
     cl_layer_set_clip(layer, region);

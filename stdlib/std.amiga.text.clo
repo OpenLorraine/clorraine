@@ -71,7 +71,14 @@ export func textHeight(const font: Font): i32 {
 /// Draws `text` at (`x`,`y`) on `screen` with color `pen`.
 ///
 /// The screen's color map bounds `pen`; the font and screen must stay alive
-/// while drawing.
+/// while drawing. The text is clipped to the screen's bitmap: the part that
+/// lies on the screen is drawn exactly as on a larger screen, and nothing is
+/// written outside it. Text fully outside the screen, an empty text, a
+/// coordinate outside -32768..32767, or more than 32767 bytes draws nothing,
+/// and so does a color font that does not fit on the screen completely. A
+/// clipped draw also draws nothing when its temporary chip-memory raster
+/// cannot be allocated or its visible run would be too wide (see the known
+/// limitations).
 export func drawText(borrow screen: Screen, borrow font: Font, x: i32, y: i32, pen: u8, const text: u8[]): void {
     unsafe {
         cl_text_draw(screen, font, x, y, pen, raw u8(text.ptr), u32(len(text)));

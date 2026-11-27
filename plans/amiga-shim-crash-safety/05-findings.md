@@ -17,6 +17,8 @@
 | RV-004 | 4 | MINOR | `docker/scripts/a1200-addons-smoke.sh` | fixed |
 | SR-001 | 4 | MINOR | `docker/scripts/a500-fault-cleanup-smoke.sh` | fixed |
 | SR-002 | 4 | MINOR | `docker/scripts/a500-fault-cleanup-smoke.sh` | fixed |
+| SR-001..SR-005 | 5 | MINOR | `stdlib/std.amiga.{clipboard,text}.clo`, `docs/known-limitations.md`, `AGENTS.md` | fixed |
+| RV-001..RV-004 | 5 | MINOR | `stdlib/std.amiga.{text,clipboard,regions}.clo`, `AGENTS.md` | fixed |
 
 Phase 1 review evidence (2026-11-27): correctness reviewer (generic packet; the `correctness-reviewer`
 role is not dispatchable in this host) — 1 minor; `amiga-platform-reviewer` — no findings (open
@@ -41,3 +43,9 @@ temporary `BitMap` is now cleared; unusual 1.3 disk-font metrics go to known-lim
 5). RV-003 (a disk-font target oracle) is deferred: it would extend ST-10, and AR-19's reopen
 trigger records it. One re-review of the fix diff follows the major fix.
 Phase 4 re-review of the fix diff (once): no findings.
+
+Phase 5 review evidence (2026-11-27): docs-only diff; correctness reviewer (generic packet) — 4 minor
+(RV-004 restores the spec's "clear the clip first" rule beside the runtime's safety net);
+`amiga-platform-reviewer` — 5 minor, and its open question taken (the pre-45.1 device's reads
+"return no data" for a raw clip, rather than a claimed discard). No auditor applies to a docs-only
+diff. All fixes are wording; `make verify` ran on the pre-fix wording and `make check` re-ran after.

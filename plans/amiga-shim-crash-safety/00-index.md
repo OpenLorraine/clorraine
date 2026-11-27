@@ -1,7 +1,7 @@
 # Amiga Shim Crash-Safety Implementation Plan
 
 > **Feature**: Fix the hosted-amiga shim paths that crash or hang a real Amiga: Intuition opened on demand, screen text clipped, the clipboard read finished, borrowed clip regions and guide messages tracked
-> **Status**: Plan Preflighted (2026-11-27; [preflight report](00-preflight-report.md))
+> **Status**: Done (2026-11-27; 39/39 tasks; `make verify` passed; runtime decisions AR-17..AR-19)
 > **Created**: 2026-11-27
 > **Implements**: none (standalone plan; no RD) — closes DEF-585, DEF-587, DEF-588, DEF-593 and theme issue #44 (findings #57, #59, #60, #65)
 > **CodeOps Artifact Schema**: 1

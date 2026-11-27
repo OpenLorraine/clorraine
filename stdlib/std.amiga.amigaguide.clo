@@ -35,6 +35,10 @@ export func openAmigaGuide(path: cstring,
 }
 
 /// Closes a guide context exactly once.
+///
+/// Messages from this context that the program still holds are replied
+/// first. Afterwards their getters return 0 and `replyGuideMessage` only
+/// frees them, so nothing reaches the closed context.
 export func closeAmigaGuide(take guide: AmigaGuide): void {
     cl_guide_close(guide);
 }
@@ -65,6 +69,9 @@ export func guideMessageSecondary(borrow message: GuideMessage): u32 {
 }
 
 /// Replies a message exactly once.
+///
+/// A message whose guide context was already closed was replied then; this
+/// call only frees it.
 export func replyGuideMessage(take message: GuideMessage): void {
     cl_guide_reply(message);
 }

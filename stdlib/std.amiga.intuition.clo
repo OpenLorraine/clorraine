@@ -286,7 +286,9 @@ export func askYesNo(borrow window: Window, body: cstring): bool {
 /// The body is copied (at most 28 bytes) for the blocking call. The alert uses
 /// the default screen, so it temporarily covers the caller's custom screen; the
 /// window layer restores its content when the alert returns. A null or
-/// over-long body is a no-op.
+/// over-long body is a no-op. The alert may be the program's first Intuition
+/// call: the runtime opens intuition.library for it, and when the library
+/// cannot be opened the call does nothing.
 export func showAlert(body: cstring): void {
     cl_show_alert(body);
 }

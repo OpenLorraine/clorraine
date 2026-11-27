@@ -143,7 +143,7 @@ fn the_clipboard_opens_its_unit_only_for_each_operation() {
 
 /// A read is one bounded request from the start of the current clip. It never
 /// reads on toward the end of the clip, never reads without a buffer, and
-/// never asks for zero bytes: on the 2.0 to 3.1 devices a read that returns
+/// never asks for zero bytes: on the 2.04 and 3.1 devices a read that returns
 /// no data holds off every later write on the unit.
 #[test]
 fn the_clipboard_read_is_one_bounded_request_from_the_start() {

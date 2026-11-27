@@ -377,7 +377,8 @@ sdk-a500-exec:
 
 # A500/KS1.3 fault-cleanup gate: boots the licensed Workbench 1.3.5 HDF, runs
 # the fault-cleanup probes between walker snapshots, and asserts that every
-# probe leaves the system state unchanged.
+# probe leaves the system state unchanged. Its last case is the screen-text
+# crash-safety probe, whose clipped text is compared in the native capture.
 sdk-a500-fault-cleanup:
 	$(DOCKER_MAKE) exec CMD="cargo build --workspace --quiet"
 	docker/scripts/a500-fault-cleanup-smoke.sh
