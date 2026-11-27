@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-11-27 15:21
-> **Progress**: 14/55 tasks (25%)
+> **Progress**: 15/55 tasks (27%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -97,7 +97,7 @@ branch; only Phase 1 reaches `main` before the release (AR-40).
 - [x] 2.2.1 Listing files — `tools/vscode/{README.md,DEVELOPMENT.md,CHANGELOG.md,images/icon.png}` (03-01 item 6) ✅ (completed: 2026-11-27 15:21)
 - [x] 2.2.2 Manifest, staging, and audit — `tools/vscode/{package.json,scripts/stage.mjs,scripts/audit_vsix.py}` (03-01 items 1, 7) ✅ (completed: 2026-11-27 15:21)
 - [x] 2.2.3 Guide helpers, install-guide error at the three sites, `clorraine.driverPath`, drift notice — `tools/vscode/src/{guide.ts,extension.ts,actions.ts}` (03-01 items 2–5) ✅ (completed: 2026-11-27 15:21)
-- [ ] 2.2.4 Green phase: ST-11..ST-20 pass; update `manifest.test.ts` / `packaged.test.ts` only where they pin the intentionally changed manifest or file list
+- [x] 2.2.4 Green phase: ST-11..ST-20 pass; update `manifest.test.ts` / `packaged.test.ts` only where they pin the intentionally changed manifest or file list ✅ (completed: 2026-11-27 15:21) — 218 tests: 217 pass, 1 skipped (packaged client needs make vscode-check); no existing pin changed
 
 ### Step 2.3: Impl tests and gate
 
