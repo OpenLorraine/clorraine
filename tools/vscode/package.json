@@ -4,24 +4,42 @@
   "description": "Clorraine language support: compiler diagnostics, hover, definition, completion, and symbols.",
   "version": "1.2.0",
   "publisher": "openlorraine",
+  "preview": true,
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
     "url": "https://github.com/OpenLorraine/clorraine"
   },
+  "homepage": "https://openlorraine.github.io/clorraine/",
+  "bugs": { "url": "https://github.com/OpenLorraine/clorraine/issues" },
+  "icon": "images/icon.png",
+  "galleryBanner": { "color": "#0c1219", "theme": "dark" },
   "engines": {
     "vscode": "^1.85.0"
   },
   "categories": ["Programming Languages"],
+  "keywords": ["amiga", "amigaos", "m68k", "68000", "retro", "clorraine", "compiler", "language server"],
+  "extensionKind": ["workspace"],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": "limited",
+      "description": "In Restricted Mode Clorraine does not start the language server, look for tools, save files, or run tasks."
+    },
+    "virtualWorkspaces": false
+  },
   "activationEvents": ["onLanguage:clorraine"],
   "main": "./out/extension.js",
   "contributes": {
     "commands": [
       { "command": "clorraine.build", "title": "Clorraine: Build" },
       { "command": "clorraine.run", "title": "Clorraine: Run", "icon": "$(play-circle)" },
-      { "command": "clorraine.runInFsUae", "title": "Clorraine: Run in FS-UAE", "icon": "$(play)" }
+      { "command": "clorraine.runInFsUae", "title": "Clorraine: Run in FS-UAE", "icon": "$(play)" },
+      { "command": "clorraine.driverPath", "title": "Clorraine: Driver Path" }
     ],
     "menus": {
+      "commandPalette": [
+        { "command": "clorraine.driverPath", "when": "false" }
+      ],
       "editor/title/run": [
         { "command": "clorraine.runInFsUae", "when": "resourceLangId == clorraine", "group": "navigation@1" },
         { "command": "clorraine.run", "when": "resourceLangId == clorraine", "group": "navigation@2" }

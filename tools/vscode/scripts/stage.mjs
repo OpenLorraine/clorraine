@@ -22,8 +22,13 @@ const version = match[1];
 
 rmSync(stage, { recursive: true, force: true });
 mkdirSync(join(stage, "syntaxes"), { recursive: true });
+mkdirSync(join(stage, "images"), { recursive: true });
 cpSync(join(packageRoot, "package.json"), join(stage, "package.json"));
+// The listing: README, changelog, and the PNG icon the Marketplace requires.
+// DEVELOPMENT.md holds maintainer notes and is deliberately not staged.
 cpSync(join(packageRoot, "README.md"), join(stage, "README.md"));
+cpSync(join(packageRoot, "CHANGELOG.md"), join(stage, "CHANGELOG.md"));
+cpSync(join(packageRoot, "images", "icon.png"), join(stage, "images", "icon.png"));
 // The staged extension keeps the license beside its manifest. The `.txt` name
 // matches the packaged audit and the standard VS Code license lookup. The
 // output exception, NOTICE, and trademark policy travel with it.
