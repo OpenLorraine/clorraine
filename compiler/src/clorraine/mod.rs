@@ -25,7 +25,6 @@ mod setup;
 mod toolchain;
 
 pub use emulator::{fs_uae_version_for, kickstart_key_missing_for};
-pub use new::launcher_for;
 pub use setup::{validate_for, SetupError, Toolchain, Validation};
 pub use toolchain::native_syscalls_for;
 
@@ -108,7 +107,7 @@ fn run_with_marker(args: Vec<String>, marker: &str) -> i32 {
 /// gates can be exercised with synthetic inputs.
 fn invoke(options: Options, marker: &str, search_path: &OsStr) -> i32 {
     if options.command == Command::New {
-        return match new::run(&options, search_path) {
+        return match new::run(&options) {
             Ok(()) => 0,
             Err(error) => {
                 report_error(options.diagnostics, &error.message);
