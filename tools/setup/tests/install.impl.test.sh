@@ -172,6 +172,44 @@ download_toolchain_verifies_and_installs() {
     rm -rf "$root"
 }
 
+# The editor bound defaults to 300 seconds and takes only a positive whole
+# number from CLORRAINE_EDITOR_TIMEOUT.
+editor_timeout_parses_the_override() {
+    local value actual
+    actual=$(unset CLORRAINE_EDITOR_TIMEOUT; editor_timeout)
+    if [ "$actual" = 300 ]; then pass; else fail "default bound: $actual"; fi
+    for value in '' abc 0 00 -5 '1 2' 1.5; do
+        actual=$(CLORRAINE_EDITOR_TIMEOUT="$value" editor_timeout)
+        if [ "$actual" = 300 ]; then pass; else fail "bound for '$value': $actual"; fi
+    done
+    actual=$(CLORRAINE_EDITOR_TIMEOUT=45 editor_timeout)
+    if [ "$actual" = 45 ]; then pass; else fail "override: $actual"; fi
+}
+
+# A bounded editor call keeps its output, returns its status, and is stopped
+# at the bound.
+bounded_editor_keeps_output_and_stops_at_the_bound() {
+    local actual start elapsed
+    actual=$(bounded_editor sh -c 'printf "listed\n"; exit 3')
+    if [ "$?" -eq 3 ] && [ "$actual" = listed ]; then pass; else fail "output or status: [$actual]"; fi
+    start=$(date +%s)
+    CLORRAINE_EDITOR_TIMEOUT=1 run_editor sh -c 'exec sleep 30'
+    actual=$?
+    elapsed=$(( $(date +%s) - start ))
+    if [ "$actual" -ne 0 ] && [ "$elapsed" -lt 10 ]; then pass; else fail "bound: status $actual after ${elapsed}s"; fi
+}
+
+# Editor detection never considers codium, even when it is the only editor.
+editor_detection_skips_codium() {
+    local root editor
+    root="$(new_root)"
+    mkdir -p "$root/only"
+    printf '#!/bin/sh\nexit 0\n' >"$root/only/codium"
+    chmod +x "$root/only/codium"
+    if editor=$(PATH="$root/only" detect_editor); then fail "codium detected: $editor"; else pass; fi
+    rm -rf "$root"
+}
+
 # Editor detection ignores a broken launcher and accepts a working one.
 editor_detection_checks_the_launcher() {
     local root editor
@@ -189,6 +227,9 @@ editor_detection_checks_the_launcher() {
 
 single_quote_is_posix_safe
 sanitize_removes_terminal_controls
+editor_timeout_parses_the_override
+bounded_editor_keeps_output_and_stops_at_the_bound
+editor_detection_skips_codium
 download_toolchain_verifies_and_installs
 editor_detection_checks_the_launcher
 config_dir_uses_an_absolute_xdg_home_only

@@ -661,6 +661,39 @@ Test-Case 'should prefer a usual ROM name in any folder to a name pattern and sk
     }
 }
 
+Test-Case 'should take the editor bound only from a positive whole number' {
+    $saved = $env:CLORRAINE_EDITOR_TIMEOUT
+    try {
+        Remove-Item Env:\CLORRAINE_EDITOR_TIMEOUT -ErrorAction SilentlyContinue
+        Assert-That ((Get-EditorTimeout) -eq 300) "default: $(Get-EditorTimeout)"
+        foreach ($value in 'abc', '0', '-5', '1.5', ' ') {
+            $env:CLORRAINE_EDITOR_TIMEOUT = $value
+            Assert-That ((Get-EditorTimeout) -eq 300) "bound for '$value': $(Get-EditorTimeout)"
+        }
+        $env:CLORRAINE_EDITOR_TIMEOUT = '45'
+        Assert-That ((Get-EditorTimeout) -eq 45) "override: $(Get-EditorTimeout)"
+    } finally {
+        $env:CLORRAINE_EDITOR_TIMEOUT = $saved
+    }
+}
+
+Test-Case 'should stop a program and its children at the bound' {
+    $powershell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+    $marker = 'clorraine-bound-' + [guid]::NewGuid().ToString('N').Substring(0, 8)
+    # The child starts a grandchild that would outlive a plain kill.
+    $script = "Start-Process -NoNewWindow -FilePath '$powershell' -ArgumentList '-NoProfile','-Command','Start-Sleep 60; # $marker'; Start-Sleep 60"
+    $watch = [Diagnostics.Stopwatch]::StartNew()
+    $result = Invoke-Native $powershell @('-NoProfile', '-Command', $script) '' @{} 2
+    $watch.Stop()
+    Assert-That ($result.TimedOut -and $result.Code -eq -1) "not reported as timed out: $($result.Code)"
+    Assert-That ($watch.Elapsed.TotalSeconds -lt 20) "took $([int]$watch.Elapsed.TotalSeconds)s"
+    Start-Sleep -Milliseconds 500
+    $left = @(Get-CimInstance Win32_Process -Filter "Name = 'powershell.exe'" | Where-Object { $_.CommandLine -and $_.CommandLine.Contains($marker) })
+    Assert-That ($left.Count -eq 0) "left running: $($left.Count)"
+    $quick = Invoke-Native $powershell @('-NoProfile', '-Command', 'exit 3') '' @{} 30
+    Assert-That (-not $quick.TimedOut -and $quick.Code -eq 3) "a quick program: $($quick.Code)"
+}
+
 Test-Case 'should run VS Code through its Electron binary so cmd.exe never parses an argument' {
     $vscode = New-Dir 'vscode-fake'
     $bin = New-Dir 'vscode-fake\bin'
