@@ -323,6 +323,130 @@ fn closing_a_guide_replies_and_orphans_its_held_messages_first() {
     );
 }
 
+/// Screen text reads the font's metrics after SetFont, rejects out-of-range
+/// and empty calls before it measures, and draws text that fits with exactly
+/// the old Move/Text sequence; only a partly visible plain font takes the clip
+/// path, and the screen font is restored on every path.
+#[test]
+fn screen_text_measures_after_set_font_and_keeps_the_old_path_for_text_that_fits() {
+    let source = shim("shim_hosted_amiga.c");
+    let draw = body(
+        &source,
+        "void cl_text_draw(void *screen_handle, void *font_handle, LONG x, LONG y,\n                  UBYTE pen, APTR text, ULONG count)",
+    );
+    assert_order(
+        "draw",
+        draw,
+        &[
+            "(void)SetFont(rast_port, font->font);",
+            "SetAPen(rast_port, (ULONG)pen);",
+            "face = rast_port->Font;",
+            "x < -32768 || x > 32767 || y < -32768 || y > 32767 ||",
+            "count == 0 || count > 32767",
+            "(void)SetFont(rast_port, old_font);\n        return;",
+            "width = (LONG)screen->Width;",
+            "(LONG)rast_port->BitMap->BytesPerRow * 8 < width",
+            "height = (LONG)screen->Height;",
+            "(LONG)rast_port->BitMap->Rows < height",
+            "top = y - (LONG)face->tf_Baseline;",
+            "bottom = top + (LONG)face->tf_YSize - 1;",
+            "cl_text_box(face, rast_port, (const UBYTE *)text, count, x, width,",
+            "span.left >= 0 && span.right <= width - 1 && top >= 0 &&",
+            "bottom <= height - 1) {\n            Move(rast_port, x, y);\n            (void)Text(rast_port, (STRPTR)text, count);",
+            "(face->tf_Style & FSF_COLORFONT) == 0",
+            "cl_text_draw_clipped(rast_port, top, width, height,",
+            "(void)SetFont(rast_port, old_font);\n}",
+        ],
+    );
+}
+
+/// The box walk: the default glyph for codes outside the font, kern and
+/// space defaults, the advance exactly as the signed tables give it (a
+/// right-to-left font's tables already point left), every point the pen
+/// passes (after the kern, after the space, after the extra spacing), the
+/// kerned glyph and the XSize cell, all in LONG, with the pen bounded so it
+/// cannot overflow.
+#[test]
+fn the_text_box_contains_every_column_text_can_touch() {
+    let source = shim("shim_hosted_amiga.c");
+    assert!(!source.contains("advance = -advance"), "the walk must not reverse the signed advance");
+    let walk = body(
+        &source,
+        "static BOOL cl_text_box(const struct TextFont *font, const struct RastPort *rp,\n                        const UBYTE *text, ULONG count, LONG x, LONG width,\n                        cl_text_span *span)",
+    );
+    assert_order(
+        "walk",
+        walk,
+        &[
+            "if (code >= font->tf_LoChar && code <= font->tf_HiChar) {",
+            "index = code - font->tf_LoChar;",
+            "index = (ULONG)(font->tf_HiChar - font->tf_LoChar) + 1UL;",
+            "kern = kerns != NULL ? (LONG)kerns[index] : 0;",
+            "space = spaces != NULL ? (LONG)spaces[index] : (LONG)font->tf_XSize;",
+            "glyph = locs != NULL ? (LONG)locs[index * 2 + 1] : (LONG)font->tf_XSize;",
+            "advance = kern + space + (LONG)rp->TxSpacing;",
+            "left = pen;",
+            "if (pen + kern < left) {",
+            "if (pen + kern + space < left) {",
+            "if (pen + advance < left) {",
+            "right = pen + kern + glyph;",
+            "if (pen + kern + space > right) {",
+            "if (pen + advance > right) {",
+            "if (pen + (LONG)font->tf_XSize > right) {",
+            "right -= 1;",
+            "if (right >= 0 && left <= width - 1) {",
+            "pen += advance;",
+            "if (pen > CL_TEXT_PEN_LIMIT || pen < -CL_TEXT_PEN_LIMIT) {\n            return FALSE;",
+        ],
+    );
+}
+
+/// The clip path: the raster rules, both chip planes cleared and checked,
+/// Text() of the run with pens 3 and 2 in the screen's mode and spacing, the
+/// two template blits (or one complement blit) over the visible part only,
+/// the screen mode restored, and WaitBlit before the planes are freed.
+#[test]
+fn the_text_clip_renders_the_run_off_screen_and_blits_only_the_visible_part() {
+    let source = shim("shim_hosted_amiga.c");
+    let clip = body(
+        &source,
+        "CL_NOINLINE void cl_text_draw_clipped(struct RastPort *screen_rp, LONG top,\n                                      LONG width, LONG height,\n                                      const UBYTE *text,\n                                      const cl_text_span *span)",
+    );
+    assert_order(
+        "clip",
+        clip,
+        &[
+            "raster_width > width + 512 ||",
+            "GfxBase->LibNode.lib_Version < 36 && raster_width > 1008",
+            "memset(&raster, 0, sizeof raster);",
+            "InitBitMap(&raster, 2, raster_width, raster_height);",
+            "AllocMem(plane_size, MEMF_CHIP | MEMF_CLEAR);",
+            "AllocMem(plane_size, MEMF_CHIP | MEMF_CLEAR);",
+            "if (raster.Planes[0] == NULL || raster.Planes[1] == NULL) {",
+            "InitRastPort(&temp);",
+            "(void)SetFont(&temp, font);",
+            "SetDrMd(&temp, (ULONG)mode);",
+            "temp.TxSpacing = screen_rp->TxSpacing;",
+            "SetAPen(&temp, 3);",
+            "SetBPen(&temp, 2);",
+            "Move(&temp, span->run_pen - span->run_left, (LONG)font->tf_Baseline);",
+            "(void)Text(&temp, (STRPTR)(text + span->first), span->count);",
+            "if (mode & COMPLEMENT) {",
+            "SetDrMd(screen_rp, COMPLEMENT);",
+            "BltTemplate(raster.Planes[0] + offset",
+            "SetDrMd(screen_rp, JAM1);",
+            "SetAPen(screen_rp, (ULONG)bpen);",
+            "BltTemplate(raster.Planes[1] + offset",
+            "SetAPen(screen_rp, (ULONG)apen);",
+            "BltTemplate(raster.Planes[0] + offset",
+            "SetDrMd(screen_rp, (ULONG)mode);",
+            "WaitBlit();",
+            "FreeMem(raster.Planes[0], plane_size);",
+            "FreeMem(raster.Planes[1], plane_size);",
+        ],
+    );
+}
+
 /// Only the two screen and window constructors and the two entries that can
 /// run first open Intuition; every other Intuition user receives a screen or
 /// window handle, so the library is already open when it runs.

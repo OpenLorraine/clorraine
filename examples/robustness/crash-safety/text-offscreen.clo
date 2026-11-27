@@ -1,0 +1,36 @@
+// Crash-safety probe: text drawn on a screen far above, below, and beside the
+// screen's bitmap. A screen has no layer to clip its text, so the runtime must
+// keep every glyph row inside the bitmap; drawing past it used to overwrite
+// memory and hang the machine. The result line shows the program came back.
+module robustness.crash_safety.text_offscreen;
+
+import { Screen, openScreen } from std.amiga.intuition;
+import { Font, defaultFont, drawText } from std.amiga.text;
+import { String, stringOf, bytes } from std.text;
+import { println } from std.io;
+
+func main(): i32 {
+    let opened: Screen? = openScreen(320, 200, 2, "Text probe");
+    if (opened == null) {
+        println("text: err screen");
+        return 1;
+    }
+    let screen: Screen = opened;
+    let found: Font? = defaultFont();
+    if (found == null) {
+        println("text: err font");
+        return 1;
+    }
+    let font: Font = found;
+    let text: String = stringOf("WWWWWWWW");
+    let i: i32 = 0;
+    while (i < 200) {
+        drawText(screen, font, 0, -4000 + i * 40, 1, bytes(text));
+        i = i + 1;
+    }
+    drawText(screen, font, 100000, 50, 1, bytes(text));
+    drawText(screen, font, 50, -100000, 1, bytes(text));
+    drawText(screen, font, -100000, 50, 1, bytes(text));
+    println("text: ok after");
+    return 0;
+}

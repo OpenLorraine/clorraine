@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-11-27 10:45
-> **Progress**: 25/39 tasks (64%)
+> **Last Updated**: 2026-11-27 11:40
+> **Progress**: 34/39 tasks (87%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -189,33 +189,41 @@ the existing legs, `pub`, and both clipboard probes pass.
 
 ## Phase 4: Screen text clipping
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill)_
+> **Phase baseline tree**: 457bef7c50e2c59d0f9b8db6e296daeef902f88c (scope mode strict)
 > **Reasoning**: xhigh — new drawing code on the memory-safety boundary, Kickstart 1.3 metrics, blitter lifetime.
 
 ### Step 4.1: Specification tests
 
 **Reference**: [07](07-testing-strategy.md) ST-9, ST-10, ST-3 (the `cl_text_draw_clipped` part) · AR-3..AR-5, AR-13
 
-- [ ] 4.1.1 [spec-author] Write the ST-9 probe and its A1200 gate check (last in the startup-sequence) — `examples/robustness/crash-safety/text-offscreen.clo`, `docker/scripts/a1200-addons-smoke.sh`, `Makefile`
-- [ ] 4.1.2 [spec-author] Write the ST-10 probe and its A500 gate case per 03-04 §A500 leg: build for `hosted-amiga-13` from the `crash-safety/` source path, `chip` column, the capture unpack, `cscr2png.py` on the host, the window comparisons, the two-colour reference check, and `python3`/`convert`/`compare` in the host-tool check — `examples/robustness/crash-safety/text-clip.clo`, `docker/scripts/a500-fault-cleanup-smoke.sh`
-- [ ] 4.1.3 [spec-author] Add the `cl_text_draw_clipped` half of ST-3 — `compiler/tests/amiga_crash_safety_spec_test.rs`
-- [ ] 4.1.4 Red phase: `make sdk-a1200-addons`, `make sdk-a500-fault-cleanup`, the spec test; record ST-9 failing (hang), ST-3's new half failing, and ST-10's base outcome with the AR-13 justification
+- [x] 4.1.1 [spec-author] Write the ST-9 probe and its A1200 gate check (last in the startup-sequence) — `examples/robustness/crash-safety/text-offscreen.clo`, `docker/scripts/a1200-addons-smoke.sh`, `Makefile` ✅ (completed: 2026-11-27 10:59)
+- [x] 4.1.2 [spec-author] Write the ST-10 probe and its A500 gate case per 03-04 §A500 leg: build for `hosted-amiga-13` from the `crash-safety/` source path, `chip` column, the capture unpack, `cscr2png.py` on the host, the window comparisons, the two-colour reference check, and `python3`/`convert`/`compare` in the host-tool check — `examples/robustness/crash-safety/text-clip.clo`, `docker/scripts/a500-fault-cleanup-smoke.sh` ✅ (completed: 2026-11-27 10:59)
+- [x] 4.1.3 [spec-author] Add the `cl_text_draw_clipped` half of ST-3 — `compiler/tests/amiga_crash_safety_spec_test.rs` ✅ (completed: 2026-11-27 10:59)
+- [x] 4.1.4 Red phase: `make sdk-a1200-addons`, `make sdk-a500-fault-cleanup`, the spec test; record ST-9 failing (hang), ST-3's new half failing, and ST-10's base outcome with the AR-13 justification ✅ (completed: 2026-11-27 10:59)
+
+**Red-phase evidence (2026-11-27 10:59)**: spec suite 3 passed, 1 failed (`text-clip` does not link
+`cl_text_draw_clipped`). A1200: `text-offscreen` printed `text: ok after`, then the machine died
+before the startup-sequence's next line (`done.txt` missing); the other probes passed; this run's
+existing network leg reported `net: err 3 recv -1` while the host peer logged eight good echoes
+(watched on the green run). A500: `text-clip` crashed the machine on the unfixed shim (no walker
+"after" line, the startup-sequence never finished), a red where AR-13 allowed a pass; the ten
+existing cases passed.
 
 ### Step 4.2: Implementation
 
 **Reference**: [03-02](03-02-text-clipping.md) · AR-3..AR-5
 
-- [ ] 4.2.1 Add, after `SetFont`/`SetAPen`, the range and empty-text checks, the visible rectangle, the superset box walk (03-02 step 3), and the classification to `cl_text_draw`; fully inside keeps the old sequence — `compiler/runtime/shim_hosted_amiga.c`
-- [ ] 4.2.2 Add `cl_text_draw_clipped`: the culled run, the two-plane raster, the template blits, `WaitBlit`, the frees — `compiler/runtime/shim_hosted_amiga.c`
-- [ ] 4.2.3 Green phase: ST-9, ST-10, ST-3 pass; if ST-10 shows a pixel difference, mark `[!]` and follow the AR-4/AR-5 reopen triggers; a `chip` or `mem` difference follows the 03-04 `chip` column rule
+- [x] 4.2.1 Add, after `SetFont`/`SetAPen`, the range and empty-text checks, the visible rectangle, the superset box walk (03-02 step 3), and the classification to `cl_text_draw`; fully inside keeps the old sequence — `compiler/runtime/shim_hosted_amiga.c` (mechanical correction: a pen leaving ±2^28 during the walk counts as out of range and draws nothing, so LONG cannot overflow on a font with extreme spacing; CL_NOINLINE keeps `cl_text_draw_clipped` a real function) ✅ (completed: 2026-11-27 11:06)
+- [x] 4.2.2 Add `cl_text_draw_clipped`: the culled run, the two-plane raster, the template blits, `WaitBlit`, the frees — `compiler/runtime/shim_hosted_amiga.c` ✅ (completed: 2026-11-27 11:06)
+- [x] 4.2.3 Green phase: ST-9, ST-10, ST-3 pass; if ST-10 shows a pixel difference, mark `[!]` and follow the AR-4/AR-5 reopen triggers; a `chip` or `mem` difference follows the 03-04 `chip` column rule ✅ (completed: 2026-11-27 11:06; spec 4/4; A500 `text-clip` ok with `chip` equal and 6 clipped copies matching the reference; A1200 6 probes OK)
 
 ### Step 4.3: Implementation tests and hardening
 
-- [ ] 4.3.1 Write the text impl tests; update any pin whose text intentionally changed — `compiler/tests/amiga_crash_safety_impl_test.rs`
-- [ ] 4.3.2 Phase gate: `make check`, `make sdk-a500-fault-cleanup`, `make sdk-a1200-addons`, `make sdk-a500-gui`, `make sdk-a500-text`, `make sdk-a1200-workbench`
+- [x] 4.3.1 Write the text impl tests; update any pin whose text intentionally changed — `compiler/tests/amiga_crash_safety_impl_test.rs` ✅ (completed: 2026-11-27 11:16; impl suite 13/13; no existing pin needed a change)
+- [x] 4.3.2 Phase gate: `make check`, `make sdk-a500-fault-cleanup`, `make sdk-a1200-addons`, `make sdk-a500-gui`, `make sdk-a500-text`, `make sdk-a1200-workbench` ✅ (completed: 2026-11-27 11:16; `make check` 4534 tests; `sdk-a500-fault-cleanup`, `sdk-a1200-addons` (6 probes), `sdk-a500-gui` (golden unchanged), `sdk-a500-text`, `sdk-a1200-workbench` OK)
 
 **Deliverables**:
-- [ ] ST-9, ST-10 green; the GUI and text goldens unchanged
+- [x] ST-9, ST-10 green; the GUI and text goldens unchanged
 
 **Verify (gate)**: `make check && make sdk-a500-fault-cleanup && make sdk-a1200-addons && make sdk-a500-gui && make sdk-a500-text && make sdk-a1200-workbench`
 

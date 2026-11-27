@@ -34,10 +34,11 @@ box has no bold or italic terms (AR-5, PF-004).
      `tf_HiChar - tf_LoChar + 1`;
    - `k` = `tf_CharKern[i]` (0 when `tf_CharKern` is NULL); `s` = `tf_CharSpace[i]` (`tf_XSize`
      when `tf_CharSpace` is NULL); `w` = the `tf_CharLoc[i]` bit width; advance
-     `a = k + s + rp->TxSpacing`, signed `d = a`, or `d = -a` for an `FPF_REVPATH` font, which
-     advances leftwards;
-   - columns: from `min(p, p + k, p + d)` to `max(p + k + w, p + d, p + tf_XSize) - 1`. The glyph
-     image is drawn at `p + k`; the JAM2 background runs to the next pen position `p + d`;
+     `d = k + s + rp->TxSpacing` as the signed tables give it, with no negation for an
+     `FPF_REVPATH` font, whose tables already point left (runtime AR-19);
+   - columns: from `min(p, p + k, p + k + s, p + d)` to `max(p + k + w, p + k + s, p + d,
+     p + tf_XSize) - 1`. The glyph image is drawn at `p + k`; the JAM2 background spans every
+     point the pen passes;
    - the next pen position is `p + d`;
    - rows: `y - tf_Baseline` to `y - tf_Baseline + tf_YSize - 1`.
    All arithmetic is `LONG`. The string's box is the union.

@@ -20,6 +20,10 @@
 # ADF for the end marker while the emulator runs and unpacks the files after
 # it stops. Runs on a private Xvfb display; no window opens on the desktop.
 #
+# The last case is the screen-text crash-safety probe. It saves its screen to
+# DF1:, and the gate compares each text copy clipped at a screen edge with the
+# same part of a reference copy drawn fully inside the screen.
+#
 # Usage:
 #   docker/scripts/a500-fault-cleanup-smoke.sh
 set -euo pipefail
@@ -41,8 +45,10 @@ done_marker="fault-cleanup-done"
 # expected output is the probe's whole output, with `\n` between lines. The rc
 # is `fail` when the probe must leave with a failing return code (20, after a
 # fault or a break) and `ok` when it must return normally. The memory column
-# is `chip` for the one probe whose free chip and total memory must also come
-# back exactly (it loads only ROM-resident code); every other probe uses `-`.
+# is `chip` for the probes whose free chip and total memory must also come
+# back exactly: device-fault, which loads only ROM-resident code, and
+# text-clip, which must free the temporary raster its clipped text uses;
+# every other probe uses `-`.
 # A trailing `break` makes the gate press Ctrl-C once while the probe waits.
 CASES=(
     "display-fault|error E11211: index out of range|fail|-"
@@ -55,7 +61,29 @@ CASES=(
     "worker-fault-unjoined|error E11211: index out of range\nerror E11210: integer division by zero|fail|-"
     "break-timer|waiting\n***Break|fail|-|break"
     "break-own-mask|waiting\nbreak bit|ok|-|break"
+    "text-clip|textclip: ok w 32 h 8|ok|chip"
 )
+
+# The source of a probe: the fault-cleanup probes, and the one crash-safety
+# probe this gate runs.
+probe_source() {
+    case "$1" in
+        text-clip) printf 'examples/robustness/crash-safety/%s.clo' "$1" ;;
+        *) printf 'examples/robustness/fault-cleanup/%s.clo' "$1" ;;
+    esac
+}
+
+# The text-clip copies as `<x> <y>`; the reference copy is at (140, 100). The
+# text is 32x8 pixels. Each window spans the copy's columns and the rows from
+# one text height above to one below its baseline, cut to the 320x200 screen,
+# and must equal the same-size window shifted by the copy's offset from the
+# reference. The copies at y 2 and 3 lie in the screen's title-bar rows, which
+# the probe's clear covers; it opens no window, so nothing redraws the bar.
+TEXT_REF_X=140
+TEXT_REF_Y=100
+TEXT_W=32
+TEXT_H=8
+TEXT_COPIES=("-13 50" "300 70" "140 2" "140 202" "-20 3" "305 203")
 
 if [ ! -x "${repo_dir}/target/debug/clc" ]; then
     echo "a500-fault-cleanup-smoke: compiler not found; run make sdk-a500-fault-cleanup" >&2
@@ -78,7 +106,7 @@ if [ ! -f "${AMIGA_DATA}/hdf/workbench-135.hdf" ]; then
     echo "a500-fault-cleanup-smoke: missing Workbench 1.3.5 HDF under ${AMIGA_DATA}/hdf" >&2
     exit 2
 fi
-for tool in sha1sum xdotool; do
+for tool in sha1sum xdotool python3 convert compare identify; do
     command -v "${tool}" >/dev/null 2>&1 \
         || { echo "a500-fault-cleanup-smoke: missing host tool '${tool}'" >&2; exit 2; }
 done
@@ -117,7 +145,7 @@ mkdir -p "${work}/bin" "${work}/capture"
     for entry in "${CASES[@]}"; do
         name="${entry%%|*}"
         echo "./target/debug/clc --profile hosted-amiga-13 -o ${work_rel}/bin/${name}.c \\"
-        echo "    examples/robustness/fault-cleanup/${name}.clo"
+        echo "    $(probe_source "${name}")"
         echo "m68k-amigaos-gcc -std=c99 -mcrt=nix13 -m68000 -fwrapv -O2 -ffunction-sections \\"
         echo "    -fdata-sections -Wl,--gc-sections -s -o ${work_rel}/bin/${name} \\"
         echo "    ${work_rel}/bin/${name}.c -lamiga -lm"
@@ -332,6 +360,72 @@ for entry in "${CASES[@]}"; do
         status=1
     fi
 done
+
+# Compare each clipped text copy with the reference. A crop is a window
+# `<w>x<h>+<x>+<y>` of the converted capture; AE counts differing pixels.
+text_window() {
+    local png="$1" geometry="$2" out="$3"
+    rm -f "${out}"
+    convert "${png}" -crop "${geometry}" +repage "${out}" 2>/dev/null || true
+}
+if [ -f "${capture}/text.cscr" ]; then
+    text_png="${work}/text.png"
+    text_ok=1
+    if ! python3 "${script_dir}/cscr2png.py" "${capture}/text.cscr" "${text_png}" >/dev/null; then
+        echo "a500-fault-cleanup-smoke: text-clip: the capture does not convert" >&2
+        text_ok=0
+    else
+        ref_geometry="${TEXT_W}x$((2 * TEXT_H))+${TEXT_REF_X}+$((TEXT_REF_Y - TEXT_H))"
+        text_window "${text_png}" "${ref_geometry}" "${work}/text-ref.png"
+        colours="$(identify -format '%k' "${work}/text-ref.png" 2>/dev/null || echo 0)"
+        if [ "${colours}" -lt 2 ] 2>/dev/null; then
+            echo "a500-fault-cleanup-smoke: text-clip: the reference text is missing" >&2
+            text_ok=0
+        fi
+        for copy in "${TEXT_COPIES[@]}"; do
+            read -r cx cy <<< "${copy}"
+            x0=$(( cx > 0 ? cx : 0 ))
+            x1=$(( cx + TEXT_W < 320 ? cx + TEXT_W : 320 ))
+            y0=$(( cy - TEXT_H > 0 ? cy - TEXT_H : 0 ))
+            y1=$(( cy + TEXT_H < 200 ? cy + TEXT_H : 200 ))
+            w=$(( x1 - x0 ))
+            h=$(( y1 - y0 ))
+            dx=$(( TEXT_REF_X - cx ))
+            dy=$(( TEXT_REF_Y - cy ))
+            text_window "${text_png}" "${w}x${h}+${x0}+${y0}" "${work}/text-copy.png"
+            text_window "${text_png}" "${w}x${h}+$(( x0 + dx ))+$(( y0 + dy ))" "${work}/text-want.png"
+            diff_pixels="$(compare -metric AE "${work}/text-copy.png" "${work}/text-want.png" null: 2>&1 || true)"
+            diff_pixels="${diff_pixels%% *}"
+            if [ "${diff_pixels}" != "0" ]; then
+                echo "a500-fault-cleanup-smoke: text-clip: the copy at (${cx}, ${cy}) differs from the reference in ${diff_pixels} pixels" >&2
+                text_ok=0
+            fi
+        done
+        # Everything outside the reference and copy windows is background:
+        # text drawn far outside the screen, or wrapped across a row end by
+        # an unclipped draw, would leave pixels there.
+        rest_args=()
+        for copy in "${TEXT_REF_X} ${TEXT_REF_Y}" "${TEXT_COPIES[@]}"; do
+            read -r cx cy <<< "${copy}"
+            rest_args+=(-draw "rectangle $(( cx > 0 ? cx : 0 )),$(( cy - TEXT_H > 0 ? cy - TEXT_H : 0 )) $(( cx + TEXT_W < 320 ? cx + TEXT_W - 1 : 319 )),$(( cy + TEXT_H < 200 ? cy + TEXT_H - 1 : 199 ))")
+        done
+        rm -f "${work}/text-rest.png"
+        background="$(convert "${text_png}" -format '%[pixel:p{0,199}]' info: 2>/dev/null || true)"
+        convert "${text_png}" -fill "${background}" "${rest_args[@]}" "${work}/text-rest.png" 2>/dev/null || true
+        rest_colours="$(identify -format '%k' "${work}/text-rest.png" 2>/dev/null || echo 0)"
+        if [ "${rest_colours}" != "1" ]; then
+            echo "a500-fault-cleanup-smoke: text-clip: pixels outside the text windows changed (${rest_colours} colours)" >&2
+            text_ok=0
+        fi
+        if [ "${text_ok}" -eq 1 ]; then
+            echo "a500-fault-cleanup-smoke: text-clip: ${#TEXT_COPIES[@]} clipped copies match the reference"
+        fi
+    fi
+    [ "${text_ok}" -eq 1 ] || status=1
+else
+    echo "a500-fault-cleanup-smoke: text-clip: missing text.cscr" >&2
+    status=1
+fi
 
 if [ "${finished}" -ne 1 ]; then
     echo "a500-fault-cleanup-smoke: the startup-sequence never finished (timeout or crash)" >&2

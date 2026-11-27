@@ -288,3 +288,24 @@ fn only_programs_that_free_regions_or_close_guides_link_the_registry_walk() {
         "hosted-amiga: a program that closes a guide must link the registry walk"
     );
 }
+
+// The pixel-edge text clip is linked only into programs that draw screen
+// text: hello does not carry it on either hosted profile, and a program that
+// draws text across the screen's edge on Kickstart 1.3 does.
+#[test]
+fn only_programs_that_draw_screen_text_link_the_text_clip() {
+    if !sdk_present() || !tool_available("m68k-amigaos-nm") {
+        return;
+    }
+    let hello = repo_root().join("examples/hello/hello.clo");
+    for (profile, crt) in [("hosted-amiga", "nix20"), ("hosted-amiga-13", "nix13")] {
+        assert!(
+            !links(&hello, "hello", profile, crt, "cl_text_draw_clipped"),
+            "{profile}: hello links the text clip"
+        );
+    }
+    assert!(
+        links(&probe("text-clip.clo"), "text-clip", "hosted-amiga-13", "nix13", "cl_text_draw_clipped"),
+        "hosted-amiga-13: a program that draws screen text must link the text clip"
+    );
+}

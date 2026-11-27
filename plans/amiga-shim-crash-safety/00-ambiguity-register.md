@@ -1,6 +1,6 @@
 ## Ambiguity Register: amiga-shim-crash-safety
 
-> **Status**: ✅ GATE PASSED — all 18 items resolved (AR-17 and AR-18 added during execution) (AR-1 by the user's invocation; AR-2..AR-16 delegated by `--auto-design`, provenance below; no reserved or complexity row)
+> **Status**: ✅ GATE PASSED — all 19 items resolved (AR-17..AR-19 added during execution) (AR-1 by the user's invocation; AR-2..AR-16 delegated by `--auto-design`, provenance below; no reserved or complexity row)
 > **Last Updated**: 2026-11-27 09:50 (AR-17 runtime; earlier: preflight refinements of AR-5, AR-8, AR-10, AR-13, AR-16)
 
 Planning target: theme issue #44 (remediation roadmap R5) — findings ASM-WS5-002 (#59, DEF-587),
@@ -35,6 +35,7 @@ sequencing. Reserved: product scope, public API changes, spec changes, complexit
 | 16 | Feature gaps | Which user-facing docs change | doc comments and known-limitations / none | AI — delegated: the six stdlib doc comments and `docs/known-limitations.md` | ✅ Resolved |
 | 17 | Technical (runtime) | ST-5 and ST-6 pass on the unfixed shim in the A1200 gate: which probe carries the clipboard red | reorder so `clip-raw` runs first on the empty unit / add a new probe / accept no red | AI — delegated: `clip-raw` runs before `clip-iff`, on the fresh empty unit 0, and carries the A1200 red; ST-5 is a guard on both machines | ✅ Resolved |
 | 18 | Technical (runtime) | AR-10's finishing reads hang the next write on the 2.04 and 3.1 devices: how `clipboardRead` must end its read | finishing reads / reopen after a zero read / per-operation opens / document only | AI — delegated: the handle opens the unit only for each write or read, issues no read past the end, and closes it after the call (supersedes AR-10; AR-11 kept) | ✅ Resolved |
+| 19 | Technical (runtime) | The box rule negates the advance for `FPF_REVPATH` fonts, but the font tables are already signed | keep the negation / use the signed advance as stored | AI — delegated: the signed advance as stored, and the box also counts the pen after the space (`p + k + s`) (refines the preflight AR-5 box) | ✅ Resolved |
 
 ## Coverage Map
 
@@ -269,7 +270,7 @@ Resolved by `preflight amiga-shim-crash-safety --auto-design` ([00-preflight-rep
 Each entry: Authority: AI — delegated by --auto-design · Policy version: 1 · Root invocation ID:
 ad-pf-r5-20261127. One blind challenger reviewed the four majors; its verdicts are cited.
 
-**AR-5 (PF-004).** The per-character box is corrected. With pen `p`, kern `k` (0 when
+**AR-5 (PF-004).** *(Its `FPF_REVPATH` negation is withdrawn by runtime AR-19.)* The per-character box is corrected. With pen `p`, kern `k` (0 when
 `tf_CharKern` is NULL), space `s` (`tf_CharSpace[i]`, or `tf_XSize` when NULL), glyph width `w`
 (`tf_CharLoc[i]` size), and signed advance `d = k + s + rp->TxSpacing` (negated for an
 `FPF_REVPATH` font), the box columns are `min(p, p + k, p + d)` to
@@ -384,3 +385,24 @@ happened per call), and asked for the ConClip check, which passed · Policy vers
 invocation ID: ad-ex-r5-20261127 · Reopen triggers: ST-5 or ST-6 hangs with the per-operation
 handle; a reviewer or the user reads §14.18 as requiring the device to stay open (then stop for a
 spec ruling, reserved); a 45.x device behaves differently.
+
+**AR-19 (runtime, 2026-11-27).** Authority: AI — delegated by --auto-design · Eligibility:
+algorithm inside FR-2 (the superset box; no behaviour or scope change) · Objective: the box
+contains every pixel `Text()` can touch for every font the API accepts · Decision: the per-character
+advance is `d = k + s + rp->TxSpacing` exactly as the font's signed `tf_CharKern`/`tf_CharSpace`
+tables give it, with no negation for `FPF_REVPATH`; the columns run from
+`min(p, p + k, p + k + s, p + d)` to `max(p + k + w, p + k + s, p + d, p + XSize) - 1`. · Evidence: phase 4 review RV-001 (major) and RV-002; AROS
+`rom/graphics/text.c` (`text_piece` and `BltTemplateBasedText`) moves the pen by the stored kern,
+space, and TxSpacing with no direction term and extends the extent at each of those points;
+`FPF_REVPATH` is a font attribute ("designed to be printed from right to left", AmigaOS
+Graphics Library and Text), not a rendering switch in `Text()`. With the negation a right-to-left
+font's box lay on the wrong side of the pen, so text could take the direct path past the bitmap
+or overrun the temporary raster. · Rejected alternatives: keeping the negation (contradicted by
+the reference implementation); refusing REVPATH fonts (a behaviour limit the evidence does not
+need) · Strongest counterargument: the 1.3 ROM's `Text()` source is not available; a compatible
+reimplementation that copied a ROM negation would show one, and AROS shows none · Confidence:
+Medium-high · Hardening: two reviewers (correctness RV-001/RV-002, platform open question 1) and
+the AROS source; no extra challenger (the reviewers' finding is the challenge) · Policy version: 1
+· Root invocation ID: ad-ex-r5-20261127 · Reopen triggers: a target run with a right-to-left or
+kerned disk font shows ink outside the box; the review's deferred disk-font oracle (RV-003) is
+taken up.

@@ -6735,7 +6735,229 @@ LONG cl_text_height(void *handle)
     return font == NULL || font->font == NULL ? 0 : (LONG)font->font->tf_YSize;
 }
 
-/* Draw text on an Intuition screen. */
+/* The columns Text() can touch for one string on a screen, and the run of
+ * characters whose columns meet the visible width. A screen's RastPort has no
+ * layer, so Text() does not clip: the runtime must know where every glyph
+ * can land before it draws. */
+typedef struct cl_text_span {
+    LONG left;       /* first column any character can touch */
+    LONG right;      /* last column any character can touch */
+    ULONG first;     /* first character of the visible run */
+    ULONG count;     /* characters in the visible run; 0 when none */
+    LONG run_pen;    /* pen x before the run's first character */
+    LONG run_left;   /* first column the run can touch */
+    LONG run_right;  /* last column the run can touch */
+} cl_text_span;
+
+/* A pen position beyond this distance from the origin means the string spans
+ * more pixels than any screen; the walk stops there before LONG overflows. */
+#define CL_TEXT_PEN_LIMIT (1L << 28)
+
+/* Walk the characters from pen x and record, in `span`, a column range that
+ * contains every pixel Text() can touch, from the font as SetFont left it.
+ * Per character, Text() moves the pen by the kern, draws the glyph as wide
+ * as its CharLoc entry, then moves by the space and the RastPort's extra
+ * spacing; the JAM2 background spans every point the pen passes. The kern
+ * and space tables are signed and already carry a right-to-left font's
+ * direction, so the walk adds them as they are. Nothing is narrower than the
+ * font's XSize cell. Codes outside LoChar..HiChar use the default glyph after
+ * HiChar. Returns FALSE when the pen leaves the walkable range. */
+static BOOL cl_text_box(const struct TextFont *font, const struct RastPort *rp,
+                        const UBYTE *text, ULONG count, LONG x, LONG width,
+                        cl_text_span *span)
+{
+    const WORD *kerns = (const WORD *)font->tf_CharKern;
+    const WORD *spaces = (const WORD *)font->tf_CharSpace;
+    const UWORD *locs = (const UWORD *)font->tf_CharLoc;
+    LONG pen = x;
+    LONG run_left = 0;
+    LONG run_right = 0;
+    BOOL in_run = FALSE;
+    ULONG i;
+
+    span->left = x;
+    span->right = x;
+    span->first = 0;
+    span->count = 0;
+    span->run_pen = x;
+    span->run_left = x;
+    span->run_right = x;
+    for (i = 0; i < count; i++) {
+        ULONG code = text[i];
+        ULONG index;
+        LONG kern;
+        LONG space;
+        LONG glyph;
+        LONG advance;
+        LONG left;
+        LONG right;
+
+        if (code >= font->tf_LoChar && code <= font->tf_HiChar) {
+            index = code - font->tf_LoChar;
+        } else {
+            index = (ULONG)(font->tf_HiChar - font->tf_LoChar) + 1UL;
+        }
+        kern = kerns != NULL ? (LONG)kerns[index] : 0;
+        space = spaces != NULL ? (LONG)spaces[index] : (LONG)font->tf_XSize;
+        glyph = locs != NULL ? (LONG)locs[index * 2 + 1] : (LONG)font->tf_XSize;
+        advance = kern + space + (LONG)rp->TxSpacing;
+        left = pen;
+        if (pen + kern < left) {
+            left = pen + kern;
+        }
+        if (pen + kern + space < left) {
+            left = pen + kern + space;
+        }
+        if (pen + advance < left) {
+            left = pen + advance;
+        }
+        right = pen + kern + glyph;
+        if (pen + kern + space > right) {
+            right = pen + kern + space;
+        }
+        if (pen + advance > right) {
+            right = pen + advance;
+        }
+        if (pen + (LONG)font->tf_XSize > right) {
+            right = pen + (LONG)font->tf_XSize;
+        }
+        right -= 1;
+
+        if (i == 0 || left < span->left) {
+            span->left = left;
+        }
+        if (i == 0 || right > span->right) {
+            span->right = right;
+        }
+        /* The run spans the first to the last character that meets the
+         * visible width, with every character between them. */
+        if (in_run) {
+            if (left < run_left) {
+                run_left = left;
+            }
+            if (right > run_right) {
+                run_right = right;
+            }
+        }
+        if (right >= 0 && left <= width - 1) {
+            if (!in_run) {
+                in_run = TRUE;
+                span->first = i;
+                span->run_pen = pen;
+                run_left = left;
+                run_right = right;
+            }
+            span->count = i - span->first + 1;
+            span->run_left = run_left;
+            span->run_right = run_right;
+        }
+        pen += advance;
+        if (pen > CL_TEXT_PEN_LIMIT || pen < -CL_TEXT_PEN_LIMIT) {
+            return FALSE;
+        }
+    }
+    return TRUE;
+}
+
+/* Draw the visible run of a partly visible string. Text() renders the run
+ * into a cleared two-plane chip raster with pens 3 (APen) and 2 (BPen), so
+ * plane 1 marks every pixel Text() touched and plane 0 every pixel it drew in
+ * the APen. Two template blits of the visible part then reproduce JAM1, JAM2,
+ * and INVERSVID on the screen: the touched pixels in the screen's BPen, then
+ * the APen pixels over them. COMPLEMENT complements the touched pixels. The
+ * screen's pens and mode are restored. Text too wide for the raster rules, or
+ * a failed allocation, draws nothing. */
+CL_NOINLINE void cl_text_draw_clipped(struct RastPort *screen_rp, LONG top,
+                                      LONG width, LONG height,
+                                      const UBYTE *text,
+                                      const cl_text_span *span)
+{
+    struct TextFont *font = screen_rp->Font;
+    struct BitMap raster;
+    struct RastPort temp;
+    LONG raster_width = span->run_right - span->run_left + 1;
+    LONG raster_height = (LONG)font->tf_YSize;
+    ULONG plane_size;
+    LONG vx0;
+    LONG vy0;
+    LONG vx1;
+    LONG vy1;
+    LONG bytes_per_row;
+    UBYTE mode = screen_rp->DrawMode;
+    UBYTE apen = (UBYTE)screen_rp->FgPen;
+    UBYTE bpen = (UBYTE)screen_rp->BgPen;
+
+    if (raster_width > width + 512 ||
+        (GfxBase->LibNode.lib_Version < 36 && raster_width > 1008)) {
+        return;
+    }
+    /* Cleared, so the planes past the depth are NULL for any patched
+     * graphics routine that looks at them. */
+    memset(&raster, 0, sizeof raster);
+    InitBitMap(&raster, 2, raster_width, raster_height);
+    plane_size = (ULONG)raster.BytesPerRow * (ULONG)raster_height;
+    raster.Planes[0] = (PLANEPTR)AllocMem(plane_size, MEMF_CHIP | MEMF_CLEAR);
+    raster.Planes[1] = (PLANEPTR)AllocMem(plane_size, MEMF_CHIP | MEMF_CLEAR);
+    if (raster.Planes[0] == NULL || raster.Planes[1] == NULL) {
+        if (raster.Planes[0] != NULL) {
+            FreeMem(raster.Planes[0], plane_size);
+        }
+        if (raster.Planes[1] != NULL) {
+            FreeMem(raster.Planes[1], plane_size);
+        }
+        return;
+    }
+    InitRastPort(&temp);
+    temp.BitMap = &raster;
+    (void)SetFont(&temp, font);
+    SetDrMd(&temp, (ULONG)mode);
+    temp.TxSpacing = screen_rp->TxSpacing;
+    SetAPen(&temp, 3);
+    SetBPen(&temp, 2);
+    Move(&temp, span->run_pen - span->run_left, (LONG)font->tf_Baseline);
+    (void)Text(&temp, (STRPTR)(text + span->first), span->count);
+
+    /* The visible part, in raster coordinates. */
+    vx0 = span->run_left < 0 ? -span->run_left : 0;
+    vy0 = top < 0 ? -top : 0;
+    vx1 = span->run_right > width - 1 ? width - 1 - span->run_left
+                                      : raster_width - 1;
+    vy1 = top + raster_height - 1 > height - 1 ? height - 1 - top
+                                                : raster_height - 1;
+    bytes_per_row = (LONG)raster.BytesPerRow;
+    if (vx0 <= vx1 && vy0 <= vy1) {
+        LONG offset = vy0 * bytes_per_row + (vx0 >> 4) * 2;
+        LONG dest_x = span->run_left + vx0;
+        LONG dest_y = top + vy0;
+        LONG size_x = vx1 - vx0 + 1;
+        LONG size_y = vy1 - vy0 + 1;
+
+        if (mode & COMPLEMENT) {
+            SetDrMd(screen_rp, COMPLEMENT);
+            BltTemplate(raster.Planes[0] + offset, vx0 & 15, bytes_per_row,
+                        screen_rp, dest_x, dest_y, size_x, size_y);
+        } else {
+            SetDrMd(screen_rp, JAM1);
+            SetAPen(screen_rp, (ULONG)bpen);
+            BltTemplate(raster.Planes[1] + offset, vx0 & 15, bytes_per_row,
+                        screen_rp, dest_x, dest_y, size_x, size_y);
+            SetAPen(screen_rp, (ULONG)apen);
+            BltTemplate(raster.Planes[0] + offset, vx0 & 15, bytes_per_row,
+                        screen_rp, dest_x, dest_y, size_x, size_y);
+        }
+        SetDrMd(screen_rp, (ULONG)mode);
+    }
+    /* The blitter may still read the raster. */
+    WaitBlit();
+    FreeMem(raster.Planes[0], plane_size);
+    FreeMem(raster.Planes[1], plane_size);
+}
+
+/* Draw text on an Intuition screen. The screen's RastPort has no layer, so
+ * nothing clips Text() there: text that fits is drawn directly, as always;
+ * text partly outside the screen's bitmap is clipped at its edge; text fully
+ * outside, out of range, empty, or a colour font that does not fit draws
+ * nothing. */
 void cl_text_draw(void *screen_handle, void *font_handle, LONG x, LONG y,
                   UBYTE pen, APTR text, ULONG count)
 {
@@ -6743,6 +6965,12 @@ void cl_text_draw(void *screen_handle, void *font_handle, LONG x, LONG y,
     cl_font *font = (cl_font *)font_handle;
     struct RastPort *rast_port;
     struct TextFont *old_font;
+    struct TextFont *face;
+    cl_text_span span;
+    LONG width;
+    LONG height;
+    LONG top;
+    LONG bottom;
 
     if (screen == NULL || font == NULL || font->font == NULL || text == NULL) {
         return;
@@ -6751,8 +6979,36 @@ void cl_text_draw(void *screen_handle, void *font_handle, LONG x, LONG y,
     old_font = rast_port->Font;
     (void)SetFont(rast_port, font->font);
     SetAPen(rast_port, (ULONG)pen);
-    Move(rast_port, x, y);
-    (void)Text(rast_port, (STRPTR)text, count);
+    /* SetFont may adjust the font's spacing tables, so they are read after
+     * it; it also clears any soft style, so no bold or italic widening. */
+    face = rast_port->Font;
+    if (x < -32768 || x > 32767 || y < -32768 || y > 32767 ||
+        count == 0 || count > 32767) {
+        (void)SetFont(rast_port, old_font);
+        return;
+    }
+    width = (LONG)screen->Width;
+    if ((LONG)rast_port->BitMap->BytesPerRow * 8 < width) {
+        width = (LONG)rast_port->BitMap->BytesPerRow * 8;
+    }
+    height = (LONG)screen->Height;
+    if ((LONG)rast_port->BitMap->Rows < height) {
+        height = (LONG)rast_port->BitMap->Rows;
+    }
+    top = y - (LONG)face->tf_Baseline;
+    bottom = top + (LONG)face->tf_YSize - 1;
+    if (cl_text_box(face, rast_port, (const UBYTE *)text, count, x, width,
+                    &span)) {
+        if (span.left >= 0 && span.right <= width - 1 && top >= 0 &&
+            bottom <= height - 1) {
+            Move(rast_port, x, y);
+            (void)Text(rast_port, (STRPTR)text, count);
+        } else if (span.count != 0 && bottom >= 0 && top <= height - 1 &&
+                   (face->tf_Style & FSF_COLORFONT) == 0) {
+            cl_text_draw_clipped(rast_port, top, width, height,
+                                 (const UBYTE *)text, &span);
+        }
+    }
     (void)SetFont(rast_port, old_font);
 }
 
