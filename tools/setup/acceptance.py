@@ -2,9 +2,11 @@
 
 The acceptance run writes a JSON record beside the raw output. This module checks
 the record against the exact candidate files and the repository's expected
-corpus bytes. Records are platform-keyed: a shared core plus the facts Linux
-(glibc) or Windows (build, rc24 setup, FS-UAE source, PC hello, standard
-account, in-person confirmations) adds. The version is the candidate's. It never downloads, builds, or runs anything. It proves the
+corpus bytes. Records are platform-keyed: a shared core (including the VS Code
+extension the installer took from the Marketplace and the in-person editor
+confirmation) plus the facts Linux (glibc) or Windows (build, rc24 setup,
+FS-UAE source, PC hello, standard account, the UAC confirmation) adds. The
+version is the candidate's. It never downloads, builds, or runs anything. It proves the
 record's format and the candidate/corpus bytes, not that the recorded run
 happened; retain the raw acceptance directory and treat publication as a
 separate approval.
@@ -46,21 +48,26 @@ HASH = re.compile(r"[0-9a-f]{64}")
 
 CORE_KEYS = {
     "version", "platform", "architecture", "archive", "installer",
-    "vsix", "toolchain", "kickstart", "fs_uae", "guest", "negative", "corpus",
-    "timestamp",
+    "extension", "toolchain", "kickstart", "fs_uae", "guest", "negative", "corpus",
+    "timestamp", "manual",
 }
 TOP_KEYS = {
     "linux": CORE_KEYS | {"glibc"},
     "windows": CORE_KEYS | {"os_build", "host_hello", "existing_registration",
-                            "standard_account", "manual"},
+                            "standard_account"},
 }
 ARCHIVE_SUFFIX = {"linux": "x86_64-linux.tar.gz", "windows": "x86_64-windows.zip"}
 INSTALLER_NAME = {"linux": "install.sh", "windows": "install.ps1"}
 ARCHIVE_KEYS = {"name", "sha256", "bytes"}
-VSIX_KEYS = ARCHIVE_KEYS
+# The VS Code extension comes from the Marketplace, so a record names what the
+# installer installed and where it was published from, not candidate bytes.
+EXTENSION_ID = "openlorraine.clorraine"
+EXTENSION_KEYS = {"id", "version", "publish_run", "vsix_sha256"}
 INSTALLER_KEYS = {"linux": {"sha256"}, "windows": {"name", "sha256"}}
 HOST_HELLO_KEYS = {"compiler", "result"}
-MANUAL_KEYS = {"uac_prompt_seen", "editor_build_run"}
+# The in-person confirmations: the editor's language server and Build/Run on
+# both platforms, and the UAC prompt on Windows.
+MANUAL_KEYS = {"linux": {"editor_build_run"}, "windows": {"uac_prompt_seen", "editor_build_run"}}
 TOOLCHAIN_KEYS = {"tag", "sha256", "bytes"}
 KICKSTART_KEYS = {"name", "sha256"}
 GUEST_KEYS = {"status", "rc", "output", "output_sha256"}
@@ -227,9 +234,26 @@ def _check_windows_facts(entry: dict) -> None:
              "existing_registration must be reused")
     _require(entry["standard_account"] == "installed",
              "standard_account must be installed")
-    manual = _keys(entry["manual"], MANUAL_KEYS, "manual")
-    for key in sorted(MANUAL_KEYS):
+
+
+def _check_manual(value: object, platform: str) -> None:
+    """Every in-person confirmation for the platform must be true."""
+    manual = _keys(value, MANUAL_KEYS[platform], "manual")
+    for key in sorted(MANUAL_KEYS[platform]):
         _require(manual[key] is True, f"manual.{key} must be true")
+
+
+def _check_extension(value: object, version: str) -> None:
+    """The installer installed this release's extension from the Marketplace."""
+    entry = _keys(value, EXTENSION_KEYS, "extension")
+    _require(_text(entry["id"], "extension.id") == EXTENSION_ID,
+             f"extension id must be {EXTENSION_ID}")
+    installed = _text(entry["version"], "extension.version")
+    _require(installed == version,
+             f"extension version {installed} does not match candidate {version}")
+    _require(_text(entry["publish_run"], "extension.publish_run").isdigit(),
+             "extension.publish_run must be a GitHub Actions run ID")
+    _digest(entry["vsix_sha256"], "extension.vsix_sha256")
 
 
 def _check_guest(value: object) -> None:
@@ -293,13 +317,10 @@ def check(record: object, candidate: Path, repo: Path | None = None) -> None:
     if platform == "linux":
         _check_glibc(entry["glibc"])
     _check_candidate_archive(entry, candidate, "archive", platform)
-    _check_candidate_archive(entry, candidate, "vsix", platform)
     archive_name = f"clorraine-{version}-{ARCHIVE_SUFFIX[platform]}"
-    vsix_name = f"clorraine-{version}.vsix"
     _require(entry["archive"]["name"] == archive_name,
              f"archive name must be {archive_name}")
-    _require(entry["vsix"]["name"] == vsix_name,
-             f"VSIX name must be {vsix_name}")
+    _check_extension(entry["extension"], version)
     _check_candidate_archive(entry, candidate, "installer", platform)
     if "name" in entry["installer"]:
         _require(entry["installer"]["name"] == INSTALLER_NAME[platform],
@@ -313,6 +334,7 @@ def check(record: object, candidate: Path, repo: Path | None = None) -> None:
     else:
         _check_windows_fs_uae(entry["fs_uae"])
         _check_windows_facts(entry)
+    _check_manual(entry["manual"], platform)
     _check_guest(entry["guest"])
     _check_negative(entry["negative"])
     _check_corpus(entry["corpus"], repo)

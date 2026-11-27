@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-11-27 16:07
-> **Progress**: 35/55 tasks (63%)
+> **Progress**: 36/55 tasks (65%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -176,7 +176,7 @@ branch; only Phase 1 reaches `main` before the release (AR-40).
 ### Step 5.2: Implementation
 
 - [x] 5.2.1 Packaging — `Makefile` (`dist`), `tools/setup/package.sh` ✅ (completed: 2026-11-27 16:07)
-- [~] 5.2.2 Acceptance — `tools/setup/acceptance.{py,sh,ps1}`, `Makefile` (`acceptance` inputs) ⏳ (implemented: 2026-11-27 16:06)
+- [x] 5.2.2 Acceptance — `tools/setup/acceptance.{py,sh,ps1}`, `Makefile` (`acceptance` inputs) ✅ (completed: 2026-11-27 16:07)
 - [ ] 5.2.3 Green phase: ST-29..ST-36 pass
 
 ### Step 5.3: Impl tests and gate

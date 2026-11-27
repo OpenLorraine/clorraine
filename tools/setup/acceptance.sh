@@ -4,7 +4,14 @@
 # `make acceptance CANDIDATE=... TOOLCHAIN_ARCHIVE=... KICKSTART=...` installs
 # the candidate into an isolated HOME, verifies and extracts the pinned rc24
 # archive, runs setup and the verified FS-UAE matrix, and writes `evidence.json`
-# beside the raw output. It never downloads, tags, publishes, or uploads.
+# beside the raw output. It never tags, publishes, or uploads; the only download
+# is the VS Code extension, which the candidate installer takes from the
+# Marketplace into the isolated HOME.
+#
+# PUBLISH_RUN and PUBLISH_SHA256 name the publish-vscode run that published
+# this version and the VSIX SHA-256 from its summary. EDITOR_CONFIRMED=1
+# records that a person checked the language server and Build/Run in VS Code
+# with this release; without it the evidence is written and the run fails.
 #
 # This executes the self-built candidate installer with the caller's privileges.
 # Do not point it at an untrusted candidate; use a dedicated user or container.
@@ -25,13 +32,22 @@ repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 version=$(sed -n 's/^version = "\([^"]*\)"/\1/p' "$repo/compiler/Cargo.toml" | head -1)
 archive_name="clorraine-$version-x86_64-linux.tar.gz"
 archive="$candidate/$archive_name"
-vsix_name="clorraine-$version.vsix"
-vsix="$candidate/$vsix_name"
 installer="$candidate/install.sh"
 sums="$candidate/SHA256SUMS"
-for required in "$archive" "$vsix" "$installer" "$sums" "$toolchain_archive" "$kickstart"; do
+for required in "$archive" "$installer" "$sums" "$toolchain_archive" "$kickstart"; do
     [ -f "$required" ] || { echo "acceptance: missing $required" >&2; exit 2; }
 done
+publish_run=${PUBLISH_RUN:-}
+publish_sha=${PUBLISH_SHA256:-}
+case "$publish_run" in
+    ''|*[!0-9]*) echo 'acceptance: PUBLISH_RUN must be the publish-vscode run ID' >&2; exit 2 ;;
+esac
+case "$publish_sha" in
+    *[!0-9a-f]*|'') echo 'acceptance: PUBLISH_SHA256 must be the published VSIX SHA-256' >&2; exit 2 ;;
+esac
+[ "${#publish_sha}" -eq 64 ] || { echo 'acceptance: PUBLISH_SHA256 must be the published VSIX SHA-256' >&2; exit 2; }
+editor=$(command -v code || command -v code-insiders || true)
+[ -n "$editor" ] || { echo 'acceptance: VS Code (code or code-insiders) is required on PATH' >&2; exit 2; }
 if ! command -v pgrep >/dev/null 2>&1; then
     echo 'acceptance: pgrep is required' >&2
     exit 2
@@ -76,8 +92,6 @@ no_survivor() {
 
 archive_bytes=$(stat -c %s "$archive")
 archive_sha=$(sha "$archive")
-vsix_bytes=$(stat -c %s "$vsix")
-vsix_sha=$(sha "$vsix")
 installer_sha=$(sha "$installer")
 toolchain_bytes=$(stat -c %s "$toolchain_archive")
 toolchain_sha=$(sha "$toolchain_archive")
@@ -89,19 +103,27 @@ kickstart_sha=$(sha "$kickstart")
 # Keep the exact candidate bytes and command record in the evidence directory;
 # the installer and checker then use the same private copies.
 cp -- "$archive" "$out/$archive_name"
-cp -- "$vsix" "$out/$vsix_name"
 cp -- "$installer" "$out/install.sh"
 cp -- "$sums" "$out/SHA256SUMS"
-chmod 600 "$out/$archive_name" "$out/$vsix_name" "$out/SHA256SUMS"
+chmod 600 "$out/$archive_name" "$out/SHA256SUMS"
 chmod 700 "$out/install.sh"
 archive="$out/$archive_name"
-vsix="$out/$vsix_name"
 installer="$out/install.sh"
 sums="$out/SHA256SUMS"
 [ "$(sha "$installer")" = "$installer_sha" ] || { echo 'acceptance: private installer copy mismatch' >&2; exit 1; }
 
 echo "acceptance: install candidate"
-"$installer" --prefix "$prefix" --archive "$archive" --checksums "$sums" >"$out/install.log" 2>&1
+"$installer" --prefix "$prefix" --archive "$archive" --checksums "$sums" --vscode >"$out/install.log" 2>&1
+# The installer installed the extension from the Marketplace into the isolated
+# HOME; the editor lists it there with its version.
+extension_line=$("$editor" --list-extensions --show-versions </dev/null 2>/dev/null |
+    grep -i '^openlorraine\.clorraine@' | head -1 || true)
+extension_version=${extension_line#*@}
+[ -n "$extension_line" ] && [ "$extension_version" = "$version" ] || {
+    echo "acceptance: VS Code lists '${extension_line:-no Clorraine extension}', not openlorraine.clorraine@$version" >&2
+    exit 1
+}
+if [ "${EDITOR_CONFIRMED:-}" = 1 ]; then editor_confirmed=true; else editor_confirmed=false; fi
 installed_version=$("$prefix/bin/clorraine" --version)
 [ "$installed_version" = "clorraine $version" ] || {
     echo "acceptance: installed version '$installed_version' is not clorraine $version" >&2
@@ -193,7 +215,8 @@ EVIDENCE_VERSION="$version" \
 EVIDENCE_PLATFORM=linux EVIDENCE_ARCH=x86_64 EVIDENCE_GLIBC="$glibc" \
 EVIDENCE_ARCHIVE_NAME="$archive_name" EVIDENCE_ARCHIVE_SHA="$archive_sha" EVIDENCE_ARCHIVE_BYTES="$archive_bytes" \
 EVIDENCE_INSTALLER_SHA="$installer_sha" \
-EVIDENCE_VSIX_NAME="$vsix_name" EVIDENCE_VSIX_SHA="$vsix_sha" EVIDENCE_VSIX_BYTES="$vsix_bytes" \
+EVIDENCE_EXTENSION_VERSION="$extension_version" EVIDENCE_PUBLISH_RUN="$publish_run" \
+EVIDENCE_PUBLISH_SHA="$publish_sha" EVIDENCE_EDITOR_CONFIRMED="$editor_confirmed" \
 EVIDENCE_TOOLCHAIN_SHA="$toolchain_sha" EVIDENCE_TOOLCHAIN_BYTES="$toolchain_bytes" \
 EVIDENCE_KICKSTART_NAME="$(basename "$kickstart")" EVIDENCE_KICKSTART_SHA="$kickstart_sha" \
 EVIDENCE_FS_UAE="$fs_uae_version" \
@@ -220,11 +243,13 @@ record = {
         "bytes": int(env["EVIDENCE_ARCHIVE_BYTES"]),
     },
     "installer": {"sha256": env["EVIDENCE_INSTALLER_SHA"]},
-    "vsix": {
-        "name": env["EVIDENCE_VSIX_NAME"],
-        "sha256": env["EVIDENCE_VSIX_SHA"],
-        "bytes": int(env["EVIDENCE_VSIX_BYTES"]),
+    "extension": {
+        "id": "openlorraine.clorraine",
+        "version": env["EVIDENCE_EXTENSION_VERSION"],
+        "publish_run": env["EVIDENCE_PUBLISH_RUN"],
+        "vsix_sha256": env["EVIDENCE_PUBLISH_SHA"],
     },
+    "manual": {"editor_build_run": env["EVIDENCE_EDITOR_CONFIRMED"] == "true"},
     "toolchain": {
         "tag": "v16.2-rc24",
         "sha256": env["EVIDENCE_TOOLCHAIN_SHA"],
@@ -266,7 +291,7 @@ rm -rf "$work"
     printf 'candidate: %s\n' "$candidate"
     printf 'archive: %s\n' "$archive"
     printf 'installer: %s\n' "$installer"
-    printf 'vsix: %s\n' "$vsix"
+    printf 'extension: openlorraine.clorraine@%s (publish run %s, VSIX %s)\n' "$extension_version" "$publish_run" "$publish_sha"
     printf 'toolchain archive: %s\n' "$toolchain_archive"
     printf 'kickstart: %s\n' "$kickstart"
     printf 'fs-uae: %s\n' "$fs_uae"
@@ -275,3 +300,7 @@ rm -rf "$work"
 chmod 600 "$out"/* 2>/dev/null || true
 echo "acceptance: evidence $out/evidence.json"
 echo "acceptance: candidate $out"
+if [ "$editor_confirmed" != true ]; then
+    echo 'acceptance: confirm the language server and Build/Run in VS Code, then rerun with EDITOR_CONFIRMED=1' >&2
+    exit 1
+fi

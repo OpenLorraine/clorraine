@@ -4,11 +4,15 @@
 # standard account under test:
 #
 #   powershell -NoProfile -ExecutionPolicy Bypass -File tools\setup\acceptance.ps1 `
-#       -Candidate DIR -Kickstart ROM -Output FILE [-UacConfirmed] [-EditorConfirmed]
+#       -Candidate DIR -Kickstart ROM -Output FILE -PublishRun ID -PublishSha256 HEX `
+#       [-UacConfirmed] [-EditorConfirmed]
 #
-# It copies the candidate's zip, install.ps1, VSIX, and SHA256SUMS into a
-# private folder beside FILE, checks them, and installs with -Archive and
-# -Checksums into an isolated prefix and APPDATA. This is the clean-install
+# It copies the candidate's zip, install.ps1, and SHA256SUMS into a private
+# folder beside FILE, checks them, and installs with -Archive, -Checksums, and
+# -VSCode into an isolated prefix and APPDATA; the installer takes the VS Code
+# extension from the Marketplace, and the record names the installed version
+# with the publish-vscode run (-PublishRun) and the VSIX SHA-256 from its
+# summary (-PublishSha256). This is the clean-install
 # acceptance: rc24 must not be registered beforehand, so the first install
 # installs it through the administrator (UAC) step; a second install of the
 # same candidate must reuse that registration without asking. The script runs
@@ -29,6 +33,8 @@ param(
     [Parameter(Mandatory = $true)][string]$Candidate,
     [Parameter(Mandatory = $true)][string]$Kickstart,
     [Parameter(Mandatory = $true)][string]$Output,
+    [Parameter(Mandatory = $true)][string]$PublishRun,
+    [Parameter(Mandatory = $true)][string]$PublishSha256,
     [switch]$UacConfirmed,
     [switch]$EditorConfirmed
 )
@@ -130,10 +136,13 @@ $zips = @(Get-ChildItem -LiteralPath $Candidate -File -Filter 'clorraine-*-x86_6
 if ($zips.Count -ne 1) { Stop-Acceptance 2 "the candidate must hold exactly one Windows zip: $Candidate" }
 $zipName = $zips[0].Name
 $version = $zipName.Substring('clorraine-'.Length, $zipName.Length - 'clorraine-'.Length - '-x86_64-windows.zip'.Length)
-$vsixName = "clorraine-$version.vsix"
-foreach ($name in $zipName, 'install.ps1', $vsixName, 'SHA256SUMS') {
+foreach ($name in $zipName, 'install.ps1', 'SHA256SUMS') {
     if (-not (Test-Path -LiteralPath (Join-Path $Candidate $name) -PathType Leaf)) { Stop-Acceptance 2 "missing $name in $Candidate" }
 }
+if ($PublishRun -notmatch '^[0-9]+$') { Stop-Acceptance 2 '-PublishRun must be the publish-vscode run ID' }
+if ($PublishSha256 -cnotmatch '^[0-9a-f]{64}$') { Stop-Acceptance 2 '-PublishSha256 must be the published VSIX SHA-256' }
+$codeCmd = Get-Command -Name 'code.cmd', 'code-insiders.cmd' -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+if ($null -eq $codeCmd) { Stop-Acceptance 2 'VS Code (code.cmd or code-insiders.cmd) is required on PATH' }
 if (-not (Test-Path -LiteralPath $Kickstart -PathType Leaf)) { Stop-Acceptance 2 "missing Kickstart ROM $Kickstart" }
 foreach ($name in 'examples\hello\hello.clo') {
     if (-not (Test-Path -LiteralPath (Join-Path $Repo $name) -PathType Leaf)) { Stop-Acceptance 2 "missing $name under $Repo" }
@@ -152,18 +161,17 @@ $out = Join-Path (Split-Path -Parent $Output) "acceptance-$stamp"
 New-PrivateFolder $out
 $work = Join-Path $out 'work'
 foreach ($name in 'prefix', 'appdata', 'tmp', 'run') { [void][IO.Directory]::CreateDirectory((Join-Path $work $name)) }
-foreach ($name in $zipName, 'install.ps1', $vsixName, 'SHA256SUMS') {
+foreach ($name in $zipName, 'install.ps1', 'SHA256SUMS') {
     Copy-Item -LiteralPath (Join-Path $Candidate $name) -Destination (Join-Path $out $name)
 }
 $zip = Join-Path $out $zipName
 $installer = Join-Path $out 'install.ps1'
-$vsix = Join-Path $out $vsixName
 $sums = Join-Path $out 'SHA256SUMS'
 $listed = @{}
 foreach ($line in [IO.File]::ReadAllLines($sums)) {
     if ($line -match '^([0-9a-f]{64}) [ *](.+)$') { $listed[$Matches[2]] = $Matches[1] }
 }
-foreach ($name in $zipName, 'install.ps1', $vsixName) {
+foreach ($name in $zipName, 'install.ps1') {
     if (-not $listed.ContainsKey($name)) { Stop-Acceptance 1 "SHA256SUMS does not list $name" }
     if ((Get-Sha256 (Join-Path $out $name)) -ne $listed[$name]) { Stop-Acceptance 1 "$name does not match SHA256SUMS" }
 }
@@ -174,7 +182,7 @@ $env:TEMP = Join-Path $work 'tmp'
 $env:TMP = $env:TEMP
 $powershell = Join-Path ([Environment]::SystemDirectory) 'WindowsPowerShell\v1.0\powershell.exe'
 $installArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $installer, '-Archive', $zip,
-    '-Checksums', $sums, '-Prefix', $prefix, '-Kickstart', $Kickstart, '-NoVSCode', '-NoStarter')
+    '-Checksums', $sums, '-Prefix', $prefix, '-Kickstart', $Kickstart, '-VSCode', '-NoStarter')
 
 # --- Install twice -------------------------------------------------------------
 
@@ -297,6 +305,11 @@ Assert-NoEmulator 'the negative'
 
 # Under UAC an administrator's unelevated token still lists Administrators,
 # as a deny-only group, so the whole group list decides, not the token's role.
+# The installer took the extension from the Marketplace; VS Code lists it with
+# its version. The arguments are fixed, so cmd.exe only runs the launcher.
+$listing = Invoke-Child (Join-Path ([Environment]::SystemDirectory) 'cmd.exe') @('/d', '/c', $codeCmd.Source, '--list-extensions', '--show-versions') $work
+$extensionLine = @($listing.Out -split "`r?`n" | Where-Object { $_.Trim() -like 'openlorraine.clorraine@*' }) | Select-Object -First 1
+$extensionVersion = if ($extensionLine) { $extensionLine.Trim().Substring('openlorraine.clorraine@'.Length) } else { '' }
 $groups = Invoke-Child (Join-Path ([Environment]::SystemDirectory) 'whoami.exe') @('/groups', '/fo', 'csv', '/nh') $work
 if ($groups.Code -ne 0) { Stop-Acceptance 1 'whoami /groups failed' }
 $standard = -not $groups.Out.Contains('"S-1-5-32-544"')
@@ -316,7 +329,7 @@ $record = [ordered]@{
     os_build = $build
     archive = [ordered]@{ name = $zipName; sha256 = (Get-Sha256 $zip); bytes = (Get-Item -LiteralPath $zip).Length }
     installer = [ordered]@{ name = 'install.ps1'; sha256 = (Get-Sha256 $installer) }
-    vsix = [ordered]@{ name = $vsixName; sha256 = (Get-Sha256 $vsix); bytes = (Get-Item -LiteralPath $vsix).Length }
+    extension = [ordered]@{ id = 'openlorraine.clorraine'; version = $extensionVersion; publish_run = $PublishRun; vsix_sha256 = $PublishSha256 }
     toolchain = [ordered]@{ tag = "v$rc24Version"; sha256 = (Get-Pin 'Rc24Sha256'); bytes = [long](Get-Pin 'Rc24Bytes') }
     kickstart = [ordered]@{ name = (Split-Path -Leaf $Kickstart); sha256 = (Get-Sha256 $Kickstart) }
     fs_uae = $fsUae
@@ -337,6 +350,7 @@ if ($hostResult -ne 'ok') { $missing += 'the PC hello did not print the hello li
 if ($compiler -notmatch 'gcc') { $missing += "the PC hello compiler is not GCC: $compiler" }
 if ($build -lt 22000) { $missing += "Windows build $build is older than Windows 11" }
 if ($fsUae.source -eq 'downloaded' -and $fsUae.version -ne '3.2.35') { $missing += "the downloaded FS-UAE reports $($fsUae.version), not 3.2.35" }
+if ($extensionVersion -ne $version) { $missing += "VS Code lists openlorraine.clorraine '$extensionVersion', not $version" }
 if (-not $reused) { $missing += 'the second install did not reuse rc24' }
 if (-not $standard) { $missing += 'the account is an administrator, not a standard account' }
 if (-not $UacConfirmed) { $missing += 'the UAC prompt was not confirmed' }
