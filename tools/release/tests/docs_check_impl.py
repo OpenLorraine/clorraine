@@ -26,6 +26,10 @@ class NormalizeTests(unittest.TestCase):
     def test_should_collapse_whitespace_and_markers(self) -> None:
         self.assertEqual(normalize("  `code`\n\n**bold**  __u__\t end ").text, "code bold u end")
 
+    def test_should_drop_blockquote_markers_at_line_starts(self) -> None:
+        self.assertEqual(normalize("> **Preview.** The v1.3.0\n> builds are out; a > b").text,
+                         "Preview. The v1.3.0 builds are out; a > b")
+
     def test_should_map_every_character_to_its_source_line(self) -> None:
         text = normalize("one\n\n**two**\nthree")
         self.assertEqual(text.line_at(text.text.index("two")), 3)
@@ -56,6 +60,17 @@ class TokenTests(unittest.TestCase):
         token = tokens("v1.3")[0]
         self.assertTrue(token.is_current("1.3.7"))
         self.assertFalse(token.is_current("1.4.0"))
+
+
+class ContextTests(unittest.TestCase):
+    def test_should_suggest_a_phrase_inside_one_table_cell(self) -> None:
+        text = normalize("| Area | State |\n|---|---|\n| Installer | Preview since v1.2.0: one command installs it |").text
+        token = tokens(text)[0]
+        self.assertEqual(docs_rules.context(text, token), "Preview since v1.2.0: one command installs it")
+
+    def test_should_suggest_a_phrase_without_the_heading_marker(self) -> None:
+        text = normalize("Intro text here.\n\n## Upgrading from v1.2.0\n\nRun the installer again.").text
+        self.assertNotIn("##", docs_rules.context(text, tokens(text)[0]))
 
 
 class DateAndGlobTests(unittest.TestCase):

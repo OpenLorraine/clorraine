@@ -254,15 +254,16 @@ _NORMALIZE = re.compile(
     r"(?P<link>\[(?P<label>[^\]\n]*)\]\((?P<url>[^)\s]*)\))"
     r"|(?P<entity>&(?:#\d+|#x[0-9A-Fa-f]+|[A-Za-z][A-Za-z0-9]*);)"
     r"|(?P<mark>\*\*|__|`)"
-    r"|(?P<zwsp>​)"
+    r"|(?P<zwsp>\u200b)"
+    r"|(?P<quote>(?:^|\n)[ \t]*>[ \t]?)"
     r"|(?P<space>\s+)"
 )
 
 
 def normalize(raw: str) -> Normalized:
     """Prose for comparison: links become `label url`, entities are decoded,
-    emphasis and code markers and zero-width spaces are dropped, and every
-    whitespace run becomes one space."""
+    emphasis, code and blockquote markers and zero-width spaces are dropped,
+    and every whitespace run becomes one space."""
     starts = [0] + [m.end() for m in re.finditer("\n", raw)]
 
     def line(offset: int) -> int:
@@ -291,7 +292,7 @@ def normalize(raw: str) -> Normalized:
             emit(f"{label} {match.group('url')}", match.start())
         elif kind == "entity":
             emit(html.unescape(match.group()).replace("​", ""), match.start())
-        elif kind == "space":
+        elif kind in ("space", "quote"):
             emit(" ", match.start())
         position = match.end()
     for offset in range(position, len(raw)):
@@ -354,11 +355,22 @@ def context(text: str, token: Token, width: int = 40) -> str:
     left = max(0, token.start - width)
     right = min(len(text), token.end + width)
     snippet = text[left:right]
-    if left > 0 and " " in snippet[: token.start - left]:
-        snippet = snippet[snippet.index(" ") + 1:]
-    if right < len(text) and " " in snippet[-(right - token.end):]:
+    at = token.start - left
+    if left > 0 and " " in snippet[:at]:
+        cut = snippet.index(" ") + 1
+        snippet, at = snippet[cut:], at - cut
+    if right < len(text) and " " in snippet[at + len(token.text):]:
         snippet = snippet[: snippet.rindex(" ")]
-    return snippet.strip(" .,;:")
+    # Stay inside one table cell, heading or sentence-ish clause.
+    for separator in (" | ", "| ", " |", "## ", "# "):
+        before = snippet.rfind(separator, 0, at)
+        if before >= 0:
+            cut = before + len(separator)
+            snippet, at = snippet[cut:], at - cut
+        after = snippet.find(separator, at + len(token.text))
+        if after >= 0:
+            snippet = snippet[:after]
+    return snippet.strip(" .,;:|#")
 
 
 # --- Dates -------------------------------------------------------------------
