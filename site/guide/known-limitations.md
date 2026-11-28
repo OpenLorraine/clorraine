@@ -53,14 +53,19 @@ edge cases and their workarounds, is
   owning value, or block. Use a message port and a DOS process for that work.
 - **Some optional services are narrower than their APIs.** Clipboard opens its
   unit for each read or write, and a read can still hold off later writes while
-  another program keeps the unit open; serial, parallel, and printer prove typed
+  another program keeps the unit open. Each operation may load the clipboard
+  device from `DEVS:` again, which can show a volume requester on a floppy-only
+  system; the behaviour is proven on the Workbench 2.04 and 3.1 devices, and
+  3.1.4 and later are untested. Serial, parallel, and printer prove typed
   open/close; datatypes proves parsing but not visible `DTM_DRAW` rendering;
   network proves a TCP echo through `tcpEcho`. The full list is in the
   authoritative document.
 - **Screen text is clipped by the runtime.** `drawText` on a screen clips at
   the screen edge itself. A color font that does not fit draws nothing, and so
   does text whose visible part is far wider than the screen or that cannot get
-  its small chip-memory raster.
+  its small chip-memory raster. Clipping is proven on Kickstart 1.3 with the ROM
+  topaz font; kerned and right-to-left disk fonts follow the same rule but have
+  no target run.
 - **The NDK is not redistributed.** The SDK image builds from public upstream
   sources and verifies downloaded inputs.
 
