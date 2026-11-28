@@ -1,7 +1,7 @@
 # C Name Integrity Implementation Plan
 
 > **Feature**: Emit valid C whatever the source names are: escape source names that C keywords, reserved identifiers, or header and shim names would break; keep generated instance and helper symbols apart from user symbols; give every emitted region a true `#line`; keep absolute paths out of driver-built C
-> **Status**: Planning Complete
+> **Status**: Plan Preflighted
 > **Created**: 2026-11-28
 > **Implements**: none (standalone plan; no RD) — closes DEF-589, DEF-592 and theme issue #42 (findings #61, #64; ASM-WS3-005 and ASM-WS3-006 in #91)
 > **CodeOps Artifact Schema**: 1
@@ -22,7 +22,8 @@ as given, so an editor build, which passes absolute paths, writes the user's hom
 the C.
 
 The plan escapes source names through one injective suffix rule backed by a committed list of
-every name the supported toolchains' headers and the shim define (AR-5, AR-18, AR-19), reserves
+every name the supported toolchains' headers and the shim define (AR-5, AR-18, AR-19), emits enum
+constants as their values so no enum macro reaches C (AR-16 as amended by preflight), reserves
 generated symbols so the existing `__user` rename applies (AR-20), maps every emitted region to a
 real source line or runtime file (AR-21), and makes the `clorraine` driver pass sources relative to
 its working folder (AR-10, AR-24). No spec chapter or spec test changes.
@@ -32,9 +33,9 @@ its working folder (AR-10, AR-24). No spec chapter or spec test changes.
 **Original goal:** Issue #42: "Escape every C99 keyword and header/NDK macro name and separate
 generic-instance symbols from module functions", closing ASM-WS3-001, -002, -005, -006.
 **Smallest viable design:** one escape predicate and one name-only suffix function used by every
-source-name site (03-01); the existing `__user` rename with a wider reserved set (03-02); a
-`#line` before each top-level definition and each appended runtime file (03-03); a path rewrite in
-the driver (03-04). It reuses the existing uniqueness counter, reserved-symbol scan, `__user`
+source-name site, and enum constants emitted as values (03-01); the existing `__user` rename with
+a wider reserved set and one precomputed instance map (03-02); a `#line` before each top-level
+item and each appended runtime file (03-03); a path rewrite in the driver (03-04). It reuses the existing uniqueness counter, reserved-symbol scan, `__user`
 loop, skip-without-toolchain test pattern, and `platform.rs` path helper.
 **Excluded machinery:** committed generator tooling for the name list (a one-off recorded command
 instead, AR-7); `-fdebug-prefix-map` (a spec/17 §13 change, AR-22); a new instance prefix (AR-8).
@@ -68,6 +69,7 @@ instead, AR-7); `-fdebug-prefix-map` (a spec/17 §13 change, AR-22); a new insta
 | 03-04 | [Driver paths and docs](03-04-driver-paths-and-docs.md)     | Path rewrite, docs, notices, residual limits             |
 | 07    | [Testing Strategy](07-testing-strategy.md)                  | ST cases and verification                                |
 | 99    | [Execution Plan](99-execution-plan.md)                      | Phases and task checklist                                |
+| PF    | [Preflight Report](00-preflight-report.md)                  | Post-creation audit and its resolutions                  |
 
 ## Quick Reference
 
@@ -75,7 +77,7 @@ instead, AR-7); `-fdebug-prefix-map` (a spec/17 §13 change, AR-22); a new insta
 
 ```clorraine
 struct Gps { lat: i32; long: i32; }          // field `long` → C member long_0
-enum INT : i32 { MIN, MAX, }                 // INT_MAX is a <limits.h> macro → INT_MAX_0
+enum INT : i32 { MIN, MAX, }                 // INT.MAX is emitted as (1); no INT_MAX macro
 func f(EOF: i32, restrict: i32): i32 {       // parameters EOF_0, restrict_0
     let memcpy: i32 = EOF + restrict;        // local memcpy_0; the array copy still calls memcpy
     return memcpy;
@@ -87,9 +89,10 @@ func f(EOF: i32, restrict: i32): i32 {       // parameters EOF_0, restrict_0
 | Decision | Outcome |
 | -------- | ------- |
 | Escape classes | C99 keywords, reserved identifiers, names the unit defines or declares (AR-5) |
+| Enum constants | emitted as parenthesized values; no `#define` (AR-16, amended by PF-001) |
 | Spelling | `n + "_0"` when `n` or its `_<digits>`-stripped root is escaped (AR-18) |
 | Name list | one committed union over every leg and toolchain, completeness-tested (AR-19) |
-| Generated symbols | wider reservation, existing `__user` rename, exact-set loops (AR-20) |
+| Generated symbols | wider reservation, existing `__user` rename, one instance map, exact-set loops (AR-20) |
 | `#line` | every definition and runtime file mapped; suffix split into named files (AR-21) |
 | Paths | the driver passes sources relative to its working folder; `clc` unchanged (AR-10, AR-24) |
 
@@ -112,10 +115,12 @@ checklists in recent `05-findings.md` ledgers._
 ## Related Files
 
 - `compiler/src/codegen.rs` — escape classes, source-name entry point, reserved set, rename loops
+- `compiler/src/{ir,own}.rs`, `compiler/src/own/lower.rs` — the generated flag on `ir::Local`
+- `compiler/src/sema/mod.rs`, `compiler/src/types/mod.rs` — lambda and hook spans
 - `compiler/src/codegen/c_names.txt` (new) — the committed name list
 - `compiler/src/codegen/{expr,drop,guards,program,function,calls,cleanup}.rs` — field, capture, enum, instance, and `#line` sites
-- `compiler/src/profile.rs` — the suffix as named pieces
-- `compiler/src/clorraine/{build,run,cli}.rs` — the driver path rewrite
+- `compiler/src/profile.rs` — a suffix-pieces accessor beside the unchanged `shim_suffix()`
+- `compiler/src/clorraine/{build,run,cli,platform}.rs` — the driver path rewrite
 - `compiler/tests/c_name_integrity_{spec,impl}_test.rs` (new)
-- `compiler/tests/codegen_ownership_impl_test.rs` and other impl pins (AR-25)
-- `docs/known-limitations.md`, `THIRD_PARTY_NOTICES.md`
+- `compiler/tests/compiler_robustness_impl_test.rs`, `codegen_ownership_impl_test.rs`, and other impl pins (AR-25)
+- `docs/known-limitations.md`, `site/guide/known-limitations.md`, `THIRD_PARTY_NOTICES.md`

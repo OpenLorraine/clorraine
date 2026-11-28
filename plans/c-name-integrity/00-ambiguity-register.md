@@ -1,7 +1,7 @@
 ## Ambiguity Register: c-name-integrity
 
 > **Status**: ✅ GATE PASSED — all 26 items resolved (AR-1..AR-4 from the user's invocation; AR-10 by the user; AR-5..AR-9, AR-11..AR-26 delegated by `--auto-design`, provenance below; no complexity escalation)
-> **Last Updated**: 2026-11-28 02:05
+> **Last Updated**: 2026-11-28 (preflight amendments: AR-7, AR-14, AR-16..AR-21 refined or reopened and re-resolved; see §Preflight amendments)
 
 Planning target: theme issue #42 (remediation roadmap R3) — findings ASM-WS3-001 (#61, DEF-589),
 ASM-WS3-002 (#64, DEF-592), ASM-WS3-005 and ASM-WS3-006 (tracking issue #91).
@@ -28,21 +28,21 @@ legal risk acceptance, complexity escalation, outward actions.
 | 4 | Scope | Same-root defects the goal does not name | include / leave out and report | Strict scope: left out of this plan and reported in the plan summary (notes) | ✅ Resolved |
 | 5 | Technical | Which names a source name may not keep | keywords only / plus reserved identifiers / plus every name the unit's prelude defines or declares | AI — delegated: three classes (notes; class 3 refined by AR-19) | ✅ Resolved |
 | 6 | Technical | How an escaped name is spelled | keep `cl_` prefix / stable `_<n>` suffix / `u<len>_` prefix | AI — delegated: a stable suffix from one name-only function (refined by AR-18) | ✅ Resolved |
-| 7 | Technical | Where the header names come from | hand-written list / shape rule / committed list extracted from the toolchains, guarded by a completeness test | AI — delegated: committed list plus completeness test (refined by AR-19) | ✅ Resolved |
+| 7 | Technical | Where the header names come from | hand-written list / shape rule / committed list extracted from the toolchains, guarded by a completeness test | AI — delegated: committed list plus completeness test (refined by AR-19; extraction method defined by PF-008) | ✅ Resolved |
 | 8 | Technical | How instance and helper symbols stay apart from user symbols | new instance prefix / escape `_`-led names / reserve generated symbols so the existing `__user` rename applies | AI — delegated: reservation plus the `__user` rename (refined by AR-20) | ✅ Resolved |
 | 9 | Technical | Where `#line` goes for code that has no statement mapping | reset to the C file / map to a source or logical runtime line | AI — delegated: per-definition mapping (refined by AR-21) | ✅ Resolved |
 | 10 | Scope (reserved) | The path spelling in `#line` (ASM-WS3-006): two spec suites pin the command-line spelling, including an absolute one | fix in the driver / change clc and four spec tests / document only / leave out | User: "Fix it in the driver (Recommended)" — clc keeps the pinned command-line spelling; the `clorraine` driver passes each source relative to its working folder when the file is inside it; a direct `clc` call with an absolute path still embeds it, documented | ✅ Resolved |
 | 11 | Non-functional | Host builds against C libraries other than the extracted ones | extract more / residual limit | AI — delegated: glibc and MinGW-w64 are extracted (AR-19); any other C library is a residual limit in `docs/known-limitations.md` | ✅ Resolved |
 | 12 | Technical | Verify commands | per AGENTS.md and the issue | AI — delegated: phase gate `make check`; final gate adds `make asan`, `make ubsan`, `make corpus-amiga`, `make bench-shape`, `make differential`, `make bench-compile`, `make toolchain-check TOOLCHAIN=<rc24>` | ✅ Resolved |
 | 13 | Naming | Test and data file names | — | AI — delegated: `compiler/tests/c_name_integrity_{spec,impl}_test.rs`; data `compiler/src/codegen/c_names.txt` | ✅ Resolved |
-| 14 | Feature gaps | Which docs change | none / known limitations / plus notices | AI — delegated: `docs/known-limitations.md` §7 and a new residual list; `THIRD_PARTY_NOTICES.md` provenance (AR-23); no site page states these details | ✅ Resolved |
+| 14 | Feature gaps | Which docs change | none / known limitations / plus notices | AI — delegated (refined by PF-007): `docs/known-limitations.md` §7, the §11 helper rows, and a residual list, edited in the phase that causes each; `site/guide/known-limitations.md` re-evaluated every phase; `THIRD_PARTY_NOTICES.md` provenance (AR-23) | ✅ Resolved |
 | 15 | Scope | Enum constants (`#define <Enum>_<Member>`) as a name position (coverage hunt) | include / leave out | Fixed by the issue #42 goal: included (evidence in the notes) | ✅ Resolved |
-| 16 | Technical | How enum constants are escaped, and locals that spell an enum constant | prefix every constant / suffix the colliding ones and treat the program's constants as class 3 | AI — delegated: suffix only the colliding constants; the program's constant spellings join class 3 | ✅ Resolved |
-| 17 | Behavioral | Generated `__cl_*` names pass through `unique_local`; fallback paths spell names without it | escape in `unique_local` / a separate source-name entry point used by every source-name site | AI — delegated: one source-name entry point; generated names unchanged; fallbacks routed through it | ✅ Resolved |
-| 18 | Technical | Field and capture spellings at untyped dotted-path sites | per-struct table plus typed walks / one injective name-only function | AI — delegated: one injective name-only function for every position | ✅ Resolved |
+| 16 | Technical | How enum constants are escaped, and locals that spell an enum constant | prefix every constant / suffix the colliding ones and treat the program's constants as class 3 / emit each use as its value with no macro | AI — delegated (reopened by preflight PF-001): emit each constant use as its parenthesized value; no `#define`; the program's constants do not join class 3 | ✅ Resolved |
+| 17 | Behavioral | Generated `__cl_*` names pass through `unique_local`; fallback paths spell names without it | escape in `unique_local` / a separate source-name entry point used by every source-name site | AI — delegated (refined by PF-002, PF-003): one source-name entry point; generated locals told apart by a flag on `ir::Local`; the not-in-table fallbacks keep plain `sanitize` | ✅ Resolved |
+| 18 | Technical | Field and capture spellings at untyped dotted-path sites | per-struct table plus typed walks / one injective name-only function | AI — delegated (refined by PF-004, PF-009, PF-021): one injective name-only function through one member helper at every site; counter skips class members; `""` → `_0` | ✅ Resolved |
 | 19 | Data & state | Extent of the name list: prelude or whole unit, per profile or one list, which toolchains | per-profile SDK prelude / one union over every supported leg and toolchain | AI — delegated: one list, the union of whole-unit names over every leg (notes) | ✅ Resolved |
-| 20 | Integration | Generated symbols colliding with each other, and the families the reservation misses | exact instance set only / prefix families plus exact rename loops | AI — delegated: trigger families plus exact-set rename loops (notes) | ✅ Resolved |
-| 21 | Behavioral | `#line` for lifted lambdas, hook support, and the single-string suffix | per notes | AI — delegated: lambda and hook lines; suffix split into named files under `compiler/runtime/` | ✅ Resolved |
+| 20 | Integration | Generated symbols colliding with each other, and the families the reservation misses | exact instance set only / prefix families plus exact rename loops | AI — delegated (refined by PF-005, PF-011, PF-012): trigger families, fixed prelude helpers, a precomputed instance map that also separates instances, exact-set loops | ✅ Resolved |
+| 21 | Behavioral | `#line` for lifted lambdas, hook support, and the single-string suffix | per notes | AI — delegated (refined by PF-006, PF-014, PF-019): lambda and hook lines from new site spans; a pieces accessor beside the unchanged `shim_suffix()`; "top-level item" defined | ✅ Resolved |
 | 22 | Security & compliance | `-g` builds keep the C compiler's absolute working directory in DWARF | `-fdebug-prefix-map` (changes the spec/17 §13 command lines: a spec ruling) / residual limit | AI — delegated: residual limit; the plan claims the emitted C only | ✅ Resolved |
 | 23 | Security & compliance | Provenance of a name list taken from third-party headers | provenance note / record that none is needed | AI — delegated: provenance note in `THIRD_PARTY_NOTICES.md`, the project's practice; no risk acceptance | ✅ Resolved |
 | 24 | Integration | Driver relativization details | per notes | AI — delegated: containment by canonical paths, `/` separators, diagnostics follow, outside files unchanged | ✅ Resolved |
@@ -179,14 +179,14 @@ docs-follow-the-code rule. The site's known-limitations page has no symbol-namin
 build can compile with the runtime reading the user's value; `let Color_Red` beside
 `enum Color { Red }` fails host.
 
-**AR-16:** Authority: AI — delegated by --auto-design. Decision: an enum constant whose spelling
+**AR-16:** _(Superseded by §Preflight amendments; original text kept for the audit trail.)_ Authority: AI — delegated by --auto-design. Decision: an enum constant whose spelling
 `<Enum>_<Member>` is in class 1–3 is spelled with the AR-18 function at the `#define` and at every
 use, through one helper; the program's final enum-constant spellings join class 3 for every other
 source name, so `let Color_Red` is escaped. Rejected: prefixing every constant (`Cl<Enum>_<Member>`
 churns every enum and can meet a user typedef `ClColor_Red`). Confidence: High. Reopen triggers: a
 constant emitted outside the helper.
 
-**AR-17:** Authority: AI — delegated by --auto-design. Decision: one source-name entry point
+**AR-17:** _(Partly superseded by §Preflight amendments: the fallbacks are not escaped.)_ Authority: AI — delegated by --auto-design. Decision: one source-name entry point
 (`source_c_name`-style, exact name chosen by the executor) applies classes 1–3 and the AR-18
 spelling; every source-name site uses it: locals, parameters, lambda parameters, the
 `local_names` fallbacks (`expr.rs:241,247,631`, `function.rs:608,663`) and the func-typed callee
@@ -195,7 +195,7 @@ fallback (`expr.rs:1370-1375`); `unique_local` keeps serving generated names (`_
 `unique_local` and 270 pinned `__cl_*` spellings (C2). Confidence: High. Reopen triggers: a pinned
 generated spelling changes.
 
-**AR-18:** Authority: AI — delegated by --auto-design. Decision: a name `n` is *marked* when `n`,
+**AR-18:** _(Refined by §Preflight amendments.)_ Authority: AI — delegated by --auto-design. Decision: a name `n` is *marked* when `n`,
 or `n` with one or more trailing `_<digits>` groups removed, is in class 1–3. `escape(n)` is
 `n + "_0"` when `n` is marked, else `n`. It is injective: appending a fixed suffix is injective,
 and an escaped result is itself marked (its ancestor `n` is), so it never equals a kept name. The
@@ -229,7 +229,7 @@ the SDK image during `make check`, and for rc24 when `CLORRAINE_RC24_ROOT` names
 header change that adds a name fails it with the missing list. Confidence: Med — vbcc's own
 predefines are not enumerable (residual). Reopen triggers: a new leg or toolchain pin.
 
-**AR-20:** Authority: AI — delegated by --auto-design. Decision: the rename *trigger* for a user
+**AR-20:** _(Partly superseded by §Preflight amendments: zero helpers per emitted struct unit; one instance map.)_ Authority: AI — delegated by --auto-design. Decision: the rename *trigger* for a user
 function or global (`is_reserved_symbol`) adds the families `cl_<g>__` for every declared generic
 function `g` (from the AST), `cl_box_alloc__`, `cl_box_drop__`, `cl_zero_Cl`, and `cl_hook_`, next
 to the existing ones; the instance helper applies the same trigger against the helper families
@@ -242,7 +242,7 @@ specializations, hook support), all computed before emission; so a family never 
 exact instance set only (misses the zero helper). Confidence: High. Reopen triggers: a generated
 symbol emitted that the exact set does not hold.
 
-**AR-21:** Authority: AI — delegated by --auto-design. Decision: refines AR-9. A lifted lambda maps
+**AR-21:** _(Partly superseded by §Preflight amendments: separators before the next named piece; `shim_suffix()` unchanged.)_ Authority: AI — delegated by --auto-design. Decision: refines AR-9. A lifted lambda maps
 to its lambda expression's line; hook trampolines and wrappers to their hook lambda's line; the
 hook env-stack helpers to the first hook lambda's line. `Profile` exposes the suffix as an ordered
 list of named pieces (the six files, `picasso96.h`, and the two literal separators placed outside
@@ -283,3 +283,54 @@ stops execution for a user ruling (AGENTS.md).
 parsed once into a sorted `&'static [&'static str]` (or checked sorted at test time) and probed by
 binary search; about 100 KB of text against a 6.45 MB release `clc`. `make bench-compile` runs in the
 final gate; a regression over its existing guard is a finding.
+
+## Preflight amendments
+
+Preflight (`00-preflight-report.md`, `--auto-design`, policy version 1, root invocation
+`ad-pf-7b2e91c4`) found new codebase evidence that reopens AR-16 and refines AR-7, AR-14,
+AR-17..AR-21. **Where an original note above disagrees with this section or with the 03-*
+design documents, this section and 03-* win** — in particular the AR-17 fallbacks keep plain
+`sanitize`, AR-20's zero helpers are per emitted struct unit, and AR-21's literal separators are
+written before the next named piece's `#line`. Each amended decision keeps its original category; the full provenance, rejected
+alternatives, and challenger verdicts are in the report's findings.
+
+**AR-16 (reopened, PF-001):** Authority: AI — delegated by --auto-design. Eligibility: compiler
+mechanism; spec/17 §3 asks only for "an emitted constant" and spec/17 §7 says C macros are not
+used. New evidence: an escaped local `INT_MAX` and the escaped constant of `enum INT { MAX }` both
+spell `INT_MAX_0`; any further suffix patch fails (`enum Color { Red, Red_0 }` against a local
+`Color_Red`); the macros also rewrite suffix tokens no file-scope list holds (`io_Command`,
+`font_size`), user symbols, and each other (`enum A_B { C }` and `enum A { X, B_C }` both define
+`A_B_C`; a release build prints a wrong value). Decision: the one use site (`expr.rs:584-585`)
+emits the constant's folded value as `(<value>)`; the `#define` loop (`program.rs:999-1001`) is
+removed; the program's constants no longer join class 3. Rejected: suffixing colliding constants
+(collides with escaped locals); `#undef` before the suffix (prefix, user-code, and
+constant-vs-constant collisions remain). Strongest counterargument: emitted C loses readable
+constant names (cosmetic; macro names are not in `-g` debug info). Confidence: High. Hardening:
+challenger chose the same option. Reopen triggers: a site other than `path()` reads the
+`<Enum>_<Member>` spelling.
+
+**AR-17 (refined, PF-002, PF-003):** generated owners `__cl_owned<N>` share the locals table; a
+`generated` flag on `ir::Local`, copied from the binding, keeps them on plain `unique_local` (a
+spelling pattern would miss a source local named `__cl_owned0`). The fallbacks reached only by
+names outside the table (`ffi` function values, generated paths) keep plain `sanitize`.
+
+**AR-18 (refined, PF-004, PF-009, PF-021):** the member spelling is one helper and the contract is
+"every member site calls it", proved by keyword-named fields through every access form under the
+strict builds; the counter skips class members for source names; an empty name is `_0`.
+
+**AR-20 (refined, PF-005, PF-011, PF-012):** instance symbols are assigned once, before emission,
+in monomorphization order, and a later instance meeting an earlier one takes `__user`; zero
+helpers are per emitted struct unit plus `cl_zero_ClStr`; `cl_str`, `cl_string_view`, and
+`cl_zero_ClStr` join the reserved and exact sets.
+
+**AR-21 (refined, PF-006, PF-014, PF-019):** `shim_suffix()` stays as it is (a spec test reads it)
+and a pieces accessor feeds emission; lambda and hook spans are new fields on their sites; a
+"top-level item" is a function, file-scope object, or struct definition outside the suffix.
+
+**AR-7, AR-19 (refined, PF-008):** typedefs, objects, and file-scope enumerators come from a
+std-only depth-0 scan of the `-E` output shared by the one-off command and the test, with a
+recall check against `-aux-info`; a scanner inside a test is not committed generator tooling.
+
+**AR-14 (refined, PF-007):** the AGENTS.md prime directive (after this register was written)
+moves each limitation edit into the phase that causes it and re-evaluates the site summary every
+phase.

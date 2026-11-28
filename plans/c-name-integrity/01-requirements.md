@@ -13,24 +13,33 @@ out of the C. Scope per AR-1..AR-4, AR-10, AR-15.
 ## Functional Requirements
 
 ### Must Have
-- [ ] R1 — A source name in any of the six positions (locals; parameters of functions, lambdas,
-  prototypes, and function types; struct fields; closure-capture fields; enum constants) that is
-  in an escape class is emitted with the AR-18 spelling; every other name keeps its source
-  spelling (AR-2, AR-5, AR-15..AR-18).
+- [ ] R1 — A source name in any of the four name positions (locals; parameters of functions,
+  lambdas, prototypes, and function types; struct fields; closure-capture fields) that is in an
+  escape class is emitted with the AR-18 spelling; every other name keeps its source spelling
+  (AR-2, AR-5, AR-15, AR-17, AR-18). Enum constants, the fifth source position of AR-15, no longer
+  reach C as names: each use is emitted as its parenthesized value and no enum macro is written
+  (AR-16 as amended by preflight PF-001).
 - [ ] R2 — Probe 340 builds and prints 121, probe 341 prints 120, on host, hosted-amiga, and
   hosted-amiga-13 (#61 acceptance).
 - [ ] R3 — The class-3 names are one committed list covering every leg and toolchain of AR-19, and
   a test proves it complete for every leg available (AR-7, AR-19).
-- [ ] R4 — Generated names (`__cl_*`, `__env`, `__cl_ret`, helpers) keep their spelling (AR-17).
-- [ ] R5 — A user function or global whose symbol equals or enters a generated family is renamed
-  with the existing `__user` suffix; an instance of a user generic that meets a helper family is
-  renamed the same way; non-colliding symbols are unchanged (AR-8, AR-20).
+- [ ] R4 — Generated names (`__cl_*`, `__env`, `__cl_ret`, generated owners `__cl_owned<N>`,
+  helpers) keep their spelling; a generated local is told apart from a source local by a flag
+  carried into the IR, never by its spelling (AR-17).
+- [ ] R5 — A user function or global whose symbol equals or enters a generated family, including
+  the emitter's fixed prelude helpers, is renamed with the existing `__user` suffix; an instance
+  of a user generic that meets a helper family, or another instance's symbol, is renamed the same
+  way; non-colliding symbols are unchanged (AR-8, AR-20).
 - [ ] R6 — Probe 342 builds and prints `1 102` on the three profiles (#64 acceptance).
-- [ ] R7 — Every top-level C definition after the first `#line`, and every appended runtime file,
-  is preceded by its own `#line` (AR-9, AR-21).
+- [ ] R7 — Every top-level item the compiler writes after the first `#line` and before the
+  runtime suffix (each function definition, file-scope object definition, and struct definition)
+  is immediately preceded by a `#line`, and every appended runtime file starts with its own
+  `#line 1` (AR-9, AR-21; the term is defined in 03-03).
 - [ ] R8 — `clorraine build|run|emit` passes each source inside its working folder by its relative
   path with `/` separators; `clc` keeps the command-line spelling (AR-10, AR-24).
-- [ ] R9 — Docs and notices updated (AR-14, AR-22, AR-23).
+- [ ] R9 — Docs and notices updated in the phase whose change they describe, and every phase
+  re-evaluates `docs/known-limitations.md` and `site/guide/known-limitations.md` before its
+  commit (AGENTS.md prime directive; AR-14, AR-22, AR-23).
 
 ### Won't Have (Out of Scope)
 - The AR-4 items: locals spelled like mangled or generated function/object symbols; E11101 for
@@ -47,6 +56,8 @@ out of the C. Scope per AR-1..AR-4, AR-10, AR-15.
 ### Compatibility
 - Emission stays byte-deterministic and independent of the build machine and OS (spec/17 §11).
 - The existing `#line` spec pins (`stage_spec_test`, `windows_cli_spec_test`) keep passing.
+- `Profile::shim_suffix()` keeps its `&'static str` signature and bytes
+  (`amiga_optional_spec_test.rs:302-316` pins it).
 
 ### Security
 - No user or repository text is interpolated into a shell; the driver rewrite reads only paths
@@ -57,7 +68,7 @@ out of the C. Scope per AR-1..AR-4, AR-10, AR-15.
 
 | Decision | Options Considered | Chosen | Rationale | AR Ref |
 | -------- | ------------------ | ------ | --------- | ------ |
-| Positions | locals+params / all six | all six | the goal says "every" | AR-2, AR-15 |
+| Positions | locals+params / every position | every position (enum constants by emitting values) | the goal says "every" | AR-2, AR-15, AR-16 |
 | Generated families | instances / plus helpers | plus helpers | same collision | AR-3, AR-20 |
 | Path fix | driver / clc + spec tests / docs / defer | driver | user choice | AR-10 |
 
@@ -65,8 +76,9 @@ out of the C. Scope per AR-1..AR-4, AR-10, AR-15.
 
 ## Acceptance Criteria
 
-1. [ ] ST-1..ST-24 pass (07).
+1. [ ] ST-1..ST-27 pass (07).
 2. [ ] The completeness test passes in the SDK image and with `CLORRAINE_RC24_ROOT` set (AR-19).
 3. [ ] The final gate of AR-12 passes.
-4. [ ] `docs/known-limitations.md` and `THIRD_PARTY_NOTICES.md` updated (AR-14, AR-23).
+4. [ ] `docs/known-limitations.md`, `site/guide/known-limitations.md` (when affected), and
+   `THIRD_PARTY_NOTICES.md` updated (AR-14, AR-23).
 5. [ ] No spec chapter or spec test changed.
