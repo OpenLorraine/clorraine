@@ -3,6 +3,20 @@
 Guidance for coding agents working in this repository. Keep it small; operational
 routing belongs in configuration, not prose.
 
+## Prime directive
+
+**Re-evaluate the known limitations after every change. This is a
+non-negotiable task.** After each implementation, bug fix, or task, and before
+it is reported done or committed:
+
+1. Re-read `docs/known-limitations.md` (authoritative) and its summary
+   `site/guide/known-limitations.md` against what the change did.
+2. Add any limitation the change introduces or exposes; narrow or remove any it
+   lifts; correct any statement it makes stale (baselines, versions, what is
+   proven on a target and what is not).
+3. Make those edits in the same change. When nothing needs to change, say so in
+   the task summary or commit message ("known limitations: unchanged").
+
 <!-- CODEOPS-PROJECT:START -->
 ## Project
 
