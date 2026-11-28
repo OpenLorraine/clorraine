@@ -1,6 +1,6 @@
 ## Ambiguity Register: c-name-integrity
 
-> **Status**: ✅ GATE PASSED — all 26 items resolved (AR-1..AR-4 from the user's invocation; AR-10 by the user; AR-5..AR-9, AR-11..AR-26 delegated by `--auto-design`, provenance below; no complexity escalation)
+> **Status**: ✅ GATE PASSED — all 27 items resolved (AR-1..AR-4 from the user's invocation; AR-10 and AR-27 (runtime) by the user; AR-5..AR-9, AR-11..AR-26 delegated by `--auto-design`, provenance below; no complexity escalation)
 > **Last Updated**: 2026-11-28 (preflight amendments: AR-7, AR-14, AR-16..AR-21 refined or reopened and re-resolved; see §Preflight amendments)
 
 Planning target: theme issue #42 (remediation roadmap R3) — findings ASM-WS3-001 (#61, DEF-589),
@@ -48,6 +48,7 @@ legal risk acceptance, complexity escalation, outward actions.
 | 24 | Integration | Driver relativization details | per notes | AI — delegated: containment by canonical paths, `/` separators, diagnostics follow, outside files unchanged | ✅ Resolved |
 | 25 | Testing | Pinned spellings that change | per notes | AI — delegated: impl and unit pins updated as intended; a spec-test pin conflict stops execution | ✅ Resolved |
 | 26 | Non-functional | Lookup cost and binary size of the list | per notes | AI — delegated: sorted static slice, binary search; `make bench-compile` in the final gate | ✅ Resolved |
+| 27 | Testing (runtime) | The rc24 GCC does not start inside `clorraine-sdk:windows-cli` (`GLIBC_2.38 not found`; the image is bookworm, glibc 2.36), so the rc24 completeness command cannot run as written | build in Docker, run the test binary on the host / drop the rc24 completeness test / pause the plan | User (2026-11-28): "Build in Docker, run on host (Recommended)" | ✅ Resolved |
 
 ## Coverage Map
 
@@ -334,3 +335,17 @@ recall check against `-aux-info`; a scanner inside a test is not committed gener
 **AR-14 (refined, PF-007):** the AGENTS.md prime directive (after this register was written)
 moves each limitation edit into the phase that causes it and re-evaluates the site summary every
 phase.
+
+## Runtime decisions (exec-plan)
+
+**AR-27 (runtime):** Authority: the user (direct choice, 2026-11-28), after the plan's own stop
+rule fired. Evidence: `build/rc24/rc24/bin/m68k-amigaos-gcc --version` inside
+`clorraine-sdk:windows-cli` fails with `GLIBC_2.38' not found`; the image is Debian bookworm
+(glibc 2.36); the host (Ubuntu 26.04, glibc 2.43) runs rc24 natively and `make toolchain-check`
+already runs it there; the host has no cargo. Decision: the impl test is built in the container
+(`cargo test --no-run`) and the built test binary runs on the host with
+`CLORRAINE_RC24_ROOT` naming the host rc24 root. Consequences for the design: the rc24 leg is its
+own test function, run on the host by exact name, so the host's own glibc is never compared with
+the list (AR-11 keeps other C libraries a residual); the test emits the sample through the
+`clc` library in process with an inline program, so it needs no `/work` path; the one-off rc24
+extraction also runs on the host. Acceptance criterion 2 is unchanged.

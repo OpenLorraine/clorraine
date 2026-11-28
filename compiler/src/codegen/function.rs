@@ -193,14 +193,7 @@ impl<'a> Emitter<'a> {
                 self.pointer_params.insert(param.name.clone());
             }
         }
-        let mut declared: BTreeSet<String> = BTreeSet::new();
-        for local in &function.locals {
-            if !declared.insert(local.name.clone()) {
-                continue;
-            }
-            let c_name = self.unique_local(&local.name);
-            self.local_names.insert(local.name.clone(), c_name);
-        }
+        self.name_locals(function);
 
         self.collect_cleanup(function);
         let has_cleanup = self.scope_actions.values().any(|actions| !actions.is_empty());
@@ -295,14 +288,7 @@ impl<'a> Emitter<'a> {
             self.used_names.insert(c_name.clone());
             self.local_names.insert(param.name.clone(), c_name);
         }
-        let mut declared: BTreeSet<String> = BTreeSet::new();
-        for local in &function.locals {
-            if !declared.insert(local.name.clone()) {
-                continue;
-            }
-            let c_name = self.unique_local(&local.name);
-            self.local_names.insert(local.name.clone(), c_name);
-        }
+        self.name_locals(function);
 
         self.collect_cleanup(function);
         let has_cleanup = self.scope_actions.values().any(|actions| !actions.is_empty());
@@ -329,6 +315,29 @@ impl<'a> Emitter<'a> {
         self.push("");
 
         self.function = None;
+    }
+
+    /// Gives every local of `function` its C name in the local-name table.
+    ///
+    /// A source local takes its escaped source spelling and a generated local
+    /// (a generated owner) keeps the compiler's spelling; the IR flag tells
+    /// them apart, so a source local named like a generated one is still
+    /// escaped. A name listed twice (a speculative pass can record one binding
+    /// again) is named once. The parameters are named before this runs, so a
+    /// local never takes a parameter's spelling.
+    fn name_locals(&mut self, function: &ir::Function) {
+        let mut declared: BTreeSet<String> = BTreeSet::new();
+        for local in &function.locals {
+            if !declared.insert(local.name.clone()) {
+                continue;
+            }
+            let c_name = if local.generated {
+                self.unique_local(&local.name)
+            } else {
+                self.unique_source_local(&local.name)
+            };
+            self.local_names.insert(local.name.clone(), c_name);
+        }
     }
 
     /// The C signature of one lifted lambda function.

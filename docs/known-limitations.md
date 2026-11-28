@@ -119,7 +119,42 @@ The bitmap fill uses a bounded pixel loop because `p96RectFill` did not
 round-trip pure blue on a user-private bitmap in the spike; screen fills still
 use `p96RectFill`.
 
-## 7. Runtime and generated C symbol collisions
+## 7. C names: source names, runtime symbols, and generated helpers
+
+### Locals and parameters
+
+A Clorraine identifier can be a C keyword (`int`, `restrict`, `_Bool`), an
+identifier C reserves for the implementation (`__LINE__`, `_Pragma`, any name
+that starts with `__` or with `_` and a capital letter), or a name that the
+emitted unit's headers and runtime define or declare (`NULL`, `EOF`, `errno`,
+`memcpy`, `MEMF_CHIP`, `SysBase`, `textPen`, `FreeString`). The emitter writes
+such a local or parameter with a stable `_0` suffix: `int` becomes `int_0`,
+`EOF` becomes `EOF_0`, and `EOF_2` (whose root is escaped) becomes `EOF_2_0`.
+Every other name keeps its source spelling, and a shadowed or duplicate name
+still takes the `_1`, `_2`, … counter, which steps over header names. This
+replaces the old `cl_` prefix for keywords, so a keyword local that used to be
+`cl_int` is now `int_0`. Compiler-generated locals (`__cl_tmp0`, `__env`,
+`__cl_ret`, the generated owners `__cl_owned<N>`) keep their spellings; a
+source local spelled like one of them is escaped like any reserved name.
+
+The header and runtime names are a committed list,
+`compiler/src/codegen/c_names.txt`, built into `clc` so emission does not
+depend on the build machine. It holds every macro, typedef, function, object,
+and enumerator that the whole emitted unit sees on each leg the project builds:
+host glibc, MinGW-w64, the SDK's m68k GCC with libnix 2.0 and 1.3 and the NDK,
+the freestanding profile, vbcc's target headers, and the rc24 toolchain's GCC.
+Each GCC leg is read at the debug, release, and size optimization levels. A
+test re-reads every available leg and fails, naming each missing name, when a
+header or shim change adds one.
+
+| Limit | Effect | Guidance |
+|---|---|---|
+| Struct fields, closure captures, and enum constants | They still reach C with their source spelling, so a field named `long` or `EOF`, a captured local named `int`, or an enum whose constant spells a header macro (`enum INT { MAX }` is `INT_MAX`) can fail the C build. A local spelled like one of the program's enum constants (`Color_Red` beside `enum Color { Red }`) is also rewritten by the constant's macro | Rename the field, capture, enum member, or local |
+| Other C libraries and toolchains | The list covers the legs above; a host build against another C library or another compiler can still meet a macro the list does not hold | Use the SDK image or the rc24 toolchain, or rename the local |
+| vbcc predefined macros | vbcc cannot print its own predefines. Every predefine found by probing `vbccm68k` on the compile matrix's line is reserved-shaped (`__VBCC__`, `__M68000`, `__INTSIZE`, …) and escaped by that rule; a non-reserved predefine nobody has found would be missed | Rename a local that a vbcc predefine rewrites |
+| A local spelled like one of the program's own symbols | A local named like a mangled function or global (`cl_Main_helper`) or a generated type (`ClPoint`, `ClSlice_u8`) is not escaped and hides that symbol inside its function | Do not name locals with the `cl_` or `Cl` prefixes |
+
+### Runtime symbols and generated helpers
 
 The compiler mangles a user definition to `cl_<module>_<name>`. The runtime
 shim and some generated helpers use the same `cl_` namespace, so a legal source

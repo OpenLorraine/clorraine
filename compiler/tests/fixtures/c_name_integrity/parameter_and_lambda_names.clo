@@ -1,0 +1,15 @@
+module NameIntegrity.Params;
+
+import { println } from std.io;
+
+func f(EOF: i32, restrict: i32, errno: i32): i32 {
+    return EOF + restrict + errno;
+}
+
+func main(): i32 {
+    let bump: func(i32): i32 = (TRUE: i32) => TRUE + 1;
+    let sum: i32 = f(1, 2, 3);
+    let next: i32 = bump(4);
+    println($"{sum} {next}");
+    return 0;
+}

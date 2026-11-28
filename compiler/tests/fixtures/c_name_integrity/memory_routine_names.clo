@@ -1,0 +1,20 @@
+module NameIntegrity.Memory;
+
+import { println } from std.io;
+
+struct Holder {
+    b: i32[4];
+}
+
+func main(): i32 {
+    let memcpy: i32 = 1;
+    let memset: i32 = 2;
+    let strlen: i32 = 3;
+    let a: i32[4] = [1, 2, 3, 4];
+    let b: i32[4] = a;
+    let p: Holder = Holder { b: a };
+    let q: Holder = p;
+    let total: i32 = memcpy + memset + strlen + b[3] + q.b[2];
+    println($"{total}");
+    return 0;
+}

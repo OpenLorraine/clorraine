@@ -378,7 +378,7 @@ func main(): i32 {
 /// A borrow element may be named after a C keyword.
 ///
 /// The source name `int` is a valid Clorraine identifier but a C keyword, so
-/// the outer local is emitted as `cl_int` and the alias renders through its
+/// the outer local is emitted as `int_0` and the alias renders through its
 /// temporary. The loop doubles the elements (3, 4 become 6, 8), the outer
 /// local keeps seven, and the program exits `7 + 14 + 6 + 8 = 35`.
 #[test]

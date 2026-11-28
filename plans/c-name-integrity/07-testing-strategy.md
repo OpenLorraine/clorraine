@@ -116,7 +116,7 @@ fails.
 
 | Scenario | Steps | Expected Result |
 | -------- | ----- | --------------- |
-| rc24 product toolchain | `make toolchain-check TOOLCHAIN=<rc24>`; the rc24 completeness command of 99 Phase 1 | both pass |
+| rc24 product toolchain | `make toolchain-check TOOLCHAIN=<rc24>`; the rc24 completeness command of 99 (container-built test binary run on the host, AR-27) | both pass |
 
 ## Test Data
 

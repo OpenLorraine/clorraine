@@ -844,15 +844,27 @@ impl<'a> Emitter<'a> {
         candidate
     }
 
-    /// Picks a unique C name for a local declared with `name`.
+    /// Picks a unique C name for a local the compiler generates.
+    ///
+    /// A generated spelling (`__cl_save`, a generated owner `__cl_owned0`) is
+    /// fixed by the emitter and never escaped; it only takes a `_<n>` suffix
+    /// when the function already uses it.
     pub(super) fn unique_local(&mut self, name: &str) -> String {
         let base = sanitize_identifier(name);
-        let mut candidate = base.clone();
-        let mut counter = 1;
-        while self.used_names.contains(&candidate) {
-            candidate = format!("{base}_{counter}");
-            counter += 1;
-        }
+        let candidate = first_free_spelling(base, |candidate| self.used_names.contains(candidate), false);
+        self.used_names.insert(candidate.clone());
+        candidate
+    }
+
+    /// Picks a unique C name for a local the program declared.
+    ///
+    /// The source name is escaped first, so a name C or the unit's headers
+    /// would read differently gets its stable suffix; a shadowing or duplicate
+    /// spelling then takes the counter, which steps over keywords and listed
+    /// names as well as the function's used names.
+    pub(super) fn unique_source_local(&mut self, name: &str) -> String {
+        let base = source_c_name(name);
+        let candidate = first_free_spelling(base, |candidate| self.used_names.contains(candidate), true);
         self.used_names.insert(candidate.clone());
         candidate
     }
@@ -933,11 +945,13 @@ impl<'a> Emitter<'a> {
 
     /// The unique C names of a parameter list, in declaration order.
     ///
-    /// Each name is sanitized and then de-duplicated against the names
-    /// assigned before it, so a masked spelling (`give#0` becoming `give_0`)
-    /// can never collide with a literally-named sibling parameter. The emitted
-    /// signature, the local-name table, and the pointer-param keys resolve
-    /// through this one pass, so they agree by construction.
+    /// Each name takes its source spelling, escaped like a local's, and is
+    /// then de-duplicated against the names assigned before it, so a masked
+    /// spelling (`give#0` becoming `give_0`) can never collide with a
+    /// literally-named sibling parameter. The emitted signature, the
+    /// local-name table, and the pointer-param keys resolve through this one
+    /// pass, so they agree by construction; prototypes, definitions, and lifted
+    /// lambdas all spell their parameters here.
     pub(super) fn unique_param_names<'n>(
         &self,
         temps: usize,
@@ -956,13 +970,7 @@ impl<'a> Emitter<'a> {
         }
         let mut resolved: Vec<String> = Vec::new();
         for name in names {
-            let base = sanitize_identifier(name);
-            let mut candidate = base.clone();
-            let mut counter = 1;
-            while used.contains(&candidate) {
-                candidate = format!("{base}_{counter}");
-                counter += 1;
-            }
+            let candidate = first_free_spelling(source_c_name(name), |candidate| used.contains(candidate), true);
             used.insert(candidate.clone());
             resolved.push(candidate);
         }
@@ -1216,7 +1224,13 @@ fn type_param_names(decl: &FuncDecl) -> Vec<String> {
     decl.type_params.iter().map(|param| param.name.clone()).collect()
 }
 
-/// Turns a source name into a safe C identifier.
+/// Turns a name into the bytes of a C identifier.
+///
+/// Every byte that cannot appear in an identifier, and a leading digit,
+/// becomes `_`, so an IR spelling such as `give#0` becomes `give_0`. The
+/// result is not checked against C's keywords or the unit's names; a source
+/// name takes [`source_c_name`] for that. An empty name, which no source can
+/// write, becomes `_0`, so the result is always an identifier.
 pub(super) fn sanitize_identifier(name: &str) -> String {
     let mut result = String::new();
     for (index, ch) in name.chars().enumerate() {
@@ -1227,22 +1241,155 @@ pub(super) fn sanitize_identifier(name: &str) -> String {
             result.push(ch);
         }
     }
-    if result.is_empty() || is_c_keyword(&result) {
-        return format!("cl_{result}");
+    if result.is_empty() {
+        return "_0".to_owned();
     }
     result
 }
 
-/// True for a C keyword that may not be an identifier.
+/// The first of `base`, `base_1`, `base_2`, … that `taken` does not hold.
+///
+/// For a source name (`source` true) the counter also steps over a C keyword
+/// or a listed unit name, so a de-duplicated source spelling never lands on a
+/// header name. `base` itself is never such a name: an escaped spelling is
+/// kept apart from the list by the list's own invariant.
+fn first_free_spelling(base: String, taken: impl Fn(&str) -> bool, source: bool) -> String {
+    let mut candidate = base.clone();
+    let mut counter = 1;
+    while taken(&candidate) || (source && counter_must_skip(&candidate)) {
+        candidate = format!("{base}_{counter}");
+        counter += 1;
+    }
+    candidate
+}
+
+/// The C spelling of a local or parameter name the program wrote.
+///
+/// The name is sanitized and then escaped with [`escape_c_name`], so a name C
+/// or the unit's headers would read differently gets the stable `_0` suffix
+/// and every other name keeps its source spelling.
+pub(super) fn source_c_name(name: &str) -> String {
+    escape_c_name(&sanitize_identifier(name))
+}
+
+/// The escaped spelling of a C identifier.
+///
+/// A name is escaped when it, or the name left after removing one or more
+/// trailing `_<digits>` groups, is a C keyword, an identifier C reserves for
+/// the implementation, or a name the emitted unit's headers and runtime
+/// define or declare (the committed list). An escaped name gains `_0`; every
+/// other name is returned unchanged.
+///
+/// The rule is injective. Appending a fixed suffix is injective, and an
+/// escaped result is itself escaped-shaped (its root is the escaped name), so
+/// it can never equal a name that is kept. `_0` also stays apart from the
+/// uniqueness counter, which starts at `_1`. The empty name, which no source
+/// can write, is `_0`.
+///
+/// ```
+/// use clc::codegen::escape_c_name;
+/// assert_eq!(escape_c_name("count"), "count");
+/// assert_eq!(escape_c_name("int"), "int_0");
+/// assert_eq!(escape_c_name("int_0"), "int_0_0");
+/// assert_eq!(escape_c_name("EOF_2"), "EOF_2_0");
+/// assert_eq!(escape_c_name("__LINE__"), "__LINE___0");
+/// assert_eq!(escape_c_name(""), "_0");
+/// ```
+pub fn escape_c_name(name: &str) -> String {
+    if name.is_empty() {
+        return "_0".to_owned();
+    }
+    if is_escaped_shape(name) {
+        format!("{name}_0")
+    } else {
+        name.to_owned()
+    }
+}
+
+/// True when `name`, or `name` with one or more trailing `_<digits>` groups
+/// removed, is in one of the three escape classes.
+///
+/// The stripped roots matter because a counter or an escape suffix appends a
+/// `_<digits>` group: `EOF_2` must be escaped as well, or a source `EOF_2`
+/// could meet the counter's second spelling of a source `EOF`.
+fn is_escaped_shape(name: &str) -> bool {
+    let mut root = name;
+    loop {
+        if in_escape_class(root) {
+            return true;
+        }
+        match strip_digit_group(root) {
+            Some(shorter) => root = shorter,
+            None => return false,
+        }
+    }
+}
+
+/// `name` without its last `_<digits>` group, when it ends in one and keeps a
+/// non-empty root.
+fn strip_digit_group(name: &str) -> Option<&str> {
+    let digits = name.len() - name.trim_end_matches(|ch: char| ch.is_ascii_digit()).len();
+    if digits == 0 {
+        return None;
+    }
+    let root = name[..name.len() - digits].strip_suffix('_')?;
+    (!root.is_empty()).then_some(root)
+}
+
+/// True for a name in one of the three escape classes: a C keyword, an
+/// identifier C reserves for the implementation, or a listed unit name.
+fn in_escape_class(name: &str) -> bool {
+    is_c_keyword(name) || is_reserved_identifier(name) || is_listed_c_name(name)
+}
+
+/// True for a candidate the uniqueness counter must step over: a C keyword or
+/// a listed unit name, so a counter spelling never lands on a header name.
+///
+/// A reserved-shaped candidate is not stepped over. Every spelling built on a
+/// reserved name keeps that shape (`__LINE___0`, `__LINE___0_1`), so skipping
+/// it would never end; the escape accepts the same shape for the same reason.
+fn counter_must_skip(name: &str) -> bool {
+    is_c_keyword(name) || is_listed_c_name(name)
+}
+
+/// True for a C99 keyword, or `bool`, which every leg's `<stdbool.h>` defines
+/// as a macro.
 fn is_c_keyword(name: &str) -> bool {
     matches!(
         name,
         "auto" | "break" | "case" | "char" | "const" | "continue" | "default" | "do" | "double"
             | "else" | "enum" | "extern" | "float" | "for" | "goto" | "if" | "inline" | "int"
-            | "long" | "register" | "return" | "short" | "signed" | "sizeof" | "static"
-            | "struct" | "switch" | "typedef" | "union" | "unsigned" | "void" | "volatile"
-            | "while" | "bool"
+            | "long" | "register" | "restrict" | "return" | "short" | "signed" | "sizeof"
+            | "static" | "struct" | "switch" | "typedef" | "union" | "unsigned" | "void"
+            | "volatile" | "while" | "_Bool" | "_Complex" | "_Imaginary" | "bool"
     )
+}
+
+/// True for an identifier C99 §7.1.3 reserves for the implementation: one
+/// that begins with `__`, or with `_` and an upper-case letter.
+///
+/// The shape covers `_Pragma`, `__func__`, `__LINE__`, GCC's
+/// `__attribute__`, and vbcc's `__chip`, none of which a header lists.
+fn is_reserved_identifier(name: &str) -> bool {
+    let bytes = name.as_bytes();
+    name.starts_with("__")
+        || (bytes.first() == Some(&b'_') && bytes.get(1).is_some_and(u8::is_ascii_uppercase))
+}
+
+/// The names the emitted unit's headers and runtime define or declare at file
+/// scope on any supported toolchain: macros of both kinds, typedefs,
+/// functions, objects, and enumerators, one per line in byte order.
+const C_NAMES: &str = include_str!("codegen/c_names.txt");
+
+/// True for a name in the committed list of unit names.
+///
+/// The list is parsed once into a sorted slice and probed by binary search.
+fn is_listed_c_name(name: &str) -> bool {
+    static NAMES: std::sync::OnceLock<Vec<&'static str>> = std::sync::OnceLock::new();
+    NAMES
+        .get_or_init(|| C_NAMES.lines().filter(|line| !line.is_empty()).collect())
+        .binary_search(&name)
+        .is_ok()
 }
 
 #[cfg(test)]
@@ -1296,14 +1443,36 @@ mod tests {
     }
 
     #[test]
-    fn c_keywords_receive_a_stable_prefix() {
-        assert_eq!(sanitize_identifier("int"), "cl_int");
-        assert_eq!(sanitize_identifier("return"), "cl_return");
-        assert_eq!(sanitize_identifier("while"), "cl_while");
+    fn c_keywords_receive_a_stable_suffix() {
+        assert_eq!(source_c_name("int"), "int_0");
+        assert_eq!(source_c_name("return"), "return_0");
+        assert_eq!(source_c_name("while"), "while_0");
+        // Sanitizing only replaces bytes; the keyword check belongs to the
+        // source-name spelling.
+        assert_eq!(sanitize_identifier("int"), "int");
     }
 
     #[test]
     fn an_empty_name_still_yields_a_valid_identifier() {
-        assert_eq!(sanitize_identifier(""), "cl_");
+        assert_eq!(sanitize_identifier(""), "_0");
+        assert_eq!(source_c_name(""), "_0");
+    }
+
+    #[test]
+    fn the_source_counter_steps_over_listed_names() {
+        // `DAY` is kept, but `DAY_1` through `DAY_7` are header macros, so a
+        // second source `DAY` in one function must not be spelled `DAY_1`.
+        assert!(is_listed_c_name("DAY_1") && is_listed_c_name("DAY_7"));
+        assert!(!is_listed_c_name("DAY") && !is_listed_c_name("DAY_8"));
+        let taken = |candidate: &str| candidate == "DAY";
+        assert_eq!(first_free_spelling("DAY".to_owned(), taken, true), "DAY_8");
+        // A generated name keeps the plain counter.
+        assert_eq!(first_free_spelling("DAY".to_owned(), taken, false), "DAY_1");
+        // A reserved-shaped base is accepted as is, so the loop ends.
+        let reserved = |candidate: &str| candidate == "__LINE___0";
+        assert_eq!(
+            first_free_spelling("__LINE___0".to_owned(), reserved, true),
+            "__LINE___0_1"
+        );
     }
 }

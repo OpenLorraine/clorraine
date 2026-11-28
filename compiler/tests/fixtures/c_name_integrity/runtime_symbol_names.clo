@@ -1,0 +1,17 @@
+module NameIntegrity.Runtime;
+
+import { println } from std.io;
+
+func main(): i32 {
+    let textPen: i32 = 1;
+    let detailPen: i32 = 2;
+    let major: i32 = 3;
+    let minor: i32 = 4;
+    let libnix: i32 = 5;
+    let Close: i32 = 6;
+    let FreeString: i32 = 7;
+    let total: i32 = textPen + detailPen + major + minor + libnix + Close + FreeString;
+    let line: String = $"{total}";
+    println(line);
+    return 0;
+}

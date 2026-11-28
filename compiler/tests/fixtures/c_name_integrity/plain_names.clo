@@ -1,0 +1,20 @@
+module NameIntegrity.Plain;
+
+import { println } from std.io;
+
+struct Panel {
+    height: i32;
+}
+
+func area(width: i32, panel: Panel): i32 {
+    let count: i32 = 2;
+    let bufferSize: i32 = width * panel.height;
+    return count * bufferSize;
+}
+
+func main(): i32 {
+    let panel: Panel = Panel { height: 3 };
+    let total: i32 = area(4, panel);
+    println($"{total}");
+    return 0;
+}

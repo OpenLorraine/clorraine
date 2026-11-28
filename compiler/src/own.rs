@@ -1256,6 +1256,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             .map(|binding| ir::Local {
                 name: binding.ir_name.clone(),
                 ty: binding.ty.clone(),
+                generated: binding.generated,
             })
             .collect();
         function.temps = self.temps.clone();

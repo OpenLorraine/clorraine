@@ -1,0 +1,24 @@
+module Probe.Main;
+
+import { println } from std.io;
+
+func main(): i32 {
+    let TRUE: i32 = 1;
+    let FALSE: i32 = 2;
+    let NULL: i32 = 3;
+    let EOF: i32 = 4;
+    let errno: i32 = 5;
+    let stdout: i32 = 6;
+    let INT_MAX: i32 = 7;
+    let CHAR_BIT: i32 = 8;
+    let EXIT_SUCCESS: i32 = 9;
+    let MEMF_CHIP: i32 = 10;
+    let BYTE: i32 = 11;
+    let APTR: i32 = 12;
+    let ULONG: i32 = 13;
+    let SysBase: i32 = 14;
+    let IntuitionBase: i32 = 15;
+    let total: i32 = TRUE + FALSE + NULL + EOF + errno + stdout + INT_MAX + CHAR_BIT + EXIT_SUCCESS + MEMF_CHIP + BYTE + APTR + ULONG + SysBase + IntuitionBase;
+    println($"{total}");
+    return 0;
+}

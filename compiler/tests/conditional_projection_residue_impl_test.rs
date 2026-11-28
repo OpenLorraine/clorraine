@@ -13020,10 +13020,12 @@ func main(): i32 {
         &emitted,
         "cl_spec_cprimpl_p439condname_main(void)\n{",
     );
-    assert_contains(tag, body, "bool __cl_cond = 0;");
+    // The source local is a reserved C identifier, so it takes the escaped
+    // spelling; the generated condition keeps its own.
+    assert_contains(tag, body, "bool __cl_cond_0 = 0;");
     assert!(
         body.lines()
-            .any(|line| line.contains("bool __cl_cond_") && line.contains("= (g && ")),
+            .any(|line| line.contains("bool __cl_cond_1 = (g && ")),
         "{tag}: the generated condition must take a distinct name; body:\n{body}"
     );
     assert_eq!(

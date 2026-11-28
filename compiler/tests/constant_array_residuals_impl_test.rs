@@ -277,8 +277,10 @@ func main(): i32 {{
         list = seq(1, 32)
     );
     let emitted = emit("impl-local-shadow", &source);
-    assert_contains("impl-local-shadow", &emitted, "i32 __cl_ctmpl_1 = 0;");
-    assert_absent(
+    // The user's local is a reserved C identifier, so it takes the escaped
+    // spelling, and the template keeps its own first spelling beside it.
+    assert_contains("impl-local-shadow", &emitted, "i32 __cl_ctmpl_1_0 = 0;");
+    assert_contains(
         "impl-local-shadow",
         &emitted,
         "static const i32 __cl_ctmpl_1[32] = {",

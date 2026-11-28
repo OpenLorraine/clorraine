@@ -1,0 +1,16 @@
+module NameIntegrity.Reserved;
+
+import { println } from std.io;
+
+func main(): i32 {
+    let __LINE__: i32 = 1;
+    let __func__: i32 = 2;
+    let __STDC__: i32 = 3;
+    let _Pragma: i32 = 4;
+    let __chip: i32 = 5;
+    let _Complex: i32 = 6;
+    let _Imaginary: i32 = 7;
+    let total: i32 = __LINE__ + __func__ + __STDC__ + _Pragma + __chip + _Complex + _Imaginary;
+    println($"{total}");
+    return 0;
+}

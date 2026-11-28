@@ -620,6 +620,14 @@ pub struct Local {
     pub name: String,
     /// The checked local type.
     pub ty: Ty,
+    /// True for storage the compiler created (a generated owner such as
+    /// `__cl_owned0`), false for a binding the program wrote.
+    ///
+    /// The emitter keeps a generated spelling as it is and escapes a source
+    /// spelling that C or the unit's headers would read differently. The two
+    /// are told apart here, never by spelling, because a source local may
+    /// itself be named like a generated one.
+    pub generated: bool,
 }
 
 /// How one lexical scope nests and where its cleanup runs.
@@ -772,11 +780,12 @@ impl Builder {
         self.function.blocks[self.current].terminator_span = span;
     }
 
-    /// Records a declared local in declaration order.
+    /// Records a declared source local in declaration order.
     pub fn add_local(&mut self, name: impl Into<String>, ty: Ty) {
         self.function.locals.push(Local {
             name: name.into(),
             ty,
+            generated: false,
         });
     }
 

@@ -279,8 +279,9 @@ fn emit_twice(tag: &str, source: &str) -> (String, String) {
 
 /// A colliding source local and the generated owner get distinct spellings.
 ///
-/// The user's local keeps its written spelling; the generated owner declared
-/// later is masked to a distinct C name, and each is released once.
+/// The user's local is a reserved C identifier, so it takes the escaped
+/// spelling `__cl_owned0_0`; the generated owner declared later is masked to
+/// a distinct C name, and each is released once.
 #[test]
 fn should_spell_a_generated_owner_apart_from_a_colliding_source_local() {
     let source = r#"module spec.cri.impl.idspell;
@@ -298,7 +299,7 @@ func main(): i32 {
 }
 "#;
     let emitted = emit_host("idspell", source);
-    assert_contains("idspell", &emitted, "ClString __cl_owned0 = NULL;");
+    assert_contains("idspell", &emitted, "ClString __cl_owned0_0 = NULL;");
     assert_contains("idspell", &emitted, "ClString __cl_owned0_1 = NULL;");
     // The pre-fix emission bound a spurious third owner (a copy of the user's
     // local) whose release double-freed at cleanup; the fix removes it.
@@ -309,7 +310,7 @@ func main(): i32 {
     // Each owner releases on its own paths — the release-before-store and the
     // scope cleanup — and never under the other's spelling.
     assert_eq!(
-        count(&emitted, "FreeString(__cl_owned0)"),
+        count(&emitted, "FreeString(__cl_owned0_0)"),
         2,
         "the source local releases on its own paths"
     );

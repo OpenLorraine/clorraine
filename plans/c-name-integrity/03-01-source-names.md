@@ -78,8 +78,11 @@ Generated names keep the plain `unique_local` and are never escaped.
   | hosted-amiga | SDK `m68k-amigaos-gcc` with the profile flags, whole unit including the suffix |
   | hosted-amiga-13 | SDK `m68k-amigaos-gcc -mcrt=nix13` |
   | freestanding | SDK `m68k-amigaos-gcc -ffreestanding` and host `cc` |
-  | vbcc | GCC's preprocessor `-dM -nostdinc -undef -D__VBCC__ -D__M68K__ -I<vbcc include> -I<ndk-include>`, plus every `#define` name under the vbcc include directory (`/opt/amiga/m68k-amigaos/vbcc/include` in the image) |
+  | vbcc | GCC's preprocessor `-dM -nostdinc -undef -D__VBCC__ -D__M68K__ -D__M68000=1 -D__INTSIZE=32 -I<ndk-include> -I<vbcc include>` (the `aos68k` config `vc +aos68k` reads, and `vbccm68k -cpu=68000`'s predefines), plus every `#define` name under the vbcc include directory (`/opt/amiga/m68k-amigaos/vbcc/include` in the image) |
   | rc24 | the rc24 root's `m68k-amigaos-gcc` for hosted-amiga and hosted-amiga-13 |
+
+  Every GCC leg is read at `-O0`, `-O2`, and `-Os`, the debug, release, and size lines, because
+  headers select different code on `__OPTIMIZE__` and `__NO_INLINE__`.
 - Sample program: one fixed program (a new fixture beside the tests) whose emission contains the
   whole prelude, typedef block, and suffix for each profile.
 - Extraction method, the same in the one-off command and in the test:
@@ -95,11 +98,13 @@ Generated names keep the plain `unique_local` and are never escaped.
   - recall check: on the hosted-amiga leg, every function `-aux-info` reports is also found by the
     scan; the test asserts it.
 - The executor records the exact one-off command in the Phase 1 notes of 99 and runs it inside
-  `make -C docker exec` and against the rc24 root. The scanner lives in the impl test; a test
-  that re-derives the list is a test, not committed generator tooling (AR-7).
+  `make -C docker exec` and, for rc24, on the host against the rc24 root (AR-27). The scanner
+  lives in the impl test; a test that re-derives the list is a test, not committed generator
+  tooling (AR-7).
 - Completeness test (impl): re-runs the extraction for every leg present (skips a missing one with
-  the suites' `skip:` message; rc24 only with `CLORRAINE_RC24_ROOT`, and when that variable is
-  set but the root is unusable the test fails rather than skips), asserts every extracted name is
+  the suites' `skip:` message; rc24 only with `CLORRAINE_RC24_ROOT`, in its own test function
+  that the host runs from the container-built binary (AR-27), and when that variable is set but
+  the root is unusable the test fails rather than skips), asserts every extracted name is
   in the list or reserved-shaped, asserts the list is sorted and unique, and asserts the AR-18
   invariant. Failure output lists the missing names.
 

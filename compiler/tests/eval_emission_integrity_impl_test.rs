@@ -1124,7 +1124,8 @@ func main(): i32 {
 }
 
 /// Source bindings named like the generated spellings re-emit
-/// byte-identically with the de-duplicated names.
+/// byte-identically with their escaped names: each is a reserved C
+/// identifier, so it gains `_0` and never meets a generated spelling.
 #[test]
 fn should_reserve_the_generated_spellings() {
     let source = r#"module spec.eeiimpl.gennames;
@@ -1160,9 +1161,9 @@ func main(): i32 {
         "pin-generated-names",
         &first,
         &[
-            "cl_spec_eeiimpl_gennames_demo(i32 __cl_ret_1)",
+            "cl_spec_eeiimpl_gennames_demo(i32 __cl_ret_0)",
             "i32 __cl_ret = 0;",
-            "i32 __env_1 = 0;",
+            "i32 __env_0 = 0;",
         ],
     );
     assert!(
@@ -1191,7 +1192,7 @@ func main(): i32 {
         "pin-temp-param",
         &emitted,
         &[
-            "cl_spec_eeiimpl_tmpparam_guarded(i32 __cl_tmp0_1)",
+            "cl_spec_eeiimpl_tmpparam_guarded(i32 __cl_tmp0_0)",
             "i32 __cl_tmp0 = 0;",
         ],
     );

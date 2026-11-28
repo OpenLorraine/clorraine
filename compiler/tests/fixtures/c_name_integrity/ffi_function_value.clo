@@ -1,0 +1,14 @@
+module NameIntegrity.Foreign;
+
+import { println } from std.io;
+
+ffi c {
+    func abs(x: i32): i32;
+}
+
+func main(): i32 {
+    let g: func(i32): i32 = abs;
+    let result: i32 = g(-5);
+    println($"{result}");
+    return 0;
+}
