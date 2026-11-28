@@ -17,6 +17,22 @@ it is reported done or committed:
 3. Make those edits in the same change. When nothing needs to change, say so in
    the task summary or commit message ("known limitations: unchanged").
 
+## Advisors
+
+`advise` (the `/advise [graphics|os]` command, or the plain word in chat)
+runs the planning-time advisors and writes dated reports to `plans/advisory/`:
+
+- `graphics-games-advisor`: Amiga graphics, multimedia, and game development,
+  including the cost of emitted code on the 68000.
+- `systems-os-advisor`: Clorraine as the systems language for LorraineOS (m68k
+  now, ARM later), and the tools an OS needs; it reads `../../core`.
+
+Run them when deciding what to build next: after a release or milestone,
+before planning work in their domain, or when LorraineOS needs a capability.
+Never run them during plan execution, and never act on a report without the
+owner choosing the proposals. When the plain word `advise` arrives in chat,
+follow `.opencode/commands/advise.md`.
+
 <!-- CODEOPS-PROJECT:START -->
 ## Project
 
